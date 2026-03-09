@@ -1,0 +1,91 @@
+{
+    "name": "Avatar Mod",
+    "id": "avatar",
+    "version": "1.0.0",
+    "description": "3D avatar display and bone control with glTF/GLB/OBJ model support and anatomically-correct bone rotation",
+    "author": "Enigma AI Engine",
+    "port": 9910,
+    "commands": [
+        {
+            "name": "load",
+            "description": "Load a 3D model file (glTF, GLB, or OBJ)",
+            "args": {
+                "path": {"type": "string", "required": true, "description": "Path to 3D model file"}
+            }
+        },
+        {
+            "name": "show",
+            "description": "Show the avatar window"
+        },
+        {
+            "name": "hide",
+            "description": "Hide the avatar window"
+        },
+        {
+            "name": "bone",
+            "description": "Move/rotate a bone",
+            "args": {
+                "name": {"type": "string", "required": true, "description": "Bone name"},
+                "rotation": {"type": "array", "required": true, "description": "Rotation angles [pitch, yaw, roll]"}
+            }
+        },
+        {
+            "name": "reset",
+            "description": "Reset all bones to neutral position"
+        },
+        {
+            "name": "expression",
+            "description": "Set facial expression",
+            "args": {
+                "name": {"type": "string", "required": true, "description": "Expression name (e.g., happy, sad, surprised)"}
+            }
+        },
+        {
+            "name": "speak",
+            "description": "Trigger lip sync animation for text",
+            "args": {
+                "text": {"type": "string", "required": true, "description": "Text to trigger lip sync for"}
+            }
+        },
+        {
+            "name": "position",
+            "description": "Move the avatar window",
+            "args": {
+                "x": {"type": "integer", "required": true, "description": "X position"},
+                "y": {"type": "integer", "required": true, "description": "Y position"}
+            }
+        },
+        {
+            "name": "scale",
+            "description": "Set avatar scale",
+            "args": {
+                "scale": {"type": "float", "required": true, "description": "Scale factor (e.g., 1.0 = 100%)"}
+            }
+        },
+        {
+            "name": "info",
+            "description": "Get avatar status and loaded model info"
+        },
+        {
+            "name": "bones",
+            "description": "List all available bones in the loaded model"
+        }
+    ],
+    "ui": {
+        "layout": "vertical",
+        "widgets": [
+            {"type": "text_input", "id": "model_path", "label": "Model Path", "placeholder": "path/to/model.glb"},
+            {"type": "button", "id": "load", "label": "Load Model", "command": "load"},
+            {"type": "button", "id": "show", "label": "Show", "command": "show"},
+            {"type": "button", "id": "hide", "label": "Hide", "command": "hide"},
+            {"type": "button", "id": "reset", "label": "Reset Pose", "command": "reset"}
+        ]
+    },
+    "prompt": "For avatar control, use: mod.send avatar load <model_path>, mod.send avatar show/hide, mod.send avatar bone <name> <rotation>, or mod.send avatar expression <name>",
+    "dependencies": [],
+    "settings": {
+        "default_model": "",
+        "window_width": 800,
+        "window_height": 600
+    }
+}

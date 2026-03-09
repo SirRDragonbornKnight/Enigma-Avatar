@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enigma-avatar"
+version = "1.0.0"
+description = "Avatar brick for Enigma Engine - 3D avatar display and control"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Enigma Team"}
+]
+keywords = ["avatar", "3d", "enigma", "brick"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "pillow>=9.0.0",
+    "PyOpenGL>=3.1.0",
+    "pygltflib>=1.15.0",
+]
+
+[project.optional-dependencies]
+qt = ["PyQt5>=5.15.0"]
+dev = ["pytest", "black", "mypy"]
+
+[project.scripts]
+enigma-avatar = "enigma_avatar.main:main"
+
+[project.urls]
+Homepage = "https://github.com/enigma-engine/enigma-avatar"
+Documentation = "https://github.com/enigma-engine/enigma-avatar#readme"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["enigma_avatar*"]
