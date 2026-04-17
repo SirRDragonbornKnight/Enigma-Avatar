@@ -56,16 +56,14 @@ The avatar brick emits these events:
 ## Architecture
 
 ```
-enigma-avatar/
+mods/avatar/
 ├── enigma_avatar/
 │   ├── __init__.py
 │   ├── main.py          # Entry point + brick client
-│   ├── core/            # Avatar logic
-│   │   ├── bones.py     # Bone control
-│   │   ├── model.py     # Model loading
-│   │   └── renderer.py  # 3D rendering
-│   └── ui/              # Display window
-│       └── window.py    # Qt window
+│   ├── protocol.py      # Router communication protocol
+│   └── core/            # Avatar logic
+│       ├── bones.py     # Bone control
+│       └── model.py     # Model loading
 └── pyproject.toml
 ```
 
