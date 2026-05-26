@@ -1,72 +1,41 @@
-# Enigma Avatar Brick
+# Avatar mod — STUB (no working implementation)
 
-Standalone avatar display and control for Enigma Engine.
+This mod is **not functional**. Slice `2.1-avatar-deadfile` (May 26, 2026) killed
+the two prior implementations (`enigma_avatar_brick.py` and the `enigma_avatar/`
+package) because:
 
-## Installation
+- Neither file lived at the path the mod launcher expects (`mods/avatar/main.py`).
+- Neither implementation spoke the real router wire protocol (4-byte length
+  prefix + JSON, see `mods/_template/mod_base.py`); both used incompatible
+  newline-framed JSON variants.
+- Neither had a renderer — `mods/avatar/pyproject.toml` declared `PyOpenGL` but
+  no `.py` file ever imported it.
+- 2167 LOC total, unreachable, unverified, no tests.
 
-```bash
-pip install -e .
-```
+## What survived
 
-## Usage
-
-### As a brick (connects to router)
-
-```bash
-# Terminal 1: Start Enigma router
-forge router
-
-# Terminal 2: Start avatar brick
-enigma-avatar
-```
-
-### Standalone (for testing)
-
-```bash
-enigma-avatar --standalone
-```
-
-## Commands
-
-The avatar brick exposes these commands when connected to the router:
-
-| Command | Description | Params |
-|---------|-------------|--------|
-| `avatar.load` | Load a 3D model | `path` (str) |
-| `avatar.show` | Show the avatar window | - |
-| `avatar.hide` | Hide the avatar window | - |
-| `avatar.bone` | Move a bone | `name` (str), `rotation` ([p,y,r]) |
-| `avatar.reset` | Reset all bones to neutral | - |
-| `avatar.expression` | Set expression | `name` (str) |
-| `avatar.speak` | Trigger lip sync | `text` (str) |
-| `avatar.position` | Move window position | `x` (int), `y` (int) |
-| `avatar.scale` | Set avatar scale | `scale` (float) |
-
-## Events
-
-The avatar brick emits these events:
-
-| Event | Description | Payload |
-|-------|-------------|---------|
-| `avatar.loaded` | Model loaded | `{path, bones}` |
-| `avatar.bone_moved` | Bone position changed | `{bone, rotation}` |
-| `avatar.expression_changed` | Expression changed | `{expression}` |
-| `avatar.window_moved` | Window position changed | `{x, y}` |
-
-## Architecture
+The only piece worth preserving was the 19-row anatomical bone-limits table
+(head, neck, spine, chest, hips, L+R shoulder/arm/forearm/hand, L+R leg/shin/foot
+with pitch/yaw/roll ranges + speed limit). That data now lives at:
 
 ```
-mods/avatar/
-├── enigma_avatar/
-│   ├── __init__.py
-│   ├── main.py          # Entry point + brick client
-│   ├── protocol.py      # Router communication protocol
-│   └── core/            # Avatar logic
-│       ├── bones.py     # Bone control
-│       └── model.py     # Model loading
-└── pyproject.toml
+mods/avatar/bone_limits.json
 ```
 
-## Protocol
+Validated by `tests/test_avatar_bone_data.py` (5 tests).
 
-Connects to Enigma router on `localhost:9900` using TCP + JSON protocol.
+## Reviving the mod
+
+A real avatar mod would need:
+
+1. `mods/avatar/main.py` as the launcher entry point.
+2. The real `mod_base.py` socket protocol (copy from `mods/_template/`).
+3. A renderer — minimum viable is a tkinter Canvas stick figure; serious version
+   is moderngl or pyglet. Decide before writing more code.
+4. A quaternion-based bone controller (not the Euler one we just deleted — that
+   had gimbal-lock issues and was inconsistent with the sibling glTF model
+   loader, which already used quaternions).
+5. Load `bone_limits.json` (sits next to `mod.json`) for anatomy constraints.
+
+See the `2.1-avatar-deadfile` close-stamp in [`SUGGESTIONS.md`](../../SUGGESTIONS.md)
+for the full disposition history and Option C blueprint if you pick up the work.
