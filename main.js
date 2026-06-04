@@ -87,15 +87,16 @@ async function importModel() {
   // plain files: copy the mesh + any sibling assets into models/<name>/
   const mesh = files.find((f) => MESH_EXT.has(path.extname(f).toLowerCase()));
   if (!mesh) return { error: "no .glb/.gltf/.vrm/.fbx among the selected files" };
-  const name = slug(path.basename(mesh, path.extname(mesh)));
+  const stem = path.basename(mesh, path.extname(mesh));   // keep the file's own name as the label
+  const name = slug(stem);
   const dest = path.join(MODELS_DIR, name);
   try {
     fs.mkdirSync(dest, { recursive: true });
     for (const f of files) fs.copyFileSync(f, path.join(dest, path.basename(f)));
   } catch (e) { return { error: "copy failed: " + (e && e.message) }; }
   const url = `./models/${name}/${path.basename(mesh)}`;
-  registerModel(name, title(name), url);
-  return { id: name, label: title(name), url };
+  registerModel(name, stem, url);
+  return { id: name, label: stem, url };
 }
 
 // Like importModel, but for a prop/accessory: copy into props/<name>/ and return its

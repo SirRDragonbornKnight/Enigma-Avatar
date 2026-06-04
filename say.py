@@ -25,8 +25,8 @@ MODELS = {
     "roxanne": "./models/roxanne_wolf/scene.gltf", "rox": "./models/roxanne_wolf/scene.gltf", "1": "./models/roxanne_wolf/scene.gltf",
     "toothless": "./models/toothless/scene.gltf", "nightfury": "./models/toothless/scene.gltf", "fury": "./models/toothless/scene.gltf", "2": "./models/toothless/scene.gltf",
     "glados": "./models/glados/scene.gltf", "3": "./models/glados/scene.gltf",
-    "mal0": "./models/mal0/mal0.glb", "spyro": "./models/spyro/scene.gltf",
-    "grace": "./models/grace/grace.glb", "fexa": "./models/fexa/fexa.glb",
+    "mal0": "./models/mal0_scp-1471/mal0_scp-1471.glb", "spyro": "./models/spyro/scene.gltf",
+    "grace": "./models/grace_howard/grace_howard.glb", "fexa": "./models/fexa_-_fnaf__cryptiacurves/fexa_-_fnaf__cryptiacurves.glb",
 }
 
 

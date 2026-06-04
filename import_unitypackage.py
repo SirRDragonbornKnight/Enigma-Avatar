@@ -185,7 +185,7 @@ def _register(name: str, mesh_rel: str) -> None:
         manifest = {}
     models = manifest.setdefault("models", [])
     models[:] = [m for m in models if isinstance(m, dict) and m.get("id") != name]
-    models.append({"id": name, "label": name.replace("_", " ").title(), "url": mesh_rel})
+    models.append({"id": name, "label": name, "url": mesh_rel})   # label = the file's own name
     with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     print(f"registered '{name}' -> {mesh_rel} in {path}")
