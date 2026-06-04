@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { buildProceduralRig } from "./procedural.js?v=19";
+import { buildProceduralRig } from "./procedural.js?v=21";
 import { buildSpringBones } from "./spring.js?v=8";
 import { buildFacial } from "./facial.js?v=1";
 
@@ -66,6 +66,32 @@ const TEX_RE = /\.(tga|png|jpe?g|webp|bmp|gif|ktx2|basis|dds)(\?.*)?$/i;
 const baseName = (u) => u.split(/[?#]/)[0].split(/[\\/]/).pop();
 const kindOf = (url) => { const u = url.split(/[?#]/)[0].toLowerCase(); return u.endsWith(".fbx") ? "fbx" : u.endsWith(".vrm") ? "vrm" : "gltf"; };
 
+// three.js r150+ REMOVED KHR_materials_pbrSpecularGlossiness support, so a model
+// authored ONLY in spec-gloss (common in Sketchfab rips — e.g. Toy Chica: all 14
+// materials, no metallic-roughness fallback) renders flat GREY: its base colour and
+// diffuse texture live under that extension and the core loader ignores them. This
+// minimal compat plugin re-binds diffuseFactor → material colour and diffuseTexture →
+// material.map (glossiness → roughness approx). Harmless for models that don't use it.
+function specGlossCompat(parser) {
+  const NAME = "KHR_materials_pbrSpecularGlossiness";
+  return {
+    name: NAME,                                              // exact name → also silences the "Unknown extension" warning
+    extendMaterialParams(materialIndex, materialParams) {
+      const sg = parser.json.materials?.[materialIndex]?.extensions?.[NAME];
+      if (!sg) return Promise.resolve();
+      const pending = [];
+      if (Array.isArray(sg.diffuseFactor)) {
+        materialParams.color = new THREE.Color().setRGB(sg.diffuseFactor[0], sg.diffuseFactor[1], sg.diffuseFactor[2], THREE.LinearSRGBColorSpace);
+        if (sg.diffuseFactor[3] != null) materialParams.opacity = sg.diffuseFactor[3];
+      }
+      materialParams.metalness = 0;                          // spec-gloss is non-metal by construction
+      materialParams.roughness = sg.glossinessFactor != null ? 1 - sg.glossinessFactor : 0.6;
+      if (sg.diffuseTexture) pending.push(parser.assignTexture(materialParams, "map", sg.diffuseTexture, THREE.SRGBColorSpace));
+      return Promise.all(pending);
+    },
+  };
+}
+
 // Load any supported format; hand back a normalized { scene, animations, vrm }.
 // opts: { kind, resourceDir, blobMap } — all optional; blobMap resolves multi-file
 // drag-drop refs by basename. No module-level load state → no cross-load races.
@@ -87,6 +113,7 @@ function loadAsset(url, onOk, onErr, opts = {}) {
   } else {
     const gl = new GLTFLoader(mgr);
     gl.register((parser) => new VRMLoaderPlugin(parser));   // fills gltf.userData.vrm when it's a VRM
+    gl.register((parser) => specGlossCompat(parser));       // re-bind spec-gloss colour/texture (three.js r150+ dropped it)
     gl.load(url, (g) => {
       const vrm = g.userData?.vrm || null;
       if (vrm) { VRMUtils.removeUnnecessaryJoints?.(vrm.scene); vrm.scene.rotation.y = Math.PI; }   // VRM faces -Z → turn to camera
@@ -613,6 +640,28 @@ async function speak(url, opts = {}) {
   }
 }
 
+// Capture the overlay's own canvas (the avatar on transparency — NO desktop behind
+// it) to a PNG, so it can be inspected in isolation, "like in Blender". Crops tight
+// to the avatar's silhouette by default (full window with {full:true}). Pair with
+// showSkeleton(true) to capture the rig over the mesh.
+async function snapshot(opts = {}) {
+  if (!window.avatarIPC || !window.avatarIPC.capture) { setStatus("snap unavailable (no IPC)"); return null; }
+  let rect = null;
+  if (!opts.full && model && hitRect && hitRect[2] > hitRect[0] && hitRect[3] > hitRect[1]) {
+    const pad = opts.pad ?? 48;
+    const x = Math.max(0, Math.floor(hitRect[0] - pad));
+    const y = Math.max(0, Math.floor(hitRect[1] - pad));
+    const w = Math.min(Math.round(innerWidth) - x, Math.ceil(hitRect[2] - hitRect[0] + pad * 2));
+    const h = Math.min(Math.round(innerHeight) - y, Math.ceil(hitRect[3] - hitRect[1] + pad * 2));
+    if (w > 8 && h > 8) rect = { x, y, width: w, height: h };
+  }
+  const r = await window.avatarIPC.capture({ rect, name: opts.name });
+  if (r && r.ok) setStatus(`snap ✓ ${r.width}×${r.height} → ${r.path}`);
+  else setStatus("snap failed: " + (r && r.error));
+  console.log("[avatar] snap:", JSON.stringify(r));
+  return r;
+}
+
 // --- AI control surface -----------------------------------------------------
 const EnigmaAvatar = {
   actions: () => clipNames(),
@@ -641,6 +690,7 @@ const EnigmaAvatar = {
   bones: () => { const out = []; model?.traverse((o) => { if (o.isBone) out.push(o.name); }); return out; },   // names to target
   showSkeleton: (on) => showSkeleton(on),                                 // overlay the rig to inspect bones; persists
   bonesShown: () => bonesShown,
+  snap: (opts) => snapshot(opts || {}),                                   // capture the avatar in isolation → PNG (inspect)
   materials: () => [...modelMaterials().keys()],                          // recolorable parts (hair, body, eyes…)
   recolor: (name, hex) => recolor(name, hex),                            // tint a part; saved per avatar
   hueShift: (name, deg) => hueShift(name, deg),                          // rotate a part's hue (keeps detail); saved
@@ -663,11 +713,33 @@ function handleCommand(c) {
   else if (c.action === "facialTune") { const { action, ...p } = c; EnigmaAvatar.facialTune(p); }
   else if (c.action === "tune") { const { action, ...p } = c; EnigmaAvatar.tune(p); }   // procedural idle feel (drift/armSwing/sway/twist…)
   else if (c.action === "showBones") EnigmaAvatar.showSkeleton(c.on ?? c.value);         // skeleton overlay on/off (no arg → toggle)
+  else if (c.action === "snap" || c.action === "screenshot") EnigmaAvatar.snap(c);       // capture avatar → PNG for inspection
+  else if (c.action === "setDisplay" || c.action === "monitor") moveToDisplay(c.index ?? c.value ?? "next");   // move overlay to a monitor (index, or "next"/"prev")
   else if (c.action === "recolor" && c.name) EnigmaAvatar.recolor(c.name, c.color || c.hex);   // tint a material
   else if (c.action === "hue" && c.name) EnigmaAvatar.hueShift(c.name, c.deg ?? c.value ?? 0);  // rotate a material's hue
 }
 window.EnigmaAvatar = EnigmaAvatar;
 window.__AV = { THREE, scene, camera, rig, getModel: () => model };
+
+// --- monitors (move the overlay between screens, from the UI / a hotkey) -----
+// Main is the source of truth for the display layout; the renderer caches a
+// left→right-sorted copy so the right-click "Move to monitor" menu can build
+// synchronously, and stays in sync via the avatar:displayChanged event.
+let DISPLAYS = [];          // [{index,label,primary,x,y,w,h}] sorted left→right; index = screen.getAllDisplays() index
+let curDisplayIdx = 0;      // electron index the overlay is on right now
+async function refreshDisplays() {
+  if (!window.avatarIPC?.getDisplays) return;
+  try { const info = await window.avatarIPC.getDisplays(); if (info) { DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; } } catch {}
+}
+function moveToDisplay(idx) {
+  if (idx === "next" || idx === "prev") {                        // resolve a relative hop against the sorted list
+    if (DISPLAYS.length) { const at = Math.max(0, DISPLAYS.findIndex((d) => d.index === curDisplayIdx)); idx = DISPLAYS[(at + (idx === "next" ? 1 : -1) + DISPLAYS.length) % DISPLAYS.length].index; }
+    else idx = curDisplayIdx;
+  }
+  if (window.avatarIPC?.setDisplay) { window.avatarIPC.setDisplay(idx); curDisplayIdx = idx; setStatus("monitor → " + idx); }
+}
+window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; if (menuShown) rebuildMenu(); });
+refreshDisplays();
 
 // --- right-click menu (toggles + quick actions) -----------------------------
 const BUILTIN_MODELS = [
@@ -917,6 +989,12 @@ function rebuildMenu() {
     { label: "Smaller", onClick: () => resizeBy(1 / 1.1) },
     { label: "Reset", onClick: () => applySize(DEFAULT_SIZE) },
   ]));
+  // Move the overlay to another screen (only meaningful with >1 monitor). The dot
+  // marks the current one; Ctrl+Alt+M cycles without opening the menu.
+  if (DISPLAYS.length > 1) menu.appendChild(submenu("Move to monitor", DISPLAYS.map((d) => ({
+    label: d.label, check: d.index === curDisplayIdx,
+    onClick: () => { moveToDisplay(d.index); hideMenu(); },
+  }))));
   menu.appendChild(menuSep());
   menu.appendChild(menuRow("Settings…", { onClick: () => { hideMenu(); showSettings(); } }));
   if (window.avatarIPC?.quit) { menu.appendChild(menuSep()); menu.appendChild(menuRow("Quit avatar", { accel: "Ctrl+Alt+Q", danger: true, onClick: () => window.avatarIPC.quit() })); }
@@ -928,6 +1006,8 @@ function showMenu(x, y) {
   menu.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 6)) + "px";
   menu.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 6)) + "px";
   menuShown = true; syncInteractive();
+  const sig = DISPLAYS.length + ":" + curDisplayIdx;            // refresh monitors; only redraw if the layout/current changed
+  refreshDisplays().then(() => { if (menuShown && sig !== DISPLAYS.length + ":" + curDisplayIdx) rebuildMenu(); });
 }
 function hideMenu() { if (!menuShown) return; menu.style.display = "none"; menuShown = false; syncInteractive(); }
 addEventListener("contextmenu", (e) => {
@@ -938,7 +1018,7 @@ addEventListener("contextmenu", (e) => {
 addEventListener("keydown", (e) => { if (e.key === "Escape") { if (settingsShown) hideSettings(); else hideMenu(); } });
 
 // --- input (drag to reposition; NO hand cursor; NO fall) --------------------
-addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); });
+addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); _clampScreen(pos); if (gliding) _clampScreen(glideT); });   // a monitor hop resizes the window → keep her on-screen
 addEventListener("wheel", (e) => { if (cursor.over) resizeBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: true });
 addEventListener("pointermove", (e) => { cursor.x = e.clientX; cursor.y = e.clientY; computeOver(); });
 addEventListener("pointerdown", (e) => {

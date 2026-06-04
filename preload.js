@@ -12,4 +12,12 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   importModel: () => ipcRenderer.invoke("avatar:importModel"),
   importProp: () => ipcRenderer.invoke("avatar:importProp"),
   saveProfiles: (json) => ipcRenderer.invoke("avatar:saveProfiles", json),
+  // Capture the overlay canvas (avatar in isolation) to a PNG for inspection.
+  capture: (opts) => ipcRenderer.invoke("avatar:capture", opts || {}),
+  // Move the overlay to a given monitor (index into the display list).
+  setDisplay: (i) => ipcRenderer.send("avatar:setDisplay", i),
+  // List monitors for the "Move to monitor" menu: { current, displays:[{index,label,primary,…}] }.
+  getDisplays: () => ipcRenderer.invoke("avatar:getDisplays"),
+  // Fire when the overlay hops monitors (hotkey/menu/layout change) so the menu re-ticks.
+  onDisplayChanged: (cb) => ipcRenderer.on("avatar:displayChanged", (_e, info) => cb(info)),
 });

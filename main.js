@@ -11,6 +11,7 @@
 const { app, BrowserWindow, screen, globalShortcut, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const { spawnSync } = require("child_process");
 
 let win = null;
@@ -29,8 +30,46 @@ function applyInteractive(overModel) {
   win.setIgnoreMouseEvents(!interactive, { forward: true });
 }
 
+// MULTI-MONITOR — per-display, NOT one spanning window. On Windows a *transparent*
+// always-on-top window gets clamped to the primary display's size (measured: a
+// 6400×1440 spanning window reported 2560×1392 web contents — primary-sized — so the
+// avatar was invisible on every other monitor). So the overlay occupies ONE display
+// at a time (each ≤ a single screen → no clamp) and can be re-targeted on command.
+let curDisplay = 0;                                   // index into screen.getAllDisplays()
+function displays() { return screen.getAllDisplays(); }
+function primaryIndex() { const id = screen.getPrimaryDisplay().id; return Math.max(0, displays().findIndex((d) => d.id === id)); }
+function boundsFor(i) { const ds = displays(); return (Number.isInteger(i) && ds[i] ? ds[i] : screen.getPrimaryDisplay()).bounds; }
+function placeOnDisplay(i) {
+  if (!win) return;
+  if (Number.isInteger(i) && displays()[i]) curDisplay = i;
+  const b = boundsFor(curDisplay);
+  win.setBounds(b);
+  console.error("[main] placeOnDisplay " + curDisplay + " requested=" + JSON.stringify(b) + " got=" + JSON.stringify(win.getBounds()));
+  try { win.webContents.send("avatar:displayChanged", displayList()); } catch {}   // keep the renderer's monitor menu in sync
+}
+// The display list the renderer renders in its "Move to monitor" menu: sorted
+// left→right (how the screens physically sit) with a human label, but each entry
+// keeps its real screen.getAllDisplays() index for setBounds. `current` is the
+// electron index the overlay is on right now (so the menu can tick it).
+function displayList() {
+  const prim = screen.getPrimaryDisplay().id;
+  const list = displays()
+    .map((d, index) => ({ index, primary: d.id === prim, x: d.bounds.x, y: d.bounds.y, w: d.bounds.width, h: d.bounds.height }))
+    .sort((a, b) => a.x - b.x);
+  list.forEach((d, n) => { d.label = "Monitor " + (n + 1) + " · " + d.w + "×" + d.h + (d.primary ? " (primary)" : ""); });
+  return { current: curDisplay, displays: list };
+}
+// Hop to the next/prev monitor in left→right order (global hotkey + `monitor next`).
+function cycleDisplay(dir) {
+  const list = displayList().displays;
+  if (list.length < 2) return;
+  const at = Math.max(0, list.findIndex((d) => d.index === curDisplay));
+  placeOnDisplay(list[(at + (dir || 1) + list.length) % list.length].index);
+}
+
 function createWindow() {
-  const { bounds } = screen.getPrimaryDisplay();
+  curDisplay = primaryIndex();
+  const bounds = boundsFor(curDisplay);
   win = new BrowserWindow({
     x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
     transparent: true, frame: false, resizable: false, movable: false,
@@ -41,6 +80,11 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, "index.html"));
   applyInteractive(false); // click-through until the cursor is over the avatar
+  win.webContents.once("did-finish-load", () => {
+    const ds = displays().map((d, i) => ({ i, x: d.bounds.x, y: d.bounds.y, w: d.bounds.width, h: d.bounds.height, primary: d.id === screen.getPrimaryDisplay().id }));
+    console.error("[main] displays: " + JSON.stringify(ds));
+    console.error("[main] window bounds=" + JSON.stringify(win.getBounds()) + " content=" + JSON.stringify(win.getContentBounds()));
+  });
 }
 
 // --- model import (native dialog → copy into models/ + register) ------------
@@ -138,6 +182,29 @@ function init() {
   ipcMain.handle("avatar:importModel", importModel);
   ipcMain.handle("avatar:importProp", importProp);
   ipcMain.handle("avatar:saveProfiles", (_e, json) => saveProfiles(json));
+  // Capture the overlay's OWN web contents (the avatar on a transparent background,
+  // with no desktop clutter behind it) to a PNG — so the avatar can be inspected in
+  // isolation. opts: { rect:{x,y,width,height} in DIP, name }. Returns {path,width,height}.
+  ipcMain.handle("avatar:capture", async (_e, opts = {}) => {
+    if (!win) return { error: "no window" };
+    try {
+      const r = opts && opts.rect;
+      const image = (r && r.width > 0 && r.height > 0) ? await win.webContents.capturePage(r) : await win.webContents.capturePage();
+      const out = path.join(os.tmpdir(), (opts && opts.name) || "enigma_snap.png");
+      fs.writeFileSync(out, image.toPNG());
+      const s = image.getSize();
+      return { ok: true, path: out, width: s.width, height: s.height };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  });
+  // Move the overlay to a chosen monitor (index into screen.getAllDisplays()).
+  ipcMain.on("avatar:setDisplay", (_e, i) => placeOnDisplay(i));
+  // The renderer asks for the monitor list to build its right-click "Move to monitor" menu.
+  ipcMain.handle("avatar:getDisplays", () => displayList());
+  // Keep the overlay correctly placed on its current monitor if the layout changes.
+  const refit = () => placeOnDisplay(curDisplay);
+  screen.on("display-added", refit);
+  screen.on("display-removed", refit);
+  screen.on("display-metrics-changed", refit);
   globalShortcut.register("CommandOrControl+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(forceInteractive); });
   globalShortcut.register("CommandOrControl+Alt+Q", () => app.quit());
   globalShortcut.register("CommandOrControl+Alt+=", () => win?.webContents.executeJavaScript("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
@@ -147,7 +214,19 @@ function init() {
   globalShortcut.register("CommandOrControl+Alt+Right", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0.33,0)"));
   globalShortcut.register("CommandOrControl+Alt+Up", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0,0.2)"));
   globalShortcut.register("CommandOrControl+Alt+Down", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0,-0.2)"));
+  // Hop the overlay to the next monitor (works even while click-through — global).
+  globalShortcut.register("CommandOrControl+Alt+M", () => cycleDisplay(1));
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+  // Crash diagnostics + self-heal. The "switching models breaks it" crash left NO JS
+  // trace (a renderer/GPU *process* death, not a caught exception) — these events
+  // capture the real reason, and we reload instead of dying silently.
+  app.on("child-process-gone", (_e, d) => console.error("[main] child-process-gone:", JSON.stringify(d)));
+  app.on("render-process-gone", (_e, _wc, d) => {
+    console.error("[main] render-process-gone:", JSON.stringify(d));
+    if (win && !win.isDestroyed()) { try { win.reload(); } catch (e) { console.error("[main] reload failed:", String(e)); } }
+  });
+  if (win && win.webContents) win.webContents.on("unresponsive", () => console.error("[main] renderer unresponsive"));
 }
 
 // Single-instance: a second launch must not stack a second overlay (or clash with

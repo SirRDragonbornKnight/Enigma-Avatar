@@ -17,15 +17,20 @@ const DEG = Math.PI / 180;
 // SKIP: fingers/toes/face/dangly bits, IK rig helpers, AND deformation aids —
 // "helper"/"twist" bones (Mal0's Bip_*_Helper, lowerarm twists) must never win a
 // primary role over the real joint (avatar audit #4).
-const SKIP = /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|target|pole|root.?joint|bolt|piston|string|bits/i;
+const SKIP = /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits/i;
 
 // Map a bone name -> "side_part" role (or center part), or null to ignore.
 function roleOf(raw) {
   const n = raw.toLowerCase();
   if (SKIP.test(n)) return null;
+  // Side: left/right word or _l_/.l boundary, PLUS Blender ".L"/".R" tags that
+  // three.js de-dotted on import into a glued uppercase L/R (upper_arm.L → "upper_armL").
+  // Without this, EVERY Blender/Rigify limb loses its side and stays in the bind T-pose
+  // (this is exactly why Toy Chica was T-posed). The trailing (_ . digit | end) anchor
+  // keeps it a real SUFFIX tag, so mid-word capitals (Armature:Root → "ArmatureRoot") don't false-trigger.
   let side = "";
-  if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n)) side = "left";
-  else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n)) side = "right";
+  if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n) || /[a-z]L([_.]|\d|$)/.test(raw)) side = "left";
+  else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw)) side = "right";
   const has = (re) => re.test(n);
   // Center bones are never side-tagged; a sided match (Bip_Pelvis_L/R) is an
   // auxiliary bone, not the real spine — reject it so the true center bone wins
@@ -56,6 +61,31 @@ export function buildProceduralRig(model, boneLimits = {}) {
     if (role && !bones[role]) { bones[role] = o; rest[role] = o.quaternion.clone(); }
   });
 
+  // Natural arm rest — RIG-AGNOSTIC. Many rigs bind in a T-pose (arms straight out).
+  // The old fixed local-X "armRest" drop only matched Mixamo-style bones, so Blender/
+  // Rigify arms (Toy Chica) stayed T-posed. Instead, read each arm's REAL world
+  // direction and aim it toward a natural down-and-slightly-out A-pose, then bake that
+  // into rest[] so the idle layers its motion on a correct base. Arms that already hang
+  // down (true A-pose bind) are left untouched, so nothing that worked regresses.
+  model.updateWorldMatrix(true, true);
+  const _aw = new THREE.Vector3(), _cw = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3(), _pq = new THREE.Quaternion(), _wq = new THREE.Quaternion();
+  const aimArm = (armRole, childRole) => {
+    const a = bones[armRole], c = bones[childRole]; if (!a || !c || !a.parent) return;
+    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
+    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
+    _dir.normalize();
+    if (_dir.y < -0.5) return;                          // already hanging down → leave it
+    const outSign = _dir.x >= 0 ? 1 : -1;
+    _tgt.set(outSign * 0.34, -0.94, 0).normalize();     // ~70° below horizontal, slightly out
+    _wq.setFromUnitVectors(_dir, _tgt);                 // world rotation that aims the arm down
+    a.parent.getWorldQuaternion(_pq);                   // express it in the bone's LOCAL space: inv(P) * wq * P
+    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+    rest[armRole] = adjust.multiply(rest[armRole]);
+    a.quaternion.copy(rest[armRole]);                   // apply immediately so frame 0 isn't a T-pose
+  };
+  aimArm("left_arm", "left_forearm");
+  aimArm("right_arm", "right_forearm");
+
   const limits = boneLimits.bones || {};
   const clamp = (role, axis, v) => {
     const L = limits[role]; if (!L) return v;
@@ -63,24 +93,24 @@ export function buildProceduralRig(model, boneLimits = {}) {
   };
 
   const params = {
-    breathe: 0.07,     // chest/spine rise — breathing depth
+    breathe: 0.085,    // chest/spine rise — breathing depth (raised: idle read too stiff)
     breatheRate: 1.4,  // breathing cadence
     look: 0.16,        // idle head-glance amplitude
-    armRest: 1.15,     // drop the arms out of the bind T-pose (radians); 0 = leave as-is
+    armRest: 0,        // arm drop is now geometry-based (aimArm above); kept tunable for extra droop
     elbow: 0.45,       // elbow bend on ROLL (anatomically clamped small on real rigs ~±5°)
     elbowFlex: 0.10,   // relaxed forward elbow flex on PITCH (has room) so arms aren't ramrod-straight
     swingAxis: "x",
     // --- richer idle: per-bone DESYNCED motion so bones move individually, not as
     // a rigid block. `drift` is the master amount — tune({drift:0}) = old minimal
     // idle, tune({drift:1.6}) = livelier. Everything below scales with it. ---
-    drift: 1.0,
-    armSwing: 0.12,    // upper-arm pendulum (independent per side)
+    drift: 1.3,        // master liveliness (raised from 1.0 — idle read too stiff; tune({drift:1}) for the old feel)
+    armSwing: 0.16,    // upper-arm pendulum (independent per side)
     armOut: 0.05,      // arm abduction variance
     elbowMove: 0.05,   // elbow flex breathing
     wrist: 0.06,       // hand/wrist micro-motion
     shoulder: 0.04,    // shoulder settle/rise
-    twist: 0.035,      // gentle torso turn (yaw)
-    sway: 0.06,        // slow lateral weight-shift
+    twist: 0.05,       // gentle torso turn (yaw)
+    sway: 0.085,       // slow lateral weight-shift
     legSway: 0.02,     // tiny thigh drift (she floats; kept from reading as walking)
   };
 

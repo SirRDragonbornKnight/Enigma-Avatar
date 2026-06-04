@@ -5,6 +5,7 @@
     python mods/avatar/say.py model mal0          # switch model (roxanne / toothless / glados / mal0 / spyro)
     python mods/avatar/say.py say file:///C:/tmp/speech.wav   # play a WAV + lip-sync the jaw/mouth
     python mods/avatar/say.py move 300 400        # move to screen x,y (pixels)
+    python mods/avatar/say.py monitor next        # hop the overlay to the next monitor (or `monitor 1` / right-click → Move to monitor / Ctrl+Alt+M)
     python mods/avatar/say.py size 0.8            # resize
     python mods/avatar/say.py --raw '{"action":"load","url":"./models/glados/scene.gltf"}'
 
@@ -69,6 +70,16 @@ def _parse(argv: list[str]) -> dict | None:
         return {"action": "play", "name": argv[1]}
     if head == "loop":                                   # loop a baked clip: `loop walk`
         return {"action": "loop", "name": argv[1]}
+    if head in ("snap", "screenshot", "shot"):           # capture the avatar (isolated, transparent bg) to a PNG to inspect
+        c = {"action": "snap"}
+        if len(argv) > 1 and argv[1].lower() in ("full", "all", "window"):
+            c["full"] = True
+        return c
+    if head in ("monitor", "display", "screen"):         # move the overlay between screens: `monitor next` (cycle L→R) or `monitor 1`
+        arg = argv[1].lower() if len(argv) > 1 else "next"   # no arg → just hop to the next monitor
+        if arg in ("next", "prev", "cycle"):
+            return {"action": "setDisplay", "index": "prev" if arg == "prev" else "next"}
+        return {"action": "setDisplay", "index": int(arg)}   # explicit screen.getAllDisplays() index (use the menu to see which is which)
     if head in ("express", "emote"):                     # explicit form: `express happy [dur]`
         c: dict = {"action": "express", "name": argv[1]}
         if len(argv) > 2:
