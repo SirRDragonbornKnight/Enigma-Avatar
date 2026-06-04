@@ -220,8 +220,19 @@ function onModelLoaded(asset) {
   if (clips.length) {
     mixer = new THREE.AnimationMixer(model);
     for (const cl of clips) actions[cl.name] = mixer.clipAction(cl);
-    clipIdle = actions[findClip(/idle|stand|breath|float|loop/i)] || Object.values(actions)[0];
-    playAction(clipIdle, { loop: true });
+    // Pick a SAFE idle. Many rips ship jumpscare/attack/pose clips and no idle —
+    // auto-playing clip[0] then loops a jumpscare (looks "broken"). Only auto-play
+    // a genuine idle; otherwise keep the clips callable on demand and let the
+    // (richer) procedural idle drive the body.
+    const BAD = /jump|scare|attack|death|die|hit|damage|spawn|slam|fall|hurt/i;
+    const names = Object.keys(actions);
+    let idleName = names.length === 1
+      ? (BAD.test(names[0]) ? null : names[0])                       // sole clip = the model's display anim
+      : (findClip(/idle.*loop|loop.*idle/i) || findClip(/idle|breath|relax|float|\bstand\b/i));
+    if (idleName && BAD.test(idleName)) idleName = null;
+    clipIdle = idleName ? actions[idleName] : null;
+    if (clipIdle) playAction(clipIdle, { loop: true });
+    console.log("[avatar] idle:", clipIdle ? idleName : "procedural (no safe idle clip)");
   }
   // Always build the procedural rig — it drives the AI emotes (express). When a
   // clip owns the idle, procedural runs in additive expression-only mode so emotes
@@ -264,10 +275,14 @@ function showSkeleton(on) {
   setStatus("skeleton " + (bonesShown ? "on" : "off"));
   return bonesShown;
 }
+let _loadSeq = 0;
 function loadModel(url, label) {
   curKey = url;
+  const seq = ++_loadSeq;                          // guard: a slower earlier load must not clobber a newer switch
   setStatus(`loading ${label || url} …`);
-  loadAsset(url, onModelLoaded, (err) => { setStatus(`load failed: ${err?.message || err}`); console.error(err); });
+  loadAsset(url,
+    (asset) => { if (seq === _loadSeq) onModelLoaded(asset); },   // superseded by a newer switch → drop it
+    (err) => { if (seq === _loadSeq) { setStatus(`load failed: ${err?.message || err}`); console.error(err); } });
 }
 
 // --- attachments (props / accessories) --------------------------------------
@@ -542,8 +557,8 @@ function animate() {
   rig.position.set(pos.x, pos.y, 0);                            // float in place — no rigid bob; motion comes from bones + springs
   updateLook(dt);                                               // head tracks the cursor
   maybeIdleBehavior(dt);                                        // occasional gentle emote when left alone
-  if (mixer) { mixer.update(dt); if (proc) proc.update(dt, false, { additive: true }); }  // clip idle + additive emotes
-  else if (proc && idleOn) proc.update(dt, false);              // procedural idle + emotes (no walk)
+  if (mixer && current) { mixer.update(dt); if (proc) proc.update(dt, false, { additive: true }); }  // a clip is playing → emotes layer additively
+  else if (proc && idleOn) proc.update(dt, false);              // no clip playing → full procedural idle + emotes
   if (facial && facialOn) facial.update(dt);                    // blink + lip-sync (jaw / morphs / VRM weights)
   if (spring && springOn) { rig.updateWorldMatrix(false, true); spring.update(dt); }  // hair/tail/wires sway
   if (vrm) vrm.update(dt);                                       // VRM spring bones / look-at / expressions
@@ -612,7 +627,7 @@ async function speak(url, opts = {}) {
 // --- AI control surface -----------------------------------------------------
 const EnigmaAvatar = {
   actions: () => clipNames(),
-  play(name, opts = {}) { return playAction(actions[name] || actions[findClip(new RegExp(name, "i"))], { loop: false, ...opts, onDone: () => playAction(clipIdle, { loop: true }) }); },
+  play(name, opts = {}) { return playAction(actions[name] || actions[findClip(new RegExp(name, "i"))], { loop: false, ...opts, onDone: () => { if (clipIdle) playAction(clipIdle, { loop: true }); else current = null; } }); },
   loopClip(name) { return playAction(actions[name] || actions[findClip(new RegExp(name, "i"))], { loop: true }); },
   moveTo(px, py) { glideTo(px, py); },                           // smooth-glide to screen px,py (stays there)
   nudge: (dx, dy) => nudge(dx, dy),                              // move by a fraction of the screen (arrow keys)
