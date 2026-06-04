@@ -35,7 +35,8 @@ def _load_local_tts():
         raise RuntimeError(f"voice mod not found at {VOICE_MOD}")
     spec = importlib.util.spec_from_file_location("_enigma_voice_mod", VOICE_MOD)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    sys.modules[spec.name] = mod   # MUST register before exec, or voice.py's @dataclass fails
+    spec.loader.exec_module(mod)   # (dataclasses resolves types via sys.modules[cls.__module__])
     return mod.LocalTTS
 
 
