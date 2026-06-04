@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { buildProceduralRig } from "./procedural.js?v=18";
+import { buildProceduralRig } from "./procedural.js?v=19";
 import { buildSpringBones } from "./spring.js?v=8";
 import { buildFacial } from "./facial.js?v=1";
 
@@ -128,6 +128,9 @@ const _box = new THREE.Box3();
 const rig = new THREE.Group(); scene.add(rig);
 
 let proc = null, spring = null, facial = null, BONE_LIMITS = {};
+let boneHelper = null;                          // SkeletonHelper overlay — inspect the rig (every bone, named or not)
+const BONES_KEY = "enigmaAvatar.showBones";
+let bonesShown = (() => { try { return localStorage.getItem(BONES_KEY) === "1"; } catch { return false; } })();
 fetch("./bone_limits.json").then((r) => r.json()).then((j) => (BONE_LIMITS = j)).catch(() => {});
 
 let model = null, mixer = null, vrm = null;
@@ -186,6 +189,7 @@ function playAction(action, { loop = true, fade = 0.3, onDone = null } = {}) {
 
 function disposeModel() {
   if (!model) return;
+  if (boneHelper) { scene.remove(boneHelper); boneHelper.geometry?.dispose?.(); boneHelper.material?.dispose?.(); boneHelper = null; }
   rig.remove(model);
   if (vrm) VRMUtils.deepDispose?.(vrm.scene);
   model.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
@@ -240,6 +244,25 @@ function onModelLoaded(asset) {
   applyColors();                                  // re-apply saved per-material color tints
   applyHue();                                     // re-apply saved per-material hue shifts
   hitMask = null; computeFootprint();             // prime the grab silhouette immediately (no fallback flash)
+  updateBoneHelper();                             // (re)build the skeleton overlay if it's toggled on
+}
+// --- skeleton overlay (inspect the rig: see EVERY bone, role-matched or not) ----
+function updateBoneHelper() {
+  if (boneHelper) { scene.remove(boneHelper); boneHelper.geometry?.dispose?.(); boneHelper.material?.dispose?.(); boneHelper = null; }
+  if (!bonesShown || !model) return;
+  const h = new THREE.SkeletonHelper(model);
+  if (!h.bones || !h.bones.length) { h.dispose?.(); return; }   // static mesh — no bones to draw
+  h.material.depthTest = false; h.material.transparent = true; h.material.opacity = 0.92;   // draw OVER the mesh
+  h.renderOrder = 999;
+  boneHelper = h; scene.add(h);
+  console.log("[avatar] skeleton shown:", h.bones.length, "bones");
+}
+function showSkeleton(on) {
+  bonesShown = on == null ? !bonesShown : !!on;
+  try { localStorage.setItem(BONES_KEY, bonesShown ? "1" : "0"); } catch {}
+  updateBoneHelper();
+  setStatus("skeleton " + (bonesShown ? "on" : "off"));
+  return bonesShown;
 }
 function loadModel(url, label) {
   curKey = url;
@@ -612,6 +635,8 @@ const EnigmaAvatar = {
   attachments: () => attachObjs.map((a) => ({ id: a.id, category: a.category, url: a.url, bone: a.bone, attachedTo: a.attachedTo, pos: a.pos, rot: a.rot, scale: a.scale })),
   tuneAttachment: (id, opts) => tuneAttachment(id, opts),                 // live placement: {bone,pos:[x,y,z],rot:[deg],scale}
   bones: () => { const out = []; model?.traverse((o) => { if (o.isBone) out.push(o.name); }); return out; },   // names to target
+  showSkeleton: (on) => showSkeleton(on),                                 // overlay the rig to inspect bones; persists
+  bonesShown: () => bonesShown,
   materials: () => [...modelMaterials().keys()],                          // recolorable parts (hair, body, eyes…)
   recolor: (name, hex) => recolor(name, hex),                            // tint a part; saved per avatar
   hueShift: (name, deg) => hueShift(name, deg),                          // rotate a part's hue (keeps detail); saved
@@ -632,6 +657,8 @@ function handleCommand(c) {
   else if (c.action === "tuneAttachment" && c.id) EnigmaAvatar.tuneAttachment(c.id, c);
   else if (c.action === "springTune") { const { action, ...p } = c; EnigmaAvatar.springTune(p); }   // live hair tuning (saved)
   else if (c.action === "facialTune") { const { action, ...p } = c; EnigmaAvatar.facialTune(p); }
+  else if (c.action === "tune") { const { action, ...p } = c; EnigmaAvatar.tune(p); }   // procedural idle feel (drift/armSwing/sway/twist…)
+  else if (c.action === "showBones") EnigmaAvatar.showSkeleton(c.on ?? c.value);         // skeleton overlay on/off (no arg → toggle)
   else if (c.action === "recolor" && c.name) EnigmaAvatar.recolor(c.name, c.color || c.hex);   // tint a material
   else if (c.action === "hue" && c.name) EnigmaAvatar.hueShift(c.name, c.deg ?? c.value ?? 0);  // rotate a material's hue
 }
@@ -810,6 +837,7 @@ function buildSettings() {
   body.appendChild(sCheck("Idle behavior (random emotes)", idleBehaviorOn, (v) => (idleBehaviorOn = v)));
   body.appendChild(sCheck("Face (blink / lip-sync)", facialOn, (v) => (facialOn = v)));
   body.appendChild(sCheck("Lock in place", locked, (v) => (locked = v)));
+  body.appendChild(sCheck("Show skeleton (inspect bones)", bonesShown, (v) => showSkeleton(v)));
   const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
   body.appendChild(sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v)));
 
@@ -926,6 +954,7 @@ addEventListener("pointerup", (e) => {
 });
 addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "h") document.getElementById("ui")?.classList.toggle("hidden");
+  else if (e.key.toLowerCase() === "b") showSkeleton();          // toggle the skeleton overlay
   else if (e.key === "+" || e.key === "=") resizeBy(1.1);
   else if (e.key === "-" || e.key === "_") resizeBy(1 / 1.1);
   else if (e.key === "0") applySize(DEFAULT_SIZE);               // reset — same value as the menu's Size → Reset

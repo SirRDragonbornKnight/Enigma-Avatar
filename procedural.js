@@ -1,7 +1,9 @@
 // Procedural skeletal animator — moves a rigged model's OWN bones when it ships
 // with no animation clips (e.g. Sketchfab rips). Matches bones to humanoid roles
-// by name, then drives a breathing idle + a walk cycle (arms & legs swing in
-// opposite phase), clamped by the anatomical limits in bone_limits.json.
+// by name, then drives a LAYERED, DESYNCHRONISED idle — every bone reads its own
+// smooth-noise phase (breath, weight-shift, torso turn, independent arm/hand/leg
+// drift) so she reads as alive instead of a rigid block — clamped by the
+// anatomical limits in bone_limits.json. `params.drift` is the master amount.
 //
 // It can't be mocap-realistic, but it reads as "alive + walking" on any rig with
 // recognisable bone names. Amplitudes/cadence are tunable live via
@@ -61,11 +63,25 @@ export function buildProceduralRig(model, boneLimits = {}) {
   };
 
   const params = {
-    breathe: 0.075,    // chest/spine rise — breathing (upper body only, so feet stay planted)
-    look: 0.18,        // head turning to look around
+    breathe: 0.07,     // chest/spine rise — breathing depth
+    breatheRate: 1.4,  // breathing cadence
+    look: 0.16,        // idle head-glance amplitude
     armRest: 1.15,     // drop the arms out of the bind T-pose (radians); 0 = leave as-is
-    elbow: 0.45,       // slight forward elbow bend so the arms aren't ramrod-straight
+    elbow: 0.45,       // elbow bend on ROLL (anatomically clamped small on real rigs ~±5°)
+    elbowFlex: 0.10,   // relaxed forward elbow flex on PITCH (has room) so arms aren't ramrod-straight
     swingAxis: "x",
+    // --- richer idle: per-bone DESYNCED motion so bones move individually, not as
+    // a rigid block. `drift` is the master amount — tune({drift:0}) = old minimal
+    // idle, tune({drift:1.6}) = livelier. Everything below scales with it. ---
+    drift: 1.0,
+    armSwing: 0.12,    // upper-arm pendulum (independent per side)
+    armOut: 0.05,      // arm abduction variance
+    elbowMove: 0.05,   // elbow flex breathing
+    wrist: 0.06,       // hand/wrist micro-motion
+    shoulder: 0.04,    // shoulder settle/rise
+    twist: 0.035,      // gentle torso turn (yaw)
+    sway: 0.06,        // slow lateral weight-shift
+    legSway: 0.02,     // tiny thigh drift (she floats; kept from reading as walking)
   };
 
   let t = 0, ph = 0, blend = 0, expr = "", exprT = 0, exprDur = 2.5, _additive = false, lookX = 0, lookY = 0, lookW = 0;
@@ -119,25 +135,49 @@ export function buildProceduralRig(model, boneLimits = {}) {
       return;
     }
 
-    // idle — feet stay PLANTED: motion lives in the upper body + head, never the
-    // hips/legs, so she breathes and glances around instead of sliding side to side.
-    const breath = Math.sin(t * 1.5) * br;
-    pose("chest", breath + exSpine * 0.5, 0, 0);
-    pose("spine", breath * 0.7 + exSpine, 0, 0);
-    // head/neck track a look target (the cursor) when set, blended over the idle glance.
-    const idleYaw = Math.sin(t * 0.55) * lk, idlePitch = Math.sin(t * 0.9) * 0.05;
-    pose("neck", -breath * 0.5 + exHeadP * 0.3 + lookY * lookW * 0.35, lookX * lookW * 0.35, 0);
-    pose("head", idlePitch * (1 - lookW) + lookY * lookW + exHeadP, idleYaw * (1 - lookW) + lookX * lookW + exHeadY, 0);
-    pose("hips", exHipP, exHipY, 0);                       // hips rest in idle → legs & feet planted
+    // idle — layered, DESYNCHRONISED per-bone motion so she moves individually
+    // instead of as a rigid block. Each bone reads its own smooth-noise phase; a
+    // slow weight-shift + torso turn keep her from looking like a statue. Feet
+    // don't translate (rotation only). `drift` (D) scales all the secondary motion.
+    const D = params.drift;
+    const nz = (seed, sp = 1) =>                            // smooth organic noise ~[-1,1] (layered incommensurate sines)
+      Math.sin(t * 0.53 * sp + seed) * 0.55 + Math.sin(t * 0.91 * sp + seed * 1.7 + 1.3) * 0.30 + Math.sin(t * 1.73 * sp + seed * 2.3 + 2.1) * 0.15;
+    const breath = Math.sin(t * params.breatheRate);
+    const sway = nz(10.0, 0.32) * params.sway * D;         // slow lateral weight shift
+    const turn = nz(11.0, 0.45) * params.twist * D;        // gentle torso turn (yaw)
 
-    // arms: relaxed at the sides (dropped from the T-pose) + slight elbow bend + gentle sway
-    const ar = params.armRest, al = Math.sin(t * 0.8) * 0.06;
-    pose("left_arm", -ar + al + exArm, 0, 0);              // pitch DOWN out of the T-pose (this rig lowers on local X)
-    pose("right_arm", -ar - al - exArm, 0, 0);
-    pose("left_forearm", 0, 0, -params.elbow);             // bend elbows FORWARD (this rig: roll axis, mirrored L/R)
-    pose("right_forearm", 0, 0, params.elbow);
-    pose("left_shin", -0.05, 0, 0);                        // tiny STATIC knee bend (constant → feet don't move)
-    pose("right_shin", -0.05, 0, 0);
+    // torso: breath rises chest→spine (phase-delayed); weight-shift rolls/turns it
+    pose("chest", breath * br + exSpine * 0.5, turn * 0.6, -sway * 0.5);
+    pose("spine", Math.sin(t * params.breatheRate - 0.5) * br * 0.7 + exSpine, turn, -sway * 0.7);
+    pose("hips", exHipP + nz(12.0) * 0.01 * D, exHipY + sway * 0.5, sway);
+
+    // head/neck: organic glance (noise, not one sine) + cursor look + counter-roll to the sway
+    const idleYaw = nz(20.0, 0.7) * lk, idlePitch = nz(21.0, 0.8) * 0.05;
+    pose("neck", -breath * br * 0.5 + exHeadP * 0.3 + lookY * lookW * 0.35 - turn * 0.4, lookX * lookW * 0.35 - turn * 0.5, sway * 0.4);
+    pose("head", idlePitch * (1 - lookW) + lookY * lookW + exHeadP, idleYaw * (1 - lookW) + lookX * lookW + exHeadY, sway * 0.6 * (1 - lookW));
+
+    // shoulders: settle/rise subtly with the breath + own drift
+    pose("left_shoulder",  nz(30.0) * params.shoulder * D, 0,  breath * br * 0.25 + nz(31.0) * 0.02 * D);
+    pose("right_shoulder", nz(32.0) * params.shoulder * D, 0, -breath * br * 0.25 + nz(33.0) * 0.02 * D);
+
+    // arms: independent pendulum sway (different noise per side) + slight abduction
+    const ar = params.armRest;
+    pose("left_arm",  -ar + nz(40.0, 0.8) * params.armSwing * D + exArm, nz(41.0) * params.armOut * D, nz(42.0) * 0.03 * D);
+    pose("right_arm", -ar + nz(43.0, 0.8) * params.armSwing * D - exArm, nz(44.0) * params.armOut * D, nz(45.0) * 0.03 * D);
+
+    // forearms: relaxed elbow flex on PITCH (roll is clamped tiny) that breathes a little
+    pose("left_forearm",  params.elbowFlex + nz(50.0) * params.elbowMove * D, 0, -params.elbow);
+    pose("right_forearm", params.elbowFlex + nz(51.0) * params.elbowMove * D, 0,  params.elbow);
+
+    // hands/wrists: tiny individual life
+    pose("left_hand",  nz(60.0) * params.wrist * D, nz(61.0) * params.wrist * 0.6 * D, 0);
+    pose("right_hand", nz(62.0) * params.wrist * D, nz(63.0) * params.wrist * 0.6 * D, 0);
+
+    // thighs + knees: micro-drift only (she floats; keep it from reading as walking)
+    pose("left_leg",  nz(70.0) * params.legSway * D, 0, 0);
+    pose("right_leg", nz(71.0) * params.legSway * D, 0, 0);
+    pose("left_shin",  -0.05 + nz(72.0) * 0.015 * D, 0, 0);
+    pose("right_shin", -0.05 + nz(73.0) * 0.015 * D, 0, 0);
   }
 
   return {

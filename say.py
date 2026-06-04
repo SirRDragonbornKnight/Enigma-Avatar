@@ -27,6 +27,10 @@ MODELS = {
     "glados": "./models/glados/scene.gltf", "3": "./models/glados/scene.gltf",
     "mal0": "./models/mal0_scp-1471/mal0_scp-1471.glb", "spyro": "./models/spyro/scene.gltf",
     "grace": "./models/grace_howard/grace_howard.glb", "fexa": "./models/fexa_-_fnaf__cryptiacurves/fexa_-_fnaf__cryptiacurves.glb",
+    "lolbit": "./models/fnaf_help_wanted__lolbit/fnaf_help_wanted__lolbit.glb",
+    "chica": "./models/love-taste-toy-chica/love-taste-toy-chica.glb",
+    "mangle": "./models/glamrock_mangleupdated/glamrock_mangleupdated.glb",
+    "51dc": "./models/51dc47334dee42b9bb8e53ee07aa8006/51dc47334dee42b9bb8e53ee07aa8006.glb",
 }
 
 
@@ -54,6 +58,13 @@ def _parse(argv: list[str]) -> dict | None:
         return {"action": "detach", "id": argv[1] if len(argv) > 1 else None}
     if head == "recolor":                                # tint a material: `recolor hair #3366ff`
         return {"action": "recolor", "name": argv[1], "color": argv[2]}
+    if head == "drift":                                  # idle liveliness: 0=stiff, 1=default, 1.6=livelier
+        return {"action": "tune", "drift": float(argv[1])}
+    if head == "tune":                                   # tune any procedural idle param: `tune armSwing 0.2`
+        return {"action": "tune", argv[1]: float(argv[2])}
+    if head == "bones":                                  # show/hide the skeleton overlay: `bones on|off`
+        on = argv[1].lower() not in ("off", "0", "false", "hide", "no") if len(argv) > 1 else True
+        return {"action": "showBones", "on": on}
     if head in ("express", "emote"):                     # explicit form: `express happy [dur]`
         c: dict = {"action": "express", "name": argv[1]}
         if len(argv) > 2:
