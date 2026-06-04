@@ -246,16 +246,20 @@ async function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}; } catch { profiles = {}; }
 }
 let _profileTimer = 0;
-function saveProfileSoon() {
-  const p = profileFor(curKey);     // snapshot the current model's live attachments (skip session-only blobs)
-  p.attachments = attachObjs.filter((a) => !String(a.url).startsWith("blob:"))
-    .map((a) => ({ id: a.id, category: a.category, url: a.url, bone: a.bone, pos: a.pos, rot: a.rot, scale: a.scale }));
+function saveProfileSoon() {        // debounced persist of the whole profiles object (no attachment snapshot)
   clearTimeout(_profileTimer);
   _profileTimer = setTimeout(() => {
     const data = JSON.stringify(profiles, null, 2);
     try { window.avatarIPC?.saveProfiles?.(data); } catch {}
     try { localStorage.setItem(PROFILE_KEY, data); } catch {}
   }, 400);
+}
+// Snapshot the CURRENT model's live attachments into its profile — called ONLY by
+// attach mutations, never by recolor/tune. So a recolor fired mid-restore (while
+// props are still async-loading) can't truncate the saved list (avatar audit #2).
+function commitAttachments() {
+  profileFor(curKey).attachments = attachObjs.filter((a) => !String(a.url).startsWith("blob:"))
+    .map((a) => ({ id: a.id, category: a.category, url: a.url, bone: a.bone, pos: a.pos, rot: a.rot, scale: a.scale }));
 }
 let attachObjs = [];   // live for the current model: [{id,category,url,bone,pos,rot,scale,obj,attachedTo}]
 let _attachSeq = 0;
@@ -278,7 +282,7 @@ function _placeAttachment(a) {
   a.obj.rotation.set(a.rot[0] * D2R, a.rot[1] * D2R, a.rot[2] * D2R);
   a.obj.scale.setScalar(a.scale);
 }
-function saveAttachments() { saveProfileSoon(); }   // attachments live in the per-avatar profile now
+function saveAttachments() { commitAttachments(); saveProfileSoon(); }   // snapshot + persist
 function attachMesh(url, opts = {}) {
   const category = opts.category || "prop";
   const defBone = category === "furniture" ? "" : category === "clothes" ? "back" : "righthand";
@@ -292,6 +296,19 @@ function attachMesh(url, opts = {}) {
     a.obj.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     (bone || rig).add(a.obj);
     _placeAttachment(a);
+    // Auto-size a FRESH prop to a sane fraction of the avatar — a separate mesh has
+    // its own units, so scale:1 can render giant/tiny (avatar audit #1). Avatar
+    // height uses BASE_H×size (skinned-mesh bboxes are unreliable); prop uses its
+    // own bbox. Skipped when a scale was given or when restoring a saved one.
+    if (opts.scale == null && !opts._restore && model) {
+      a.obj.updateWorldMatrix(true, true);
+      const pb = new THREE.Box3().setFromObject(a.obj);
+      const pMax = Math.max(pb.max.x - pb.min.x, pb.max.y - pb.min.y, pb.max.z - pb.min.z) || 1;
+      const aH = (BASE_H * (rig.scale.x || 1)) || 1;
+      const frac = category === "furniture" ? 0.9 : category === "clothes" ? 1.0 : 0.45;
+      const s = (aH * frac) / pMax;
+      if (isFinite(s) && s > 0) { a.scale = +s.toFixed(4); _placeAttachment(a); }
+    }
     attachObjs.push(a);
     if (!opts._restore) saveAttachments();
     console.log("[avatar] attached", baseName(url), "→", a.attachedTo);
