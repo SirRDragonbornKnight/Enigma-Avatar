@@ -227,6 +227,7 @@ function onModelLoaded(asset) {
   if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial);     // per-avatar jaw/face tuning
   reapplyAttachments();                           // re-attach saved props/accessories for this model
   applyColors();                                  // re-apply saved per-material color tints
+  applyHue();                                     // re-apply saved per-material hue shifts
   hitMask = null; computeFootprint();             // prime the grab silhouette immediately (no fallback flash)
 }
 function loadModel(url, label) {
@@ -384,6 +385,28 @@ function recolor(name, hex) {
   return n;
 }
 function applyColors() { const c = profileFor(curKey).colors; if (c) for (const k in c) _setColor(k, c[k]); }
+// Hue-shift a material's final color IN-SHADER (rotates hue, keeps the texture's detail)
+// — for parts a flat tint can't reach. Live via a uniform; saved per avatar.
+function _hueMaterial(m, deg) {
+  const rad = ((((deg || 0) % 360) + 360) % 360) * Math.PI / 180;
+  if (m.userData._hueU) { m.userData._hueU.value = rad; return; }   // already patched → just update the uniform
+  const u = { value: rad };
+  m.userData._hueU = u;
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uHue = u;
+    shader.fragmentShader = "uniform float uHue;\nvec3 _hueRot(vec3 c){float s=sin(uHue),k=cos(uHue);return clamp(mat3(0.299+0.701*k+0.168*s,0.587-0.587*k+0.330*s,0.114-0.114*k-0.497*s, 0.299-0.299*k-0.328*s,0.587+0.413*k+0.035*s,0.114-0.114*k+0.292*s, 0.299-0.300*k+1.250*s,0.587-0.588*k-1.050*s,0.114+0.886*k-0.203*s)*c,0.0,1.0);}\n"
+      + shader.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\n  diffuseColor.rgb = _hueRot(diffuseColor.rgb);");
+  };
+  m.needsUpdate = true;   // force recompile so onBeforeCompile injects the patch
+}
+function _setHue(name, deg) {
+  let n = 0;
+  model?.traverse((o) => { if (!o.isMesh || !o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m && m.name === name && m.color) { _hueMaterial(m, deg); n++; } });
+  return n;
+}
+function hueShift(name, deg) { const n = _setHue(name, deg); const p = profileFor(curKey); p.hue = p.hue || {}; p.hue[name] = deg; saveProfileSoon(); return n; }
+function applyHue() { const h = profileFor(curKey).hue; if (h) for (const k in h) _setHue(k, h[k]); }
 
 // --- hit-test via the on-screen PIXEL SILHOUETTE (what actually renders) -------
 // Render the model to a tiny offscreen buffer ~6×/s and keep its alpha as a
@@ -577,6 +600,7 @@ const EnigmaAvatar = {
   bones: () => { const out = []; model?.traverse((o) => { if (o.isBone) out.push(o.name); }); return out; },   // names to target
   materials: () => [...modelMaterials().keys()],                          // recolorable parts (hair, body, eyes…)
   recolor: (name, hex) => recolor(name, hex),                            // tint a part; saved per avatar
+  hueShift: (name, deg) => hueShift(name, deg),                          // rotate a part's hue (keeps detail); saved
   connect(url = "ws://127.0.0.1:8765") { try { const ws = new WebSocket(url); ws.onopen = () => setStatus("AI bus connected"); ws.onmessage = (e) => { try { handleCommand(JSON.parse(e.data)); } catch {} }; ws.onclose = () => setTimeout(() => this.connect(url), 4000); ws.onerror = () => ws.close(); } catch (err) { console.error(err); } },
 };
 function handleCommand(c) {
@@ -595,6 +619,7 @@ function handleCommand(c) {
   else if (c.action === "springTune") { const { action, ...p } = c; EnigmaAvatar.springTune(p); }   // live hair tuning (saved)
   else if (c.action === "facialTune") { const { action, ...p } = c; EnigmaAvatar.facialTune(p); }
   else if (c.action === "recolor" && c.name) EnigmaAvatar.recolor(c.name, c.color || c.hex);   // tint a material
+  else if (c.action === "hue" && c.name) EnigmaAvatar.hueShift(c.name, c.deg ?? c.value ?? 0);  // rotate a material's hue
 }
 window.EnigmaAvatar = EnigmaAvatar;
 window.__AV = { THREE, scene, camera, rig, getModel: () => model };
@@ -752,11 +777,15 @@ function buildSettings() {
     const cr = document.createElement("div"); cr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(cr);
     const ch = document.createElement("div"); ch.textContent = "Colors (tint per part)"; ch.style.cssText = "opacity:.6;font-size:11px;margin-bottom:2px;"; body.appendChild(ch);
     const saved = profileFor(curKey).colors || {};
+    const savedHue = profileFor(curKey).hue || {};
     for (const [name, m] of mats) {
       const c = document.createElement("input"); c.type = "color";
       c.value = saved[name] || ("#" + (m.color ? m.color.getHexString(THREE.SRGBColorSpace) : "ffffff"));
       c.oninput = (e) => { e.stopPropagation(); recolor(name, c.value); };
-      body.appendChild(sRow(name, c));
+      const h = document.createElement("input"); h.type = "range"; h.min = "0"; h.max = "360"; h.step = "5"; h.value = String(savedHue[name] || 0); h.title = "hue rotate"; h.style.flex = "1";
+      h.oninput = (e) => { e.stopPropagation(); hueShift(name, parseFloat(h.value)); };
+      const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:1;"; wrap.append(c, h);
+      body.appendChild(sRow(name, wrap));
     }
   }
 
