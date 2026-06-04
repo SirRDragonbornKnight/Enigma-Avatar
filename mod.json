@@ -1,16 +1,16 @@
 {
-    "name": "Avatar Mod",
+    "name": "Enigma Avatar",
     "id": "avatar",
-    "version": "0.0.0",
-    "status": "stub",
-    "description": "STUB - no working implementation. See README.md. Anatomical bone-limits data survives at mods/avatar/bone_limits.json.",
+    "version": "0.1.0",
+    "status": "active",
+    "description": "On-screen desktop companion: a floating, click-through 3D avatar (glTF/GLB/VRM/FBX) with procedural idle, spring-bone hair/tail physics, facial blink + lip-sync, and emotes. Driven via the avatar_express MCP tool over a local bus.",
     "author": "Enigma AI Engine",
     "commands": [],
     "ui": {
         "layout": "vertical",
         "widgets": []
     },
-    "prompt": "Avatar mod is currently a stub. No commands available. See mods/avatar/README.md for revival plan.",
+    "prompt": "Enigma Avatar is the on-screen desktop companion — a floating 3D character on the user's desktop. It is a VISUAL layer with no [CMD] commands; you drive it with the `avatar_express` MCP tool to give body language as you reply. Emotions: happy, talk, wag, nod, shake, sad, alert (e.g. 'talk' while explaining, 'wag' when pleased, 'nod'/'shake' for yes/no, 'alert' to get attention). It lip-syncs and uses talking body language when Modkit speaks (Kokoro TTS). Safe no-op if the overlay/bus isn't running.",
     "dependencies": [],
     "settings": {}
 }

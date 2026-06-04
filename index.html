@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Enigma Avatar</title>
+<style>
+  /* Transparent everything — in Electron the OS window is transparent too, so
+     the avatar appears to stand directly on your desktop. In a browser you'll
+     just see it over the page background. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  #ui {
+    position: fixed; left: 10px; top: 10px; z-index: 10;
+    font: 12px/1.4 system-ui, sans-serif; color: #eee;
+    background: rgba(0,0,0,.55); padding: 8px 10px; border-radius: 8px;
+    max-width: 320px; user-select: none;
+  }
+  #ui b { color: #8fd3ff; }
+  #ui input[type=file] { color:#ccc; font-size:11px; margin-top:6px; width:100%; }
+  #status { margin-top: 6px; color: #ffd479; white-space: pre-wrap; }
+  #ui.hidden { display: none; }
+  a { color:#8fd3ff; }
+</style>
+<!-- Three.js + addons + VRM, vendored LOCALLY (node_modules) — NO CDN, so the
+     overlay works fully offline and never phones home (privacy: it's a black box).
+     Run `npm install` once (Start-Avatar.ps1 does this) to populate node_modules. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./node_modules/three/build/three.module.js",
+    "three/addons/": "./node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="ui" class="hidden">
+    <div><b>Enigma Avatar</b> — desktop companion</div>
+    <div>Drag a <code>.glb</code>/<code>.gltf</code>/<code>.vrm</code>/<code>.fbx</code> here, or:</div>
+    <input id="file" type="file" accept=".glb,.gltf,.vrm,.fbx" />
+    <div id="status">starting…</div>
+    <div style="margin-top:6px;opacity:.7"><b>Right-click</b> for menu (models · express · size · <b>Add model…</b>) · scroll or <b>+/-</b> resize (<b>0</b> resets) · <b>H</b> hides.</div>
+  </div>
+  <script type="module" src="./avatar.js?v=20"></script>
+</body>
+</html>
