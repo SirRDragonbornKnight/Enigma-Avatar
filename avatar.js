@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { buildProceduralRig } from "./procedural.js?v=17";
+import { buildProceduralRig } from "./procedural.js?v=18";
 import { buildSpringBones } from "./spring.js?v=8";
 import { buildFacial } from "./facial.js?v=1";
 
@@ -145,6 +145,12 @@ const sizeByModel = (() => { try { return JSON.parse(localStorage.getItem(SIZE_K
 let curKey = DEFAULT_MODEL;
 let sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE;   // reopen at the last-used size for this model
 let springOn = true, idleOn = true, facialOn = true, locked = false, menuShown = false, settingsShown = false;  // menu/settings state
+let lookOn = true, idleBehaviorOn = true;                       // companion behaviors: track cursor + occasional emotes
+const LOOK = { gainX: 1.4, gainY: 1.0, flipX: 1, flipY: -1, maxX: 0.6, maxY: 0.35 };  // cursor-look feel (flip signs per rig)
+let _lookX = 0, _lookY = 0, _lookW = 0, _cursorIdle = 99;       // smoothed look state
+let _idleClock = 0, _idleNext = 9, _downX = -999, _downY = 0;   // idle-emote timer + click/pet detection
+const _clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
+const IDLE_EMOTES = ["nod", "happy", "alert", "wag"];
 
 function applySize(s) {
   sizeScale = Math.max(0.02, s || 0.02);   // no upper cap (removed min/max); tiny floor so multiplicative resize can recover
@@ -445,12 +451,39 @@ function computeOver() {
   if (over !== cursor.over) { cursor.over = over; syncInteractive(); }
 }
 
+// Head/neck track the cursor (gentle), decaying to idle when the cursor is still/away.
+function updateLook(dt) {
+  if (!proc || !proc.setLook) return;
+  _cursorIdle += dt;
+  let tx = 0, ty = 0, tw = 0;
+  if (lookOn && _cursorIdle < 2.5 && cursor.x >= 0) {
+    const [hx, hy] = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.85);   // ≈ head position, in screen px
+    tx = _clampN(((cursor.x - hx) / innerWidth) * LOOK.gainX * LOOK.flipX, -LOOK.maxX, LOOK.maxX);
+    ty = _clampN(((cursor.y - hy) / innerHeight) * LOOK.gainY * LOOK.flipY, -LOOK.maxY, LOOK.maxY);
+    tw = 1;
+  }
+  const k = Math.min(1, dt * 5);
+  _lookX += (tx - _lookX) * k; _lookY += (ty - _lookY) * k; _lookW += (tw - _lookW) * k;
+  proc.setLook(_lookX, _lookY, _lookW);
+}
+// Occasional gentle emote when left alone (not held / hovered / speaking / menu open).
+function maybeIdleBehavior(dt) {
+  if (!proc || !idleBehaviorOn || held || cursor.over || menuShown || settingsShown || _rafSpeak) { _idleClock = 0; return; }
+  _idleClock += dt;
+  if (_idleClock >= _idleNext) {
+    _idleClock = 0; _idleNext = 8 + Math.random() * 12;
+    EnigmaAvatar.express(IDLE_EMOTES[(Math.random() * IDLE_EMOTES.length) | 0], 1.8);
+  }
+}
+
 // --- float + idle (NO gravity, NO walking) ----------------------------------
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
   if (held) pos.copy(toWorld(cursor.x, cursor.y).sub(grab));   // drag: follow cursor, then stay
   rig.position.set(pos.x, pos.y, 0);                            // float in place — no rigid bob; motion comes from bones + springs
+  updateLook(dt);                                               // head tracks the cursor
+  maybeIdleBehavior(dt);                                        // occasional gentle emote when left alone
   if (mixer) { mixer.update(dt); if (proc) proc.update(dt, false, { additive: true }); }  // clip idle + additive emotes
   else if (proc && idleOn) proc.update(dt, false);              // procedural idle + emotes (no walk)
   if (facial && facialOn) facial.update(dt);                    // blink + lip-sync (jaw / morphs / VRM weights)
@@ -528,9 +561,10 @@ const EnigmaAvatar = {
   load(url) { loadModel(url, url); },
   matched: () => (proc ? proc.matched : []),
   tune: (p) => { if (proc) proc.setParams(p); return proc ? proc.params : null; },
-  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, locked, menu: menuShown } }),
+  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, menu: menuShown } }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { if (proc) proc.setExpression(type, dur); },   // AI-driven emote (talk/happy/wag/…)
+  lookTune: (p) => Object.assign(LOOK, p),                               // tune/flip cursor-look (gainX/Y, flipX/Y, maxX/Y)
   facialTune: (p) => facialTune(p),                                      // saved per-avatar (jaw axis/open)
   mouth: (a) => { if (facial) facial.setMouth(a); },                      // 0..1 jaw/mouth open
   say: (url, opts) => speak(url, opts),                                   // play speech audio + lip-sync
@@ -729,6 +763,8 @@ function buildSettings() {
   const hr = document.createElement("div"); hr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(hr);
   body.appendChild(sCheck("Spring physics", springOn, (v) => (springOn = v)));
   body.appendChild(sCheck("Idle motion", idleOn, (v) => (idleOn = v)));
+  body.appendChild(sCheck("Look at cursor", lookOn, (v) => (lookOn = v)));
+  body.appendChild(sCheck("Idle behavior (random emotes)", idleBehaviorOn, (v) => (idleBehaviorOn = v)));
   body.appendChild(sCheck("Face (blink / lip-sync)", facialOn, (v) => (facialOn = v)));
   body.appendChild(sCheck("Lock in place", locked, (v) => (locked = v)));
   const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
@@ -793,9 +829,15 @@ addEventListener("pointerdown", (e) => {
   hideMenu(); hideSettings();                                   // any outside click dismisses popups
   if (wasOpen) return;                                          // the dismiss click shouldn't also grab
   computeOver();
-  if (cursor.over && !locked) { held = true; grab.copy(toWorld(cursor.x, cursor.y).sub(pos)); }
+  if (cursor.over && !locked) { held = true; grab.copy(toWorld(cursor.x, cursor.y).sub(pos)); _downX = cursor.x; _downY = cursor.y; } else { _downX = -999; }
 });
-addEventListener("pointerup", () => { held = false; fpClock = 1; });   // re-scan the silhouette at the new spot
+addEventListener("pointerup", (e) => {
+  // a click/pet (pressed on the avatar, released with minimal movement) → happy reaction
+  if (held && _downX > -100 && Math.abs(e.clientX - _downX) < 6 && Math.abs(e.clientY - _downY) < 6) {
+    EnigmaAvatar.express(Math.random() < 0.5 ? "happy" : "wag", 1.6);
+  }
+  held = false; fpClock = 1; _downX = -999;   // re-scan the silhouette at the new spot
+});
 addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "h") document.getElementById("ui")?.classList.toggle("hidden");
   else if (e.key === "+" || e.key === "=") resizeBy(1.1);

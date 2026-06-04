@@ -68,7 +68,7 @@ export function buildProceduralRig(model, boneLimits = {}) {
     swingAxis: "x",
   };
 
-  let t = 0, ph = 0, blend = 0, expr = "", exprT = 0, exprDur = 2.5, _additive = false;
+  let t = 0, ph = 0, blend = 0, expr = "", exprT = 0, exprDur = 2.5, _additive = false, lookX = 0, lookY = 0, lookW = 0;
   const _e = new THREE.Euler(), _q = new THREE.Quaternion();
   // Each frame a controlled bone is set from a base pose, then offset — never
   // accumulates. Base is the bone's REST pose normally; in additive mode it's the
@@ -124,8 +124,10 @@ export function buildProceduralRig(model, boneLimits = {}) {
     const breath = Math.sin(t * 1.5) * br;
     pose("chest", breath + exSpine * 0.5, 0, 0);
     pose("spine", breath * 0.7 + exSpine, 0, 0);
-    pose("neck", -breath * 0.5 + exHeadP * 0.3, 0, 0);
-    pose("head", Math.sin(t * 0.9) * 0.05 + exHeadP, Math.sin(t * 0.55) * lk + exHeadY, 0);
+    // head/neck track a look target (the cursor) when set, blended over the idle glance.
+    const idleYaw = Math.sin(t * 0.55) * lk, idlePitch = Math.sin(t * 0.9) * 0.05;
+    pose("neck", -breath * 0.5 + exHeadP * 0.3 + lookY * lookW * 0.35, lookX * lookW * 0.35, 0);
+    pose("head", idlePitch * (1 - lookW) + lookY * lookW + exHeadP, idleYaw * (1 - lookW) + lookX * lookW + exHeadY, 0);
     pose("hips", exHipP, exHipY, 0);                       // hips rest in idle → legs & feet planted
 
     // arms: relaxed at the sides (dropped from the T-pose) + slight elbow bend + gentle sway
@@ -144,5 +146,6 @@ export function buildProceduralRig(model, boneLimits = {}) {
     params,
     setParams: (p) => Object.assign(params, p),
     setExpression: (type, dur = 2.5) => { expr = type; exprT = 0; exprDur = dur; },
+    setLook: (x, y, w) => { lookX = x || 0; lookY = y || 0; lookW = w == null ? 1 : Math.max(0, Math.min(1, w)); },
   };
 }
