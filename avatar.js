@@ -217,30 +217,19 @@ function onModelLoaded(asset) {
 
   actions = {};
   const clips = asset.animations || [];
-  if (clips.length) {
-    mixer = new THREE.AnimationMixer(model);
-    for (const cl of clips) actions[cl.name] = mixer.clipAction(cl);
-    // Pick a SAFE idle. Many rips ship jumpscare/attack/pose clips and no idle —
-    // auto-playing clip[0] then loops a jumpscare (looks "broken"). Only auto-play
-    // a genuine idle; otherwise keep the clips callable on demand and let the
-    // (richer) procedural idle drive the body.
-    const BAD = /jump|scare|attack|death|die|hit|damage|spawn|slam|fall|hurt/i;
-    const names = Object.keys(actions);
-    let idleName = names.length === 1
-      ? (BAD.test(names[0]) ? null : names[0])                       // sole clip = the model's display anim
-      : (findClip(/idle.*loop|loop.*idle/i) || findClip(/idle|breath|relax|float|\bstand\b/i));
-    if (idleName && BAD.test(idleName)) idleName = null;
-    clipIdle = idleName ? actions[idleName] : null;
-    if (clipIdle) playAction(clipIdle, { loop: true });
-    console.log("[avatar] idle:", clipIdle ? idleName : "procedural (no safe idle clip)");
+  if (clips.length) {                             // keep the baked clips, but DON'T auto-play them — baked-anim
+    mixer = new THREE.AnimationMixer(model);       // models (mangle/lolbit/51dc) must act like the REST of the
+    for (const cl of clips) actions[cl.name] = mixer.clipAction(cl);   // models: driven by the procedural rig.
   }
-  // Always build the procedural rig — it drives the AI emotes (express). When a
-  // clip owns the idle, procedural runs in additive expression-only mode so emotes
-  // still layer on top instead of being a silent no-op (avatar audit #3).
+  clipIdle = null;                                // default idle = PROCEDURAL for EVERY model (uniform behaviour)
+  // The procedural rig drives idle + look-at + emotes + AI bone control the SAME
+  // way on all models, so a model never just loops its own canned animation. Baked
+  // clips stay callable on demand via play()/loop() — the AI can still trigger a
+  // model's own animation deliberately, but it never hijacks the default idle.
+  // This is the uniform substrate the AI drives on top of ("full body, like a car").
   proc = buildProceduralRig(model, BONE_LIMITS);
-  setStatus(clips.length
-    ? `loaded ✓ ${clips.length} clip(s) + emotes: ${clipNames().join(", ")}`
-    : (proc.matched.length ? `loaded ✓ procedural idle on ${proc.matched.length} bones` : "loaded ✓ (static — no recognised bones)"));
+  console.log("[avatar] procedural roles:", proc.matched.length, proc.matched.length ? "→ " + proc.matched.join(", ") : "(none)");
+  setStatus(`loaded ✓ ${proc.matched.length ? "procedural idle on " + proc.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
   if (vrm) {
     spring = null;

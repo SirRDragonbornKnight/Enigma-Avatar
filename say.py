@@ -65,6 +65,10 @@ def _parse(argv: list[str]) -> dict | None:
     if head == "bones":                                  # show/hide the skeleton overlay: `bones on|off`
         on = argv[1].lower() not in ("off", "0", "false", "hide", "no") if len(argv) > 1 else True
         return {"action": "showBones", "on": on}
+    if head in ("play", "clip", "anim"):                 # play a model's baked clip ONCE (partial name ok): `play idle`
+        return {"action": "play", "name": argv[1]}
+    if head == "loop":                                   # loop a baked clip: `loop walk`
+        return {"action": "loop", "name": argv[1]}
     if head in ("express", "emote"):                     # explicit form: `express happy [dur]`
         c: dict = {"action": "express", "name": argv[1]}
         if len(argv) > 2:
