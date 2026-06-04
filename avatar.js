@@ -769,6 +769,49 @@ function buildSettings() {
   body.appendChild(sCheck("Lock in place", locked, (v) => (locked = v)));
   const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
   body.appendChild(sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v)));
+
+  // --- Fit attachment (props / clothes / furniture): place the selected item ---
+  if (attachObjs.length) {
+    const fr = document.createElement("div"); fr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(fr);
+    const fh = document.createElement("div"); fh.textContent = "Fit attachment"; fh.style.cssText = "opacity:.6;font-size:11px;margin-bottom:2px;"; body.appendChild(fh);
+    const sel = document.createElement("select");
+    for (const a of attachObjs) { const o = document.createElement("option"); o.value = a.id; o.textContent = `${a.category}: ${baseName(a.url)}`; sel.appendChild(o); }
+    body.appendChild(sRow("Item", sel));
+    const fitBox = document.createElement("div"); body.appendChild(fitBox);
+    const BTN = "padding:3px 8px;background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.15);border-radius:4px;cursor:pointer;font:12px system-ui;";
+    const BONES = ["righthand", "lefthand", "head", "neck", "back", "hips", "tail", "rightfoot", "leftfoot", ""];
+    const renderFit = () => {
+      fitBox.innerHTML = "";
+      const a = attachObjs.find((x) => x.id === sel.value); if (!a) return;
+      const bsel = document.createElement("select");
+      for (const b of BONES) { const o = document.createElement("option"); o.value = b; o.textContent = b || "(world / no bone)"; if (b === a.bone) o.selected = true; bsel.appendChild(o); }
+      bsel.onchange = (e) => { e.stopPropagation(); tuneAttachment(a.id, { bone: bsel.value }); };
+      fitBox.appendChild(sRow("Bone", bsel));
+      const scRow = document.createElement("div"); scRow.style.cssText = "display:flex;gap:5px;align-items:center;";
+      const scVal = document.createElement("span"); scVal.textContent = "×" + a.scale.toFixed(4); scVal.style.cssText = "flex:1;font-size:11px;opacity:.7;text-align:right;";
+      const scBtn = (lab, f) => { const b = document.createElement("button"); b.textContent = lab; b.style.cssText = BTN; b.onclick = (e) => { e.stopPropagation(); tuneAttachment(a.id, { scale: +(a.scale * f).toFixed(5) }); scVal.textContent = "×" + a.scale.toFixed(4); }; return b; };
+      scRow.append(scVal, scBtn("−", 1 / 1.2), scBtn("+", 1.2)); fitBox.appendChild(sRow("Scale", scRow));
+      ["x", "y", "z"].forEach((axis, i) => {
+        const r = document.createElement("input"); r.type = "range"; r.min = "-180"; r.max = "180"; r.step = "1"; r.value = String(a.rot[i] || 0); r.style.flex = "1";
+        r.oninput = (e) => { e.stopPropagation(); const rot = a.rot.slice(); rot[i] = parseFloat(r.value); tuneAttachment(a.id, { rot }); };
+        fitBox.appendChild(sRow("Rotate " + axis.toUpperCase(), r));
+      });
+      const nudge = document.createElement("div"); nudge.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;";
+      [["X−", 0, -1], ["X+", 0, 1], ["Y−", 1, -1], ["Y+", 1, 1], ["Z−", 2, -1], ["Z+", 2, 1]].forEach(([lab, ax, dir]) => {
+        const b = document.createElement("button"); b.textContent = lab; b.style.cssText = BTN + "flex:1;min-width:30px;";
+        b.onclick = (e) => {
+          e.stopPropagation();
+          const v = new THREE.Vector3(); a.obj?.parent?.getWorldScale(v);     // step ≈ 4% of avatar height, in bone-local units
+          const stepLocal = (0.04 * BASE_H * (rig.scale.x || 1)) / (((v.x + v.y + v.z) / 3) || 1);
+          const pos = a.pos.slice(); pos[ax] = +(pos[ax] + dir * stepLocal).toFixed(4); tuneAttachment(a.id, { pos });
+        };
+        nudge.appendChild(b);
+      });
+      fitBox.appendChild(sRow("Move", nudge));
+    };
+    sel.onchange = (e) => { e.stopPropagation(); renderFit(); };
+    renderFit();
+  }
 }
 function showSettings() {
   buildSettings();
