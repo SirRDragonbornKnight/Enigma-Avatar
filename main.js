@@ -141,6 +141,11 @@ function init() {
   globalShortcut.register("CommandOrControl+Alt+Q", () => app.quit());
   globalShortcut.register("CommandOrControl+Alt+=", () => win?.webContents.executeJavaScript("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
   globalShortcut.register("CommandOrControl+Alt+-", () => win?.webContents.executeJavaScript("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));
+  // glide across the screen (works even while click-through — global)
+  globalShortcut.register("CommandOrControl+Alt+Left", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(-0.33,0)"));
+  globalShortcut.register("CommandOrControl+Alt+Right", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0.33,0)"));
+  globalShortcut.register("CommandOrControl+Alt+Up", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0,0.2)"));
+  globalShortcut.register("CommandOrControl+Alt+Down", () => win?.webContents.executeJavaScript("EnigmaAvatar.nudge(0,-0.2)"));
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 }
 

@@ -136,6 +136,17 @@ let modelDims = { w: 1, h: 2 };               // scaled model bbox (for the hit 
 
 // --- float state + per-model size -------------------------------------------
 const pos = new THREE.Vector2(0, -1.5);       // avatar base position on the screen plane (floats here)
+const glideT = new THREE.Vector2(0, -1.5);    // smooth-move target (arrow keys / moveTo glide toward here)
+let gliding = false;
+function _clampScreen(v) {                     // keep the avatar's base on-screen (with a margin)
+  const mx = worldW / 2 - 0.6, my = worldH / 2 - 0.4;
+  v.x = Math.max(-mx, Math.min(mx, v.x)); v.y = Math.max(-my, Math.min(my, v.y)); return v;
+}
+function glideTo(px, py) { glideT.copy(_clampScreen(toWorld(px, py))); gliding = true; }
+function nudge(dxFrac, dyFrac) {               // move by a fraction of screen W/H (x right+, y up+), smoothly
+  const b = gliding ? glideT : pos;
+  glideT.set(b.x + (dxFrac || 0) * worldW, b.y + (dyFrac || 0) * worldH); _clampScreen(glideT); gliding = true;
+}
 let held = false;
 const cursor = { x: -1, y: -1, over: false };
 const grab = new THREE.Vector2();
@@ -503,7 +514,8 @@ function maybeIdleBehavior(dt) {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
-  if (held) pos.copy(toWorld(cursor.x, cursor.y).sub(grab));   // drag: follow cursor, then stay
+  if (held) { pos.copy(toWorld(cursor.x, cursor.y).sub(grab)); gliding = false; }   // drag overrides any glide
+  else if (gliding) { pos.lerp(glideT, Math.min(1, dt * 4)); if (pos.distanceTo(glideT) < 0.02) { pos.copy(glideT); gliding = false; } }  // smooth glide to target
   rig.position.set(pos.x, pos.y, 0);                            // float in place — no rigid bob; motion comes from bones + springs
   updateLook(dt);                                               // head tracks the cursor
   maybeIdleBehavior(dt);                                        // occasional gentle emote when left alone
@@ -579,7 +591,9 @@ const EnigmaAvatar = {
   actions: () => clipNames(),
   play(name, opts = {}) { return playAction(actions[name] || actions[findClip(new RegExp(name, "i"))], { loop: false, ...opts, onDone: () => playAction(clipIdle, { loop: true }) }); },
   loopClip(name) { return playAction(actions[name] || actions[findClip(new RegExp(name, "i"))], { loop: true }); },
-  moveTo(px, py) { pos.copy(toWorld(px, py)); },                 // place it (floats there, stays)
+  moveTo(px, py) { glideTo(px, py); },                           // smooth-glide to screen px,py (stays there)
+  nudge: (dx, dy) => nudge(dx, dy),                              // move by a fraction of the screen (arrow keys)
+  glideTo: (px, py) => glideTo(px, py),
   setSize: (s) => applySize(s), size: () => sizeScale,
   load(url) { loadModel(url, url); },
   matched: () => (proc ? proc.matched : []),
@@ -915,6 +929,10 @@ addEventListener("keydown", (e) => {
   else if (e.key === "+" || e.key === "=") resizeBy(1.1);
   else if (e.key === "-" || e.key === "_") resizeBy(1 / 1.1);
   else if (e.key === "0") applySize(DEFAULT_SIZE);               // reset — same value as the menu's Size → Reset
+  else if (e.key === "ArrowLeft") nudge(-0.33, 0);              // glide across the screen (when focused; also Ctrl+Alt+arrows globally)
+  else if (e.key === "ArrowRight") nudge(0.33, 0);
+  else if (e.key === "ArrowUp") nudge(0, 0.2);
+  else if (e.key === "ArrowDown") nudge(0, -0.2);
   else if (MODELS[e.key]) loadModel(MODELS[e.key], MODELS[e.key]);
 });
 function loadFile(file) {                                       // single file (self-contained .glb/.vrm/.fbx)
