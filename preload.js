@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   getDisplays: () => ipcRenderer.invoke("avatar:getDisplays"),
   // Fire when the overlay hops monitors (hotkey/menu/layout change) so the menu re-ticks.
   onDisplayChanged: (cb) => ipcRenderer.on("avatar:displayChanged", (_e, info) => cb(info)),
+  // Fire after a monitor move so the renderer can recenter the avatar (keeps it on-screen).
+  onCenter: (cb) => ipcRenderer.on("avatar:center", () => cb()),
 });

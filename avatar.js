@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { buildProceduralRig } from "./procedural.js?v=21";
+import { buildProceduralRig } from "./procedural.js?v=24";
 import { buildSpringBones } from "./spring.js?v=8";
 import { buildFacial } from "./facial.js?v=1";
 
@@ -201,6 +201,14 @@ function applySize(s) {
   setStatus(`size ×${sizeScale.toFixed(2)}`);
 }
 const resizeBy = (m) => applySize(sizeScale * m);
+// Keep the avatar fitting the screen: a too-large saved size makes the head/feet clip
+// off the top/bottom — and on a SMALLER monitor that reads as "can't see the avatar".
+// Shrinks an over-tall avatar to a margin-safe height; never enlarges (respects smaller sizes).
+function fitToScreen() {
+  const h = (modelDims.h || BASE_H) * sizeScale;       // current world-space height
+  const maxH = worldH * 0.6;                           // leave head + feet margin (head clears camTop at pos.y -1.5)
+  if (h > maxH && isFinite(maxH) && h > 0) applySize(sizeScale * (maxH / h));
+}
 
 function clipNames() { return Object.keys(actions); }
 function findClip(re) { for (const n of Object.keys(actions)) if (re.test(n)) return n; return null; }
@@ -241,6 +249,7 @@ function onModelLoaded(asset) {
   modelDims = { w: _box.max.x - _box.min.x, h: _box.max.y - _box.min.y };
   sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE;        // remember size per model (persisted)
   rig.scale.setScalar(sizeScale);
+  fitToScreen();                                          // correct a too-large saved size so she isn't clipped off-screen
 
   actions = {};
   const clips = asset.animations || [];
@@ -739,6 +748,19 @@ function moveToDisplay(idx) {
   if (window.avatarIPC?.setDisplay) { window.avatarIPC.setDisplay(idx); curDisplayIdx = idx; setStatus("monitor → " + idx); }
 }
 window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; if (menuShown) rebuildMenu(); });
+// Recenter the avatar on the current monitor after a move — its position is in world
+// coords, so a hop to a different-sized screen can strand it at an edge / off-screen.
+// Snap it to centre-lower of the (now-resized) window so it's always immediately visible.
+function recenterAvatar() {
+  renderer.setSize(innerWidth, innerHeight);     // a monitor hop resizes the window, but the renderer's
+  frameCamera();                                 // 'resize' event can fire stale/late — force canvas+camera to match NOW
+  fitToScreen();                                 // shrink if a saved size is too big for THIS monitor (the head-clip bug)
+  pos.set(0, -1.5); _clampScreen(pos);           // WORLD coords (centre-x, standing) — resolution-independent
+  glideT.copy(pos); gliding = false; held = false;
+  fpClock = 1;                                   // re-scan the grab silhouette at the new spot
+  setStatus("centered on this monitor");
+}
+window.avatarIPC?.onCenter?.(() => recenterAvatar());
 refreshDisplays();
 
 // --- right-click menu (toggles + quick actions) -----------------------------

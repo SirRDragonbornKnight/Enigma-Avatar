@@ -46,6 +46,10 @@ function placeOnDisplay(i) {
   win.setBounds(b);
   console.error("[main] placeOnDisplay " + curDisplay + " requested=" + JSON.stringify(b) + " got=" + JSON.stringify(win.getBounds()));
   try { win.webContents.send("avatar:displayChanged", displayList()); } catch {}   // keep the renderer's monitor menu in sync
+  // Re-center the avatar on the new monitor. Its in-window position is stored in WORLD
+  // coords; on a different-sized monitor that can land it at an edge or fully OFF-SCREEN
+  // (the "can't see the avatar on other monitors" bug). Recenter once the resize settles.
+  setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.send("avatar:center"); } catch {} }, 180);
 }
 // The display list the renderer renders in its "Move to monitor" menu: sorted
 // left→right (how the screens physically sit) with a human label, but each entry
