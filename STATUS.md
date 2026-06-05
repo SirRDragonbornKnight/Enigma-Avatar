@@ -73,11 +73,11 @@ _All counts below are now ASSERTED by `tests/realmodels.test.js` (verified 2026-
 - **Lolbit** — 17: its arms are a 3-joint `Shoulder→Elbow→Wrist` chain with **no separate upper-arm bone**, so `left/right_arm` stay empty (Shoulder→`shoulder`, Elbow→`forearm`, Wrist→`hand`). **Mangle** — 15: no `hips` bone, chest is named `Spine1` (loses to `Spine` for the `spine` slot), and decorative `ShoulderPad` + a duplicated skeleton confuse the right side. Both are *override-able* (force the missing roles), but because it means mapping a role onto a joint it wasn't named for, the resulting arm-swing **feel needs a live look** — measure any candidate with `node tools/rig_report.mjs <model>` first.
 - **GLaDOS** — head/neck only (no body); her wires spring. Correct.
 - **Night Fury (Toothless)** — non-biped: geometry declines it (wings aren't arms), so it stays a spring creature (tail + wings sway), no bogus limb idle.
-- **grace_howard** — MMD export whose bone names are **Shift-JIS bytes that arrive as `U+FFFD` mojibake under three.js's UTF-8 glTF decode** (the same garbage in the tool AND the live engine). The name tier — and any `rig_overrides.json` keyed *by name* — therefore can't match them. NOT a 1-line override: it needs a **UTF-8 re-export** of the model (or new geometry-tier coverage), not a name map. **Spyro** — no skin/joints (static), correct.
+- **grace_howard** — MMD export whose Japanese bone names were **already corrupted to `U+FFFD` at export time and baked into the (valid-UTF-8) glTF as literal replacement chars** (~2.6k of them; the original Shift-JIS is gone, not recoverable from this file). three.js and the `rig_report` tool both read the same `U+FFFD` soup, and many bones collapse to identical names — so the name tier *and* any `rig_overrides.json` keyed by name can't even address them uniquely. NOT a 1-line override: it needs a **UTF-8 re-export from the source MMD model** (or new geometry-tier coverage), not a name map. **Spyro** — no skin/joints (static), correct.
 
 ## Next
 1. **Stragglers** (measure each with `node tools/rig_report.mjs <model>`, confirm the swing live):
    lolbit/mangle arm (+mangle hips/chest) via `rig_overrides.json`; grace_howard needs a **UTF-8 bone-name
-   re-export** before any name/override can bite (its names are mojibake under three.js — see Per-avatar above).
+   re-export** before any name/override can bite (its names are baked-in `U+FFFD` mojibake — see Per-avatar above).
 2. **Visual pass** on the real overlay: per-rig limb-swing axis (`tune({swingAxis})`), jaw axis/sign (`facialTune`), lip-sync gain.
 3. **Enigma** (still pretraining): once it serves, Odysseus calls `avatar_express`/`avatar_say` as it talks — the bus path is built & tested.
