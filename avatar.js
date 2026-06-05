@@ -6,13 +6,15 @@
 // NOTE: software-WebGL previews can't render skinned meshes — use a real browser.
 
 import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
-import { TGALoader } from "three/addons/loaders/TGALoader.js";
-import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { buildProceduralRig } from "./procedural.js?v=24";
-import { buildSpringBones } from "./spring.js?v=8";
-import { buildFacial } from "./facial.js?v=1";
+import { VRMUtils } from "@pixiv/three-vrm";
+import { loadAsset, kindOf, baseName } from "./loader.js";
+import { createVoice } from "./voice.js";
+import { createUI } from "./ui.js";
+import { buildProceduralRig } from "./procedural.js";
+import { buildSpringBones } from "./spring.js";
+import { buildFacial } from "./facial.js";
+import { resolveRig } from "./rig.js";
+import { buildDefaultAvatar } from "./default_avatar.js";
 
 const params = new URLSearchParams(location.search);
 const MODELS = {
@@ -21,6 +23,7 @@ const MODELS = {
   "3": "./models/glados/scene.gltf",
 };
 const DEFAULT_MODEL = params.get("model") || MODELS["1"];
+const DEFAULT_KEY = "__default__";     // synthetic curKey for the zero-asset procedural placeholder (no /models/ path, no override)
 
 const VIEW_H = 10;     // world units spanning screen height (ortho)
 const BASE_H = 6;      // avatar world height at sizeScale 1
@@ -56,100 +59,9 @@ const _p = new THREE.Vector3();
 const toScreen = (wx, wy) => { _p.set(wx, wy, 0).project(camera); return [(_p.x * 0.5 + 0.5) * innerWidth, (-_p.y * 0.5 + 0.5) * innerHeight]; };
 
 // --- model / animation ------------------------------------------------------
-// Multi-format loading: glTF/GLB, VRM (glTF + VRM plugin), and FBX. Each load gets
-// its OWN LoadingManager, so concurrent/rapid model switches never share texture-
-// resolution state. The manager decodes .tga (FBX/Unity textures are usually TGA).
-// For FBX, texture lookups are forced into the model's own folder by basename — so
-// the flat folders import_unitypackage.py produces resolve no matter what path a DCC
-// tool baked in. glTF keeps its own (correct) relative paths (textures/ subfolders).
-const TEX_RE = /\.(tga|png|jpe?g|webp|bmp|gif|ktx2|basis|dds)(\?.*)?$/i;
-const baseName = (u) => u.split(/[?#]/)[0].split(/[\\/]/).pop();
-const kindOf = (url) => { const u = url.split(/[?#]/)[0].toLowerCase(); return u.endsWith(".fbx") ? "fbx" : u.endsWith(".vrm") ? "vrm" : "gltf"; };
-
-// three.js r150+ REMOVED KHR_materials_pbrSpecularGlossiness support, so a model
-// authored ONLY in spec-gloss (common in Sketchfab rips — e.g. Toy Chica: all 14
-// materials, no metallic-roughness fallback) renders flat GREY: its base colour and
-// diffuse texture live under that extension and the core loader ignores them. This
-// minimal compat plugin re-binds diffuseFactor → material colour and diffuseTexture →
-// material.map (glossiness → roughness approx). Harmless for models that don't use it.
-function specGlossCompat(parser) {
-  const NAME = "KHR_materials_pbrSpecularGlossiness";
-  return {
-    name: NAME,                                              // exact name → also silences the "Unknown extension" warning
-    extendMaterialParams(materialIndex, materialParams) {
-      const sg = parser.json.materials?.[materialIndex]?.extensions?.[NAME];
-      if (!sg) return Promise.resolve();
-      const pending = [];
-      if (Array.isArray(sg.diffuseFactor)) {
-        materialParams.color = new THREE.Color().setRGB(sg.diffuseFactor[0], sg.diffuseFactor[1], sg.diffuseFactor[2], THREE.LinearSRGBColorSpace);
-        if (sg.diffuseFactor[3] != null) materialParams.opacity = sg.diffuseFactor[3];
-      }
-      materialParams.metalness = 0;                          // spec-gloss is non-metal by construction
-      materialParams.roughness = sg.glossinessFactor != null ? 1 - sg.glossinessFactor : 0.6;
-      if (sg.diffuseTexture) pending.push(parser.assignTexture(materialParams, "map", sg.diffuseTexture, THREE.SRGBColorSpace));
-      return Promise.all(pending);
-    },
-  };
-}
-
-// Load any supported format; hand back a normalized { scene, animations, vrm }.
-// opts: { kind, resourceDir, blobMap } — all optional; blobMap resolves multi-file
-// drag-drop refs by basename. No module-level load state → no cross-load races.
-function loadAsset(url, onOk, onErr, opts = {}) {
-  const kind = opts.kind || kindOf(url);
-  const dir = opts.resourceDir ?? (!/^blob:|^data:/.test(url) ? url.slice(0, url.lastIndexOf("/") + 1) : "");
-  const mgr = new THREE.LoadingManager();
-  mgr.addHandler(/\.tga$/i, new TGALoader(mgr));
-  if (opts.blobMap) {                                   // multi-file drag-drop: resolve every ref by basename
-    mgr.setURLModifier((u) => opts.blobMap[baseName(u)] || u);
-  } else if (kind === "fbx" && dir) {                   // FBX: force texture refs into the model's folder
-    mgr.setURLModifier((u) => (!/^blob:|^data:/.test(u) && TEX_RE.test(u) ? dir + baseName(u) : u));
-  }
-  if (kind === "fbx") {
-    new FBXLoader(mgr).load(url, async (obj) => {
-      try { await applyFbxMaterials(obj, dir, mgr); } catch {}   // FBX has no embedded textures — bind them from materials.json
-      onOk({ scene: obj, animations: obj.animations || [], vrm: null });
-    }, undefined, onErr);
-  } else {
-    const gl = new GLTFLoader(mgr);
-    gl.register((parser) => new VRMLoaderPlugin(parser));   // fills gltf.userData.vrm when it's a VRM
-    gl.register((parser) => specGlossCompat(parser));       // re-bind spec-gloss colour/texture (three.js r150+ dropped it)
-    gl.load(url, (g) => {
-      const vrm = g.userData?.vrm || null;
-      if (vrm) { VRMUtils.removeUnnecessaryJoints?.(vrm.scene); vrm.scene.rotation.y = Math.PI; }   // VRM faces -Z → turn to camera
-      onOk({ scene: vrm ? vrm.scene : (g.scene || g.scenes?.[0]), animations: g.animations || [], vrm });
-    }, undefined, onErr);
-  }
-}
-// FBX from Unity/VRChat ships materials with NO textures (bindings live in .mat
-// files). import_unitypackage.py writes a materials.json next to the mesh mapping
-// each FBX material name → { map, normalMap } texture files; re-attach them here.
-async function applyFbxMaterials(root, dir, mgr) {
-  if (!dir) return;                                   // only disk loads have a sidecar
-  let spec;
-  try { const r = await fetch(dir + "materials.json", { cache: "no-store" }); if (!r.ok) return; spec = await r.json(); } catch { return; }
-  if (!spec || typeof spec !== "object") return;
-  const texLoader = new THREE.TextureLoader(mgr);
-  const cache = {};
-  const tex = (file, srgb) => {                       // .tga must go through the manager's TGALoader, not TextureLoader
-    if (!(file in cache)) {
-      const t = (mgr.getHandler(file) || texLoader).load(dir + file);
-      if (srgb && t && "colorSpace" in t) t.colorSpace = THREE.SRGBColorSpace;
-      cache[file] = t;
-    }
-    return cache[file];
-  };
-  root.traverse((o) => {
-    if (!o.isMesh || !o.material) return;
-    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
-      const e = m && m.name && spec[m.name];
-      if (!e) continue;
-      if (e.map) m.map = tex(e.map, true);
-      if (e.normalMap) m.normalMap = tex(e.normalMap, false);
-      m.needsUpdate = true;
-    }
-  });
-}
+// Multi-format asset loading (glTF/GLB · VRM · FBX, spec-gloss compat, FBX material
+// re-binding) lives in loader.js. loadAsset(url, onOk, onErr, opts) hands back a
+// normalized { scene, animations, vrm }.
 const clock = new THREE.Clock();
 const _box = new THREE.Box3();
 const rig = new THREE.Group(); scene.add(rig);
@@ -159,6 +71,10 @@ let boneHelper = null;                          // SkeletonHelper overlay — in
 const BONES_KEY = "enigmaAvatar.showBones";
 let bonesShown = (() => { try { return localStorage.getItem(BONES_KEY) === "1"; } catch { return false; } })();
 fetch("./bone_limits.json").then((r) => r.json()).then((j) => (BONE_LIMITS = j)).catch(() => {});
+// Per-model bone-role overrides (rig.js tier 4), keyed by model URL. A future
+// mis-identified rig is a 1-line edit here — never a code/regex change.
+let rigOverrides = {};
+function loadRigOverrides() { return fetch("./rig_overrides.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j) rigOverrides = j; }).catch(() => {}); }
 
 let model = null, mixer = null, vrm = null;
 let actions = {}, current = null, clipIdle = null;
@@ -185,14 +101,35 @@ const SIZE_KEY = "enigmaAvatar.sizes";
 const sizeByModel = (() => { try { return JSON.parse(localStorage.getItem(SIZE_KEY)) || {}; } catch { return {}; } })();  // per-model size, persisted across launches
 let curKey = DEFAULT_MODEL;
 let sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE;   // reopen at the last-used size for this model
-let springOn = true, idleOn = true, facialOn = true, locked = false, menuShown = false, settingsShown = false;  // menu/settings state
+let springOn = true, idleOn = true, facialOn = true, locked = false;   // engine toggles (Settings checkboxes)
 let lookOn = true, idleBehaviorOn = true;                       // companion behaviors: track cursor + occasional emotes
+// Accessor bridge so ui.js (Settings checkboxes) can read/write these toggles. Their
+// source of truth stays here — the animate loop reads the raw `let`s directly.
+const flags = {
+  get springOn() { return springOn; }, set springOn(v) { springOn = v; },
+  get idleOn() { return idleOn; }, set idleOn(v) { idleOn = v; },
+  get lookOn() { return lookOn; }, set lookOn(v) { lookOn = v; },
+  get idleBehaviorOn() { return idleBehaviorOn; }, set idleBehaviorOn(v) { idleBehaviorOn = v; },
+  get facialOn() { return facialOn; }, set facialOn(v) { facialOn = v; },
+  get locked() { return locked; }, set locked(v) { locked = v; },
+};
 const LOOK = { gainX: 1.4, gainY: 1.0, flipX: 1, flipY: -1, maxX: 0.6, maxY: 0.35 };  // cursor-look feel (flip signs per rig)
 let _lookX = 0, _lookY = 0, _lookW = 0, _cursorIdle = 99;       // smoothed look state
 let _idleClock = 0, _idleNext = 9, _downX = -999, _downY = 0;   // idle-emote timer + click/pet detection
 const _clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
 const IDLE_EMOTES = ["nod", "happy", "alert", "wag"];
 
+// --- SIZE POLICY (one place) ------------------------------------------------
+// There is ONE size value (sizeScale), persisted per model. Three entry points
+// touch it, and they intentionally do NOT clamp the same way (they don't conflict —
+// each serves a different purpose):
+//   • applySize / resizeBy / scroll / +,− keys / bus → free, with only a 0.02
+//     FLOOR. No upper cap, by design: the user or the AI can make it as big as wanted.
+//   • Settings slider (ui.js) → 0.05–5 is just that control's convenience range,
+//     NOT a global limit (scroll / keys / bus can still exceed it).
+//   • fitToScreen → the ONLY automatic adjustment: shrink-only, on load/recenter,
+//     so a too-large SAVED size can't strand the avatar clipped off a smaller monitor.
+// Net: manual sizing is unbounded-up / floored-down; auto-fit only ever shrinks.
 function applySize(s) {
   sizeScale = Math.max(0.02, s || 0.02);   // no upper cap (removed min/max); tiny floor so multiplicative resize can recover
   rig.scale.setScalar(sizeScale);
@@ -224,6 +161,7 @@ function playAction(action, { loop = true, fade = 0.3, onDone = null } = {}) {
 
 function disposeModel() {
   if (!model) return;
+  voice.stop();                                   // stop any in-flight speech/lip-sync before tearing down the model
   if (boneHelper) { scene.remove(boneHelper); boneHelper.geometry?.dispose?.(); boneHelper.material?.dispose?.(); boneHelper = null; }
   rig.remove(model);
   if (vrm) VRMUtils.deepDispose?.(vrm.scene);
@@ -263,14 +201,19 @@ function onModelLoaded(asset) {
   // clips stay callable on demand via play()/loop() — the AI can still trigger a
   // model's own animation deliberately, but it never hijacks the default idle.
   // This is the uniform substrate the AI drives on top of ("full body, like a car").
-  proc = buildProceduralRig(model, BONE_LIMITS);
-  console.log("[avatar] procedural roles:", proc.matched.length, proc.matched.length ? "→ " + proc.matched.join(", ") : "(none)");
-  setStatus(`loaded ✓ ${proc.matched.length ? "procedural idle on " + proc.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
+  // Identify bones ONCE via the cascade (VRM → name → geometry → override), then feed
+  // BOTH the procedural idle and the spring physics the same resolved map.
+  const resolved = resolveRig(model, vrm, { override: rigOverrides[curKey] });
+  proc = buildProceduralRig(model, BONE_LIMITS, resolved);
+  console.log("[avatar] roles:", resolved.matched.length, JSON.stringify(resolved.report.bySource), resolved.matched.length ? "→ " + resolved.matched.join(", ") : "(none)");
+  setStatus(`loaded ✓ ${resolved.matched.length ? "procedural idle on " + resolved.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
   if (vrm) {
     spring = null;
   } else {
-    spring = buildSpringBones(model);
+    // Pass the role-matched bones as `exclude` so a humanoid's limbs are never sprung
+    // (only true dangly bits), plus any per-model spring override (extra/never).
+    spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey] });
     if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);   // per-avatar tuned physics
     if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
   }
@@ -300,13 +243,26 @@ function showSkeleton(on) {
   setStatus("skeleton " + (bonesShown ? "on" : "off"));
   return bonesShown;
 }
+// --- onboarding hint (shown ONLY when the device has no models → procedural placeholder) ---
+let _onboarding = false;
+function showOnboarding() {
+  _onboarding = true;
+  document.getElementById("ui")?.classList.remove("hidden");    // reveal the status line as the hint surface
+  setStatus("Showing a built-in placeholder — no avatar model on this device yet.\nRight-click the figure → Add model…  ·  or drag a .glb / .gltf / .vrm / .fbx onto the window.");
+}
+function clearOnboarding() {                                     // a real model loaded → retract the hint we raised
+  if (!_onboarding) return;
+  _onboarding = false;
+  document.getElementById("ui")?.classList.add("hidden");
+}
 let _loadSeq = 0;
 function loadModel(url, label) {
   curKey = url;
   const seq = ++_loadSeq;                          // guard: a slower earlier load must not clobber a newer switch
+  if (url === DEFAULT_KEY) { onModelLoaded(buildDefaultAvatar()); showOnboarding(); return; }   // zero-asset procedural placeholder
   setStatus(`loading ${label || url} …`);
   loadAsset(url,
-    (asset) => { if (seq === _loadSeq) onModelLoaded(asset); },   // superseded by a newer switch → drop it
+    (asset) => { if (seq === _loadSeq) { onModelLoaded(asset); clearOnboarding(); } },   // superseded by a newer switch → drop it
     (err) => { if (seq === _loadSeq) { setStatus(`load failed: ${err?.message || err}`); console.error(err); } });
 }
 
@@ -495,18 +451,24 @@ let hitRect = [0, 0, 0, 0];           // debug bbox of the silhouette / fallback
 let hitMask = null;                   // Uint8Array silhouette (1 = avatar) at maskW×maskH, bottom-left origin; null → fallback
 let maskW = 0, maskH = 0;
 let fpCoverage = 0, fpClock = 0.2;
+// Footprint scratch, REUSED across passes — this runs ~6×/s, so a fresh RGBA-readback
+// array + mask every call was needless GC churn. Re-allocated only when the window
+// aspect changes (SW is fixed at 256; SH tracks innerHeight/innerWidth).
+let _fpBuf = null, _fpMask = null, _fpW = 0, _fpH = 0;
 
 function computeFootprint() {
   if (!model) { hitMask = null; return; }
   const SW = 256, SH = Math.max(2, Math.round(256 * innerHeight / innerWidth));
-  _fpRT.setSize(SW, SH);
+  if (SW !== _fpW || SH !== _fpH) {                // (re)allocate buffers + RT only on an aspect change
+    _fpW = SW; _fpH = SH; _fpBuf = new Uint8Array(SW * SH * 4); _fpMask = new Uint8Array(SW * SH); _fpRT.setSize(SW, SH);
+  }
   renderer.setRenderTarget(_fpRT);
   renderer.clear();
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
-  const buf = new Uint8Array(SW * SH * 4);
-  renderer.readRenderTargetPixels(_fpRT, 0, 0, SW, SH, buf);
-  const mask = new Uint8Array(SW * SH);
+  const buf = _fpBuf, mask = _fpMask;
+  renderer.readRenderTargetPixels(_fpRT, 0, 0, SW, SH, buf);   // overwrites every byte of buf
+  mask.fill(0);                                                // mask is reused → clear last pass's bits before re-marking
   let mnx = 1e9, mny = 1e9, mxx = -1, mxy = -1, count = 0;
   for (let i = 0, p = 3; i < SW * SH; i++, p += 4) {
     if (buf[p] > 24) { mask[i] = 1; count++; const x = i % SW, y = (i / SW) | 0; if (x < mnx) mnx = x; if (x > mxx) mxx = x; if (y < mny) mny = y; if (y > mxy) mxy = y; }
@@ -565,7 +527,7 @@ function updateLook(dt) {
 }
 // Occasional gentle emote when left alone (not held / hovered / speaking / menu open).
 function maybeIdleBehavior(dt) {
-  if (!proc || !idleBehaviorOn || held || cursor.over || menuShown || settingsShown || _rafSpeak) { _idleClock = 0; return; }
+  if (!proc || !idleBehaviorOn || held || cursor.over || ui.isOpen() || voice.isSpeaking()) { _idleClock = 0; return; }
   _idleClock += dt;
   if (_idleClock >= _idleNext) {
     _idleClock = 0; _idleNext = 8 + Math.random() * 12;
@@ -592,62 +554,13 @@ function animate() {
   if (!held && fpClock > 0.16) { fpClock = 0; computeFootprint(); }
 }
 
-// --- voice + lip-sync -------------------------------------------------------
-// We do NOT synthesize speech in the renderer. Modkit's Kokoro TTS writes a WAV
-// and sends {action:"say", url} over the bus; here we play it through a Web Audio
-// AnalyserNode and drive the facial mouth from the signal's RMS each frame, so the
-// jaw/visemes track loudness. No speechSynthesis fallback (by design).
-let _audioCtx = null, _srcNode = null, _rafSpeak = 0, _speakSeq = 0;
-function stopSpeak() {
-  _speakSeq++;                                   // invalidate any in-flight load/playback
-  if (_rafSpeak) { cancelAnimationFrame(_rafSpeak); _rafSpeak = 0; }
-  if (_srcNode) { try { _srcNode.stop(0); } catch {} try { _srcNode.disconnect(); } catch {} _srcNode = null; }
-  if (facial) facial.setMouth(0);
-}
-// XHR reads file:// reliably in the Electron renderer (fetch() rejects file://).
-function _loadAudioBytes(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true); xhr.responseType = "arraybuffer";
-    xhr.onload = () => ((xhr.status === 200 || xhr.status === 0) && xhr.response ? resolve(xhr.response) : reject(new Error("HTTP " + xhr.status)));
-    xhr.onerror = () => reject(new Error("could not read audio"));
-    xhr.send();
-  });
-}
-// Decode to raw samples and play through an AudioBufferSource — NOT a MediaElement:
-// a file:// <audio> routed through Web Audio is treated as cross-origin and tainted,
-// which silences BOTH the sound and the analyser. Raw AudioBuffers never taint.
-async function speak(url, opts = {}) {
-  stopSpeak();
-  const myseq = _speakSeq;                        // this call's generation (stopSpeak bumped it)
-  const gain = opts.gain ?? 9.0;                  // RMS is small (~0.05–0.2); scale up to 0..1 mouth
-  try {
-    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (_audioCtx.state === "suspended") { try { await _audioCtx.resume(); } catch {} }
-    const bytes = await _loadAudioBytes(url);
-    if (myseq !== _speakSeq) return;              // superseded / stopped while loading
-    const audioBuf = await _audioCtx.decodeAudioData(bytes);
-    if (myseq !== _speakSeq) return;
-    const src = _audioCtx.createBufferSource(); src.buffer = audioBuf;
-    const an = _audioCtx.createAnalyser(); an.fftSize = 1024;
-    src.connect(an); an.connect(_audioCtx.destination); _srcNode = src;
-    const buf = new Uint8Array(an.fftSize);
-    const tick = () => {
-      if (myseq !== _speakSeq) return;
-      an.getByteTimeDomainData(buf);
-      let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
-      if (facial) facial.setMouth(Math.min(1, Math.sqrt(sum / buf.length) * gain));
-      _rafSpeak = requestAnimationFrame(tick);
-    };
-    src.onended = () => { if (myseq === _speakSeq) stopSpeak(); };
-    src.start(0);
-    EnigmaAvatar.express("talk", opts.dur);       // talking body language alongside the mouth
-    tick();
-  } catch (e) {
-    setStatus("say failed: " + (e?.message || e));
-    if (myseq === _speakSeq) stopSpeak();
-  }
-}
+// --- voice + lip-sync (speech playback + amplitude lip-sync) -----------------
+// Implementation in voice.js; wire it to the live facial layer + the "talk" emote.
+const voice = createVoice({
+  getFacial: () => facial,
+  onSpeakStart: (dur) => EnigmaAvatar.express("talk", dur),
+  setStatus,
+});
 
 // Capture the overlay's own canvas (the avatar on transparency — NO desktop behind
 // it) to a PNG, so it can be inspected in isolation, "like in Blender". Crops tight
@@ -681,16 +594,17 @@ const EnigmaAvatar = {
   glideTo: (px, py) => glideTo(px, py),
   setSize: (s) => applySize(s), size: () => sizeScale,
   load(url) { loadModel(url, url); },
+  reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
   tune: (p) => { if (proc) proc.setParams(p); return proc ? proc.params : null; },
-  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, menu: menuShown } }),
+  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, menu: ui.isOpen() } }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { if (proc) proc.setExpression(type, dur); },   // AI-driven emote (talk/happy/wag/…)
   lookTune: (p) => Object.assign(LOOK, p),                               // tune/flip cursor-look (gainX/Y, flipX/Y, maxX/Y)
   facialTune: (p) => facialTune(p),                                      // saved per-avatar (jaw axis/open)
   mouth: (a) => { if (facial) facial.setMouth(a); },                      // 0..1 jaw/mouth open
-  say: (url, opts) => speak(url, opts),                                   // play speech audio + lip-sync
-  stopSpeak: () => stopSpeak(),
+  say: (url, opts) => voice.speak(url, opts),                             // play speech audio + lip-sync
+  stopSpeak: () => voice.stop(),
   attach: (url, opts) => attachMesh(url, opts),                           // prop/accessory → bone (opts: bone,pos,rot,scale)
   detach: (id) => detachAttachment(id),
   clearAttachments: () => clearAttachments(),
@@ -711,6 +625,7 @@ function handleCommand(c) {
   else if (c.action === "moveTo") EnigmaAvatar.moveTo(c.px ?? 0, c.py ?? 0);
   else if (c.action === "size") EnigmaAvatar.setSize(c.value ?? 1);
   else if (c.action === "load" && c.url) EnigmaAvatar.load(c.url);
+  else if (c.action === "reloadRig") EnigmaAvatar.reloadRig();          // re-read overrides + re-resolve (after an AI edits rig_overrides.json)
   else if (c.action === "express") EnigmaAvatar.express(c.name, c.dur);
   else if (c.action === "say" && c.url) EnigmaAvatar.say(c.url, c);     // play speech wav + lip-sync (+talk body language)
   else if (c.action === "mouth") EnigmaAvatar.mouth(c.value ?? 0);      // manual jaw drive (testing)
@@ -724,6 +639,7 @@ function handleCommand(c) {
   else if (c.action === "showBones") EnigmaAvatar.showSkeleton(c.on ?? c.value);         // skeleton overlay on/off (no arg → toggle)
   else if (c.action === "snap" || c.action === "screenshot") EnigmaAvatar.snap(c);       // capture avatar → PNG for inspection
   else if (c.action === "setDisplay" || c.action === "monitor") moveToDisplay(c.index ?? c.value ?? "next");   // move overlay to a monitor (index, or "next"/"prev")
+  else if (c.action === "settings") { if (c.open === false) ui.hideSettings(); else ui.showSettings(); }   // open/close the Settings panel
   else if (c.action === "recolor" && c.name) EnigmaAvatar.recolor(c.name, c.color || c.hex);   // tint a material
   else if (c.action === "hue" && c.name) EnigmaAvatar.hueShift(c.name, c.deg ?? c.value ?? 0);  // rotate a material's hue
 }
@@ -736,6 +652,7 @@ window.__AV = { THREE, scene, camera, rig, getModel: () => model };
 // synchronously, and stays in sync via the avatar:displayChanged event.
 let DISPLAYS = [];          // [{index,label,primary,x,y,w,h}] sorted left→right; index = screen.getAllDisplays() index
 let curDisplayIdx = 0;      // electron index the overlay is on right now
+let _hopArmed = true;       // drag-across-monitors: armed until a hop fires; re-arms when the cursor is back inside
 async function refreshDisplays() {
   if (!window.avatarIPC?.getDisplays) return;
   try { const info = await window.avatarIPC.getDisplays(); if (info) { DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; } } catch {}
@@ -747,7 +664,7 @@ function moveToDisplay(idx) {
   }
   if (window.avatarIPC?.setDisplay) { window.avatarIPC.setDisplay(idx); curDisplayIdx = idx; setStatus("monitor → " + idx); }
 }
-window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; if (menuShown) rebuildMenu(); });
+window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; if (ui?.isMenuOpen()) ui.rebuildMenu(); });
 // Recenter the avatar on the current monitor after a move — its position is in world
 // coords, so a hop to a different-sized screen can strand it at an edge / off-screen.
 // Snap it to centre-lower of the (now-resized) window so it's always immediately visible.
@@ -760,293 +677,71 @@ function recenterAvatar() {
   fpClock = 1;                                   // re-scan the grab silhouette at the new spot
   setStatus("centered on this monitor");
 }
-window.avatarIPC?.onCenter?.(() => recenterAvatar());
+window.avatarIPC?.onCenter?.(() => { if (!held) recenterAvatar(); });   // don't recenter mid-drag — the drag-hop owns the position
+// Drag ACROSS monitors. The overlay window lives on ONE screen, so dragging the avatar
+// can't normally cross to another monitor — it stops dead at the window edge. When the
+// user drags it against an edge that borders another display, hop the overlay there and
+// let the drag continue. (This is how the user actually moves it — by mouse, not the menu.)
+function maybeDragHop() {
+  if (!held || !_hopArmed || DISPLAYS.length < 2) return;
+  const cur = DISPLAYS.find((d) => d.index === curDisplayIdx); if (!cur) return;
+  const sharesV = (d) => d.y < cur.y + cur.h && d.y + d.h > cur.y;       // monitors that overlap vertically
+  const EDGE = 6;
+  let target = null;
+  if (cursor.x >= innerWidth - EDGE)  target = DISPLAYS.find((d) => d.index !== cur.index && Math.abs(d.x - (cur.x + cur.w)) <= 16 && sharesV(d));   // right neighbour
+  else if (cursor.x <= EDGE)          target = DISPLAYS.find((d) => d.index !== cur.index && Math.abs((d.x + d.w) - cur.x) <= 16 && sharesV(d));      // left neighbour
+  if (target) { _hopArmed = false; grab.set(0, 0); curDisplayIdx = target.index; window.avatarIPC?.setDisplayDrag?.(target.index); setStatus("→ next monitor"); }
+}
+// Re-arm only once the cursor is back inside the window, so we don't ping-pong on the shared edge.
+function _rearmHop() { if (!_hopArmed && cursor.x > innerWidth * 0.15 && cursor.x < innerWidth * 0.85) _hopArmed = true; }
 refreshDisplays();
 
-// --- right-click menu (toggles + quick actions) -----------------------------
+// --- UI: right-click menu + Settings dialog (DOM built in ui.js) -------------
+// Built-in models are defined here (they reference the MODELS paths above); user
+// models come from models.json, loaded by ui.refreshModelList().
 const BUILTIN_MODELS = [
   { id: "roxanne", url: MODELS["1"], label: "Roxanne" },
   { id: "toothless", url: MODELS["2"], label: "Night Fury" },
   { id: "glados", url: MODELS["3"], label: "GLaDOS" },
 ];
-let MODEL_LIST = BUILTIN_MODELS.slice();           // built-ins + user models from models.json (loaded below)
-function refreshModelList() {
-  return fetch("./models.json", { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((j) => {
-      const seen = new Set(BUILTIN_MODELS.map((m) => m.url));
-      const extra = (j?.models || []).filter((m) => m?.url && !seen.has(m.url)).map((m) => ({ id: m.id, url: m.url, label: m.label || m.id }));
-      MODEL_LIST = BUILTIN_MODELS.concat(extra);
-      if (menuShown) rebuildMenu();
-    })
-    .catch(() => {});
-}
-// Import a new avatar. In Electron: a native open dialog that copies the files
-// into models/ and registers them (handles .glb/.gltf/.vrm/.fbx AND .unitypackage
-// via import_unitypackage.py). In a plain browser: the OS file picker (same as drag-drop).
-async function addModel() {
-  hideMenu();
-  if (window.avatarIPC?.importModel) {
-    setStatus("importing model…");
-    try {
-      const res = await window.avatarIPC.importModel();
-      if (!res) { setStatus("import cancelled"); return; }
-      if (res.error) { setStatus("import failed: " + res.error); return; }
-      await refreshModelList();
-      loadModel(res.url, res.label);
-    } catch (e) { setStatus("import failed: " + (e?.message || e)); }
-  } else {
-    document.getElementById("file")?.click();
-  }
-}
-// Attach a prop/accessory. Electron: native picker → copied into props/ (persists).
-// Browser: a file picker (session-only blob). Lands on the right hand by default;
-// re-place with EnigmaAvatar.tuneAttachment(id, {bone, pos:[x,y,z], rot:[deg], scale}).
-let _propCategory = "prop";
-async function addAttachment(category) {
-  _propCategory = category; hideMenu();
-  if (window.avatarIPC?.importProp) {
-    setStatus(`importing ${category}…`);
-    try {
-      const res = await window.avatarIPC.importProp();
-      if (!res) { setStatus("import cancelled"); return; }
-      if (res.error) { setStatus("import failed: " + res.error); return; }
-      attachMesh(res.url, { category });
-    } catch (e) { setStatus("import failed: " + (e?.message || e)); }
-  } else {
-    _propInput.click();
-  }
-}
-const _propInput = document.createElement("input");
-_propInput.type = "file"; _propInput.accept = ".glb,.gltf,.vrm,.fbx"; _propInput.style.display = "none";
-document.body.appendChild(_propInput);
-_propInput.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) attachMesh(URL.createObjectURL(f), { category: _propCategory, kind: kindOf(f.name) }); });
-const EMOTES = ["happy", "talk", "wag", "nod", "alert", "sad", "shake"];
+let ui;   // the menu/Settings UI (ui.js) — created just below, once the engine fns it calls exist
+const syncInteractive = () => window.avatarIPC?.setInteractive?.((ui?.isOpen() ?? false) || cursor.over || held);
 
-const syncInteractive = () => window.avatarIPC?.setInteractive?.(menuShown || settingsShown || cursor.over || held);
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-
-// A plain, OS-style context menu (no glass / emoji / switches).
-const MENU_CSS =
-  "position:fixed;z-index:50;min-width:188px;background:rgba(38,38,41,.98);border:1px solid rgba(255,255,255,.13);" +
-  "border-radius:8px;padding:4px;box-shadow:0 9px 28px rgba(0,0,0,.5);font:13px/1.25 'Segoe UI',system-ui,sans-serif;color:#f0f0f0;user-select:none;";
-const menu = document.createElement("div");
-menu.id = "avmenu"; menu.style.cssText = MENU_CSS + "display:none;";
-document.body.appendChild(menu);
-
-const menuSep = () => { const d = document.createElement("div"); d.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:4px 8px;"; return d; };
-const menuRow = (label, o = {}) => {
-  const d = document.createElement("div");
-  d.style.cssText = "position:relative;display:flex;align-items:center;padding:6px 12px 6px 28px;border-radius:5px;white-space:nowrap;cursor:default;" + (o.danger ? "color:#ff8a8a;" : "");
-  if (o.dot) { const m = document.createElement("span"); m.textContent = "●"; m.style.cssText = "position:absolute;left:11px;font-size:9px;color:#6fc3ff;"; d.appendChild(m); }
-  else if (o.check) { const m = document.createElement("span"); m.textContent = "✓"; m.style.cssText = "position:absolute;left:10px;"; d.appendChild(m); }
-  const lab = document.createElement("span"); lab.textContent = label; lab.style.flex = "1"; d.appendChild(lab);
-  if (o.accel) { const a = document.createElement("span"); a.textContent = o.accel; a.style.cssText = "opacity:.42;font-size:11px;padding-left:24px;"; d.appendChild(a); }
-  if (o.arrow) { const a = document.createElement("span"); a.textContent = "❯"; a.style.cssText = "opacity:.5;font-size:10px;padding-left:18px;"; d.appendChild(a); }
-  d.onmouseenter = () => (d.style.background = "rgba(255,255,255,.13)");
-  d.onmouseleave = () => (d.style.background = "transparent");
-  if (o.onClick) d.onclick = (ev) => { ev.stopPropagation(); o.onClick(); };
-  return d;
-};
-const submenu = (label, items) => {
-  const wrap = document.createElement("div"); wrap.style.position = "relative";
-  wrap.appendChild(menuRow(label, { arrow: true }));
-  const fly = document.createElement("div"); fly.style.cssText = MENU_CSS + "display:none;position:absolute;top:-5px;left:100%;margin-left:3px;";
-  for (const it of items) fly.appendChild(menuRow(it.label, { check: it.check, onClick: it.onClick }));
-  wrap.appendChild(fly);
-  let t;
-  wrap.onmouseenter = () => {
-    clearTimeout(t); fly.style.display = "block";
-    fly.style.left = "100%"; fly.style.right = "auto"; fly.style.marginLeft = "3px"; fly.style.marginRight = "0";
-    const r = fly.getBoundingClientRect();
-    if (r.right > innerWidth - 4) { fly.style.left = "auto"; fly.style.right = "100%"; fly.style.marginLeft = "0"; fly.style.marginRight = "3px"; }
-  };
-  wrap.onmouseleave = () => { t = setTimeout(() => (fly.style.display = "none"), 130); };
-  return wrap;
-};
-
-// --- Settings dialog (normal OS form controls) ------------------------------
-const settings = document.createElement("div");
-settings.id = "avsettings";
-settings.style.cssText =
-  "position:fixed;z-index:60;display:none;width:268px;background:rgba(38,38,41,.99);border:1px solid rgba(255,255,255,.14);" +
-  "border-radius:10px;box-shadow:0 16px 46px rgba(0,0,0,.55);font:13px/1.35 'Segoe UI',system-ui,sans-serif;color:#eee;user-select:none;";
-document.body.appendChild(settings);
-
-const sRow = (label, control) => { const r = document.createElement("div"); r.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;"; const l = document.createElement("span"); l.textContent = label; l.style.opacity = ".9"; r.append(l, control); return r; };
-const sCheck = (label, on, set) => { const r = document.createElement("label"); r.style.cssText = "display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on; cb.onchange = (e) => { e.stopPropagation(); set(cb.checked); }; const t = document.createElement("span"); t.textContent = label; r.append(cb, t); return r; };
-function buildSettings() {
-  settings.innerHTML = "";
-  const head = document.createElement("div");
-  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);";
-  head.innerHTML = `<span style="font-weight:600">Avatar Settings</span>`;
-  const x = document.createElement("button"); x.textContent = "✕"; x.style.cssText = "border:0;background:transparent;color:#bbb;font-size:14px;line-height:1;cursor:pointer;padding:2px 4px;";
-  x.onclick = (e) => { e.stopPropagation(); hideSettings(); };
-  head.appendChild(x); settings.appendChild(head);
-  const body = document.createElement("div"); body.style.cssText = "padding:8px 14px 14px;"; settings.appendChild(body);
-
-  const sel = document.createElement("select");
-  for (const m of MODEL_LIST) { const o = document.createElement("option"); o.value = m.url; o.textContent = m.label; if (m.url === curKey) o.selected = true; sel.appendChild(o); }
-  sel.onchange = (e) => { e.stopPropagation(); const m = MODEL_LIST.find((x) => x.url === sel.value); loadModel(sel.value, m?.label); };
-  body.appendChild(sRow("Model", sel));
-
-  const sz = document.createElement("input"); sz.type = "range"; sz.min = "0.05"; sz.max = "5"; sz.step = "0.05"; sz.value = String(sizeScale); sz.style.flex = "1";
-  const szv = document.createElement("span"); szv.textContent = sizeScale.toFixed(2) + "×"; szv.style.cssText = "opacity:.6;font-size:11px;min-width:36px;text-align:right;";
-  sz.oninput = (e) => { e.stopPropagation(); applySize(parseFloat(sz.value)); szv.textContent = sizeScale.toFixed(2) + "×"; };
-  const szRow = sRow("Size", sz); szRow.appendChild(szv); body.appendChild(szRow);
-
-  // Hair/tail physics — tuned live and saved into this avatar's profile. (Mal0's
-  // default is wild; raise damping / lower gravity for flow. Breeze affects only
-  // opaque/geometric rigs like Toothless.)
-  const sp = () => profileFor(curKey).spring || {};
-  const springSlider = (label, key, min, max, step, dflt) => {
-    const r = document.createElement("input"); r.type = "range"; r.min = min; r.max = max; r.step = step;
-    r.value = String(sp()[key] ?? dflt); r.style.flex = "1";
-    r.oninput = (e) => { e.stopPropagation(); springTune({ [key]: parseFloat(r.value) }); };
-    body.appendChild(sRow(label, r));
-  };
-  springSlider("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
-  springSlider("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
-  springSlider("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
-  springSlider("Hair breeze", "breeze", "0", "0.6", "0.02", 0.16);
-
-  // Colors — tint each material (the color multiplies its texture); saved per avatar.
-  const mats = modelMaterials();
-  if (mats.size) {
-    const cr = document.createElement("div"); cr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(cr);
-    const ch = document.createElement("div"); ch.textContent = "Colors (tint per part)"; ch.style.cssText = "opacity:.6;font-size:11px;margin-bottom:2px;"; body.appendChild(ch);
-    const saved = profileFor(curKey).colors || {};
-    const savedHue = profileFor(curKey).hue || {};
-    for (const [name, m] of mats) {
-      const c = document.createElement("input"); c.type = "color";
-      c.value = saved[name] || ("#" + (m.color ? m.color.getHexString(THREE.SRGBColorSpace) : "ffffff"));
-      c.oninput = (e) => { e.stopPropagation(); recolor(name, c.value); };
-      const h = document.createElement("input"); h.type = "range"; h.min = "0"; h.max = "360"; h.step = "5"; h.value = String(savedHue[name] || 0); h.title = "hue rotate"; h.style.flex = "1";
-      h.oninput = (e) => { e.stopPropagation(); hueShift(name, parseFloat(h.value)); };
-      const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:1;"; wrap.append(c, h);
-      body.appendChild(sRow(name, wrap));
-    }
-  }
-
-  const hr = document.createElement("div"); hr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(hr);
-  body.appendChild(sCheck("Spring physics", springOn, (v) => (springOn = v)));
-  body.appendChild(sCheck("Idle motion", idleOn, (v) => (idleOn = v)));
-  body.appendChild(sCheck("Look at cursor", lookOn, (v) => (lookOn = v)));
-  body.appendChild(sCheck("Idle behavior (random emotes)", idleBehaviorOn, (v) => (idleBehaviorOn = v)));
-  body.appendChild(sCheck("Face (blink / lip-sync)", facialOn, (v) => (facialOn = v)));
-  body.appendChild(sCheck("Lock in place", locked, (v) => (locked = v)));
-  body.appendChild(sCheck("Show skeleton (inspect bones)", bonesShown, (v) => showSkeleton(v)));
-  const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
-  body.appendChild(sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v)));
-
-  // --- Fit attachment (props / clothes / furniture): place the selected item ---
-  if (attachObjs.length) {
-    const fr = document.createElement("div"); fr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(fr);
-    const fh = document.createElement("div"); fh.textContent = "Fit attachment"; fh.style.cssText = "opacity:.6;font-size:11px;margin-bottom:2px;"; body.appendChild(fh);
-    const sel = document.createElement("select");
-    for (const a of attachObjs) { const o = document.createElement("option"); o.value = a.id; o.textContent = `${a.category}: ${baseName(a.url)}`; sel.appendChild(o); }
-    body.appendChild(sRow("Item", sel));
-    const fitBox = document.createElement("div"); body.appendChild(fitBox);
-    const BTN = "padding:3px 8px;background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.15);border-radius:4px;cursor:pointer;font:12px system-ui;";
-    const BONES = ["righthand", "lefthand", "head", "neck", "back", "hips", "tail", "rightfoot", "leftfoot", ""];
-    const renderFit = () => {
-      fitBox.innerHTML = "";
-      const a = attachObjs.find((x) => x.id === sel.value); if (!a) return;
-      const bsel = document.createElement("select");
-      for (const b of BONES) { const o = document.createElement("option"); o.value = b; o.textContent = b || "(world / no bone)"; if (b === a.bone) o.selected = true; bsel.appendChild(o); }
-      bsel.onchange = (e) => { e.stopPropagation(); tuneAttachment(a.id, { bone: bsel.value }); };
-      fitBox.appendChild(sRow("Bone", bsel));
-      const scRow = document.createElement("div"); scRow.style.cssText = "display:flex;gap:5px;align-items:center;";
-      const scVal = document.createElement("span"); scVal.textContent = "×" + a.scale.toFixed(4); scVal.style.cssText = "flex:1;font-size:11px;opacity:.7;text-align:right;";
-      const scBtn = (lab, f) => { const b = document.createElement("button"); b.textContent = lab; b.style.cssText = BTN; b.onclick = (e) => { e.stopPropagation(); tuneAttachment(a.id, { scale: +(a.scale * f).toFixed(5) }); scVal.textContent = "×" + a.scale.toFixed(4); }; return b; };
-      scRow.append(scVal, scBtn("−", 1 / 1.2), scBtn("+", 1.2)); fitBox.appendChild(sRow("Scale", scRow));
-      ["x", "y", "z"].forEach((axis, i) => {
-        const r = document.createElement("input"); r.type = "range"; r.min = "-180"; r.max = "180"; r.step = "1"; r.value = String(a.rot[i] || 0); r.style.flex = "1";
-        r.oninput = (e) => { e.stopPropagation(); const rot = a.rot.slice(); rot[i] = parseFloat(r.value); tuneAttachment(a.id, { rot }); };
-        fitBox.appendChild(sRow("Rotate " + axis.toUpperCase(), r));
-      });
-      const nudge = document.createElement("div"); nudge.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;";
-      [["X−", 0, -1], ["X+", 0, 1], ["Y−", 1, -1], ["Y+", 1, 1], ["Z−", 2, -1], ["Z+", 2, 1]].forEach(([lab, ax, dir]) => {
-        const b = document.createElement("button"); b.textContent = lab; b.style.cssText = BTN + "flex:1;min-width:30px;";
-        b.onclick = (e) => {
-          e.stopPropagation();
-          const v = new THREE.Vector3(); a.obj?.parent?.getWorldScale(v);     // step ≈ 4% of avatar height, in bone-local units
-          const stepLocal = (0.04 * BASE_H * (rig.scale.x || 1)) / (((v.x + v.y + v.z) / 3) || 1);
-          const pos = a.pos.slice(); pos[ax] = +(pos[ax] + dir * stepLocal).toFixed(4); tuneAttachment(a.id, { pos });
-        };
-        nudge.appendChild(b);
-      });
-      fitBox.appendChild(sRow("Move", nudge));
-    };
-    sel.onchange = (e) => { e.stopPropagation(); renderFit(); };
-    renderFit();
-  }
-}
-function showSettings() {
-  buildSettings();
-  settings.style.display = "block";
-  const r = settings.getBoundingClientRect();
-  settings.style.left = Math.max(6, Math.round(innerWidth / 2 - r.width / 2)) + "px";
-  settings.style.top = Math.max(6, Math.round(innerHeight / 2 - r.height / 2)) + "px";
-  settingsShown = true; syncInteractive();
-}
-function hideSettings() { if (!settingsShown) return; settings.style.display = "none"; settingsShown = false; syncInteractive(); }
-
-function rebuildMenu() {
-  menu.innerHTML = "";
-  for (const m of MODEL_LIST) menu.appendChild(menuRow(m.label, { dot: curKey === m.url, onClick: () => { loadModel(m.url, m.label); hideMenu(); } }));
-  menu.appendChild(menuRow("Add model…", { onClick: () => addModel() }));
-  menu.appendChild(submenu("Add to avatar", [
-    { label: "Clothing…", onClick: () => addAttachment("clothes") },
-    { label: "Prop…", onClick: () => addAttachment("prop") },
-    { label: "Furniture…", onClick: () => addAttachment("furniture") },
-  ]));
-  if (attachObjs.length) menu.appendChild(submenu(`Remove (${attachObjs.length})`, attachObjs
-    .map((a) => ({ label: `${a.category}: ${baseName(a.url)}`, onClick: () => { detachAttachment(a.id); hideMenu(); } }))
-    .concat([{ label: "— all —", onClick: () => { clearAttachments(); hideMenu(); } }])));
-  menu.appendChild(menuSep());
-  menu.appendChild(submenu("Express", EMOTES.map((e) => ({ label: cap(e), onClick: () => EnigmaAvatar.express(e) }))));   // fire several; flyout stays open
-  menu.appendChild(submenu("Size", [
-    { label: "Bigger", onClick: () => resizeBy(1.1) },
-    { label: "Smaller", onClick: () => resizeBy(1 / 1.1) },
-    { label: "Reset", onClick: () => applySize(DEFAULT_SIZE) },
-  ]));
-  // Move the overlay to another screen (only meaningful with >1 monitor). The dot
-  // marks the current one; Ctrl+Alt+M cycles without opening the menu.
-  if (DISPLAYS.length > 1) menu.appendChild(submenu("Move to monitor", DISPLAYS.map((d) => ({
-    label: d.label, check: d.index === curDisplayIdx,
-    onClick: () => { moveToDisplay(d.index); hideMenu(); },
-  }))));
-  menu.appendChild(menuSep());
-  menu.appendChild(menuRow("Settings…", { onClick: () => { hideMenu(); showSettings(); } }));
-  if (window.avatarIPC?.quit) { menu.appendChild(menuSep()); menu.appendChild(menuRow("Quit avatar", { accel: "Ctrl+Alt+Q", danger: true, onClick: () => window.avatarIPC.quit() })); }
-}
-function showMenu(x, y) {
-  rebuildMenu();
-  menu.style.display = "block";
-  const r = menu.getBoundingClientRect();
-  menu.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 6)) + "px";
-  menu.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 6)) + "px";
-  menuShown = true; syncInteractive();
-  const sig = DISPLAYS.length + ":" + curDisplayIdx;            // refresh monitors; only redraw if the layout/current changed
-  refreshDisplays().then(() => { if (menuShown && sig !== DISPLAYS.length + ":" + curDisplayIdx) rebuildMenu(); });
-}
-function hideMenu() { if (!menuShown) return; menu.style.display = "none"; menuShown = false; syncInteractive(); }
-addEventListener("contextmenu", (e) => {
-  if (e.target instanceof Node && (menu.contains(e.target) || settings.contains(e.target))) { e.preventDefault(); return; }
-  cursor.x = e.clientX; cursor.y = e.clientY; computeOver();
-  if (cursor.over) { e.preventDefault(); hideSettings(); showMenu(e.clientX, e.clientY); }
+// Build the menu/Settings UI (ui.js) and wire it to engine state + actions. It owns
+// its own DOM + open/close state; everything it touches comes through this api object.
+ui = createUI({
+  THREE, BASE_H, rig,
+  avatarIPC: window.avatarIPC,
+  setStatus, baseName, kindOf, profileFor, modelMaterials, flags,
+  builtinModels: BUILTIN_MODELS,
+  getCurKey: () => curKey,
+  getSizeScale: () => sizeScale,
+  getAttachObjs: () => attachObjs,
+  getDisplays: () => DISPLAYS,
+  getCurDisplayIdx: () => curDisplayIdx,
+  getBonesShown: () => bonesShown,
+  loadModel, attachMesh, detachAttachment, clearAttachments,
+  express: (t, d) => EnigmaAvatar.express(t, d),
+  resizeBy, applySize, DEFAULT_SIZE,
+  moveToDisplay, showSkeleton, recolor, hueShift, springTune, tuneAttachment,
+  refreshDisplays, syncInteractive,
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape") { if (settingsShown) hideSettings(); else hideMenu(); } });
+
+addEventListener("contextmenu", (e) => {
+  if (ui.containsEvent(e.target)) { e.preventDefault(); return; }
+  cursor.x = e.clientX; cursor.y = e.clientY; computeOver();
+  if (cursor.over) { e.preventDefault(); ui.hideSettings(); ui.showMenu(e.clientX, e.clientY); }
+});
+addEventListener("keydown", (e) => { if (e.key === "Escape") { if (ui.isSettingsOpen()) ui.hideSettings(); else ui.hideMenu(); } });
 
 // --- input (drag to reposition; NO hand cursor; NO fall) --------------------
 addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); _clampScreen(pos); if (gliding) _clampScreen(glideT); });   // a monitor hop resizes the window → keep her on-screen
 addEventListener("wheel", (e) => { if (cursor.over) resizeBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: true });
-addEventListener("pointermove", (e) => { cursor.x = e.clientX; cursor.y = e.clientY; computeOver(); });
+addEventListener("pointermove", (e) => { cursor.x = e.clientX; cursor.y = e.clientY; computeOver(); if (held) { _rearmHop(); maybeDragHop(); } });
 addEventListener("pointerdown", (e) => {
-  if (e.target instanceof Node && (menu.contains(e.target) || settings.contains(e.target))) return;  // clicking a popup's own controls
-  const wasOpen = menuShown || settingsShown;
-  hideMenu(); hideSettings();                                   // any outside click dismisses popups
+  if (ui.containsEvent(e.target)) return;                        // clicking a popup's own controls
+  const wasOpen = ui.isOpen();
+  ui.hideMenu(); ui.hideSettings();                             // any outside click dismisses popups
   if (wasOpen) return;                                          // the dismiss click shouldn't also grab
   computeOver();
   if (cursor.over && !locked) { held = true; grab.copy(toWorld(cursor.x, cursor.y).sub(pos)); _downX = cursor.x; _downY = cursor.y; } else { _downX = -999; }
@@ -1056,7 +751,7 @@ addEventListener("pointerup", (e) => {
   if (held && _downX > -100 && Math.abs(e.clientX - _downX) < 6 && Math.abs(e.clientY - _downY) < 6) {
     EnigmaAvatar.express(Math.random() < 0.5 ? "happy" : "wag", 1.6);
   }
-  held = false; fpClock = 1; _downX = -999;   // re-scan the silhouette at the new spot
+  held = false; fpClock = 1; _downX = -999; _hopArmed = true;   // re-scan silhouette; re-arm the cross-monitor drag-hop
 });
 addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "h") document.getElementById("ui")?.classList.toggle("hidden");
@@ -1073,7 +768,7 @@ addEventListener("keydown", (e) => {
 function loadFile(file) {                                       // single file (self-contained .glb/.vrm/.fbx)
   const url = URL.createObjectURL(file);
   curKey = file.name;
-  loadAsset(url, (a) => { URL.revokeObjectURL(url); onModelLoaded(a); },
+  loadAsset(url, (a) => { URL.revokeObjectURL(url); onModelLoaded(a); clearOnboarding(); },
             (err) => { URL.revokeObjectURL(url); setStatus(`load failed: ${err?.message || err}`); }, { kind: kindOf(file.name) });
 }
 function loadFiles(fileList) {                                  // drag-drop: 1 file, or .gltf + .bin + textures together
@@ -1086,7 +781,7 @@ function loadFiles(fileList) {                                  // drag-drop: 1 
   // revoke late: FBX kicks off texture loads asynchronously after onLoad, so don't
   // pull the blob URLs out from under them. (Page unload frees them regardless.)
   const cleanup = () => setTimeout(() => urls.forEach(URL.revokeObjectURL), 20000);
-  loadAsset(map[main.name], (a) => { cleanup(); onModelLoaded(a); },
+  loadAsset(map[main.name], (a) => { cleanup(); onModelLoaded(a); clearOnboarding(); },
             (err) => { cleanup(); setStatus(`load failed: ${err?.message || err}`); }, { kind: kindOf(main.name), blobMap: map });
 }
 document.getElementById("file")?.addEventListener("change", (e) => { if (e.target.files?.length) loadFiles(e.target.files); });
@@ -1097,8 +792,19 @@ addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer?.files?
 applySize(sizeScale);
 animate();
 // Load per-avatar profiles + the model list first, THEN the default model — so its
-// saved attachments and tuned physics apply on the very first load.
-Promise.allSettled([loadProfiles(), refreshModelList()]).then(() => loadModel(DEFAULT_MODEL, "default model"));
+// saved attachments and tuned physics apply on the very first load. If the default
+// model isn't present (a FRESH CLONE on another device — models/ is gitignored), fall
+// back to the zero-asset procedural placeholder + an onboarding hint, so the overlay is
+// never blank and the user can Add model… straight from there. (Works on any device.)
+Promise.allSettled([loadProfiles(), ui.refreshModelList(), loadRigOverrides()]).then(startup);
+function startup() {
+  const seq = ++_loadSeq;
+  curKey = DEFAULT_MODEL;
+  setStatus("loading default model …");
+  loadAsset(DEFAULT_MODEL,
+    (asset) => { if (seq === _loadSeq) { onModelLoaded(asset); clearOnboarding(); } },
+    () => { if (seq !== _loadSeq) return; console.warn("[avatar] no default model on this device → procedural placeholder"); curKey = DEFAULT_KEY; onModelLoaded(buildDefaultAvatar()); showOnboarding(); });
+}
 
 // In the desktop overlay, connect to the local AI bus (see mods/avatar/bus.py)
 // so Enigma/Odysseus can drive emotes — the tail wags when it talks. A plain

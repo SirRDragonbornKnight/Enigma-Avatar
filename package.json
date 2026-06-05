@@ -5,7 +5,8 @@
   "description": "Desktop Mate-style companion: any rigged glTF/GLB/VRM/FBX floating on a transparent, always-on-top desktop overlay (spring physics, facial lip-sync, emotes).",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "node --test"
   },
   "devDependencies": {
     "electron": "^30.0.0"

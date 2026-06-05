@@ -10,10 +10,19 @@ import * as THREE from "three";
 // NOTE the guards: `fin(?!ger)` so "Finger" bones aren't sprung (floppy hands),
 // and `(?<!for)ear` so "forEARm" bones aren't sprung. Both bite real rigs (Mal0
 // has 28 finger bones; many humanoids name the lower arm "forearm").
-const SPRING_RE = /hair|tail|(?<!for)ear|skirt|cloth|ribbon|rope|chain|wire|cable|whisker|cape|scarf|fluff|frill|antenna|fin(?!ger)|string|tassel|braid/i;
+// Hair family: "hair" alone misses common long-hair bone names — `strand` (51dc's
+// 14 BackStrand bones = her frozen back hair), plus bangs/fringe/ahoge for fringes.
+// (ponytail/twintail already match via `tail`.)
+const SPRING_RE = /hair|strand|bangs?|fringe|ahoge|tail|(?<!for)ear|skirt|cloth|ribbon|rope|chain|wire|cable|whisker|cape|scarf|fluff|frill|antenna|fin(?!ger)|string|tassel|braid/i;
 
 export function buildSpringBones(model, opts = {}) {
-  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, breeze: 0.16, ...opts };
+  // opts carries physics params (stiffness/drag/gravity/breeze) AND the rig hooks:
+  //   exclude  : Set<THREE.Bone> already claimed by a humanoid role — never spring these
+  //   override : the per-model rig_overrides entry; override.spring = { extra, never }
+  const { exclude = new Set(), override = null, ...paramOpts } = opts;
+  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, breeze: 0.16, ...paramOpts };
+  const springExtra = new Set(override?.spring?.extra || []);
+  const springNever = new Set(override?.spring?.never || []);
   const items = [];
   const seen = new Set();
   model.updateWorldMatrix(true, true);
@@ -35,17 +44,23 @@ export function buildSpringBones(model, opts = {}) {
     });
   }
 
-  // 1) name-based — the reliable path (hair / tail / ears / wires / cloth …).
-  model.traverse((o) => { if (o.isBone && SPRING_RE.test(o.name)) addItem(o, false); });
+  // 1) name-based — the reliable path (hair / tail / ears / wires / cloth …). Skip any
+  //    bone a humanoid role already claimed (exclude) or the override opted out (never);
+  //    force-spring any bone the override names in `extra`.
+  model.traverse((o) => {
+    if (!o.isBone || exclude.has(o) || springNever.has(o.name)) return;
+    if (SPRING_RE.test(o.name) || springExtra.has(o.name)) addItem(o, false);
+  });
 
-  // 2) geometric fallback — ONLY when names matched nothing, so it never
-  //    limp-ifies a humanoid whose limbs were correctly role-matched (those
-  //    rigs always yield named springs). Walks each leaf bone up its chain
-  //    while the parent has exactly one bone-child; a long, far-reaching chain
-  //    is a tail/wing/fin → spring its links (gentle: low gravity, stiffer
-  //    pull-to-rest, so at idle it sits at its modelled pose and only sways
+  // 2) geometric fallback — ONLY when names matched nothing AND no humanoid roles were
+  //    resolved (exclude is empty). So a role-matched humanoid never gets its limbs
+  //    limp-ified (the old name-only trigger sprang arms/legs on any hairless rig); an
+  //    opaque non-humanoid (Toothless: tail + wings) still gets its dangly chains.
+  //    Walks each leaf bone up its chain while the parent has exactly one bone-child; a
+  //    long, far-reaching chain is a tail/wing/fin → spring its links (gentle: low
+  //    gravity, stiffer pull-to-rest, so it sits at its modelled pose and sways only
   //    when the body moves — no drooping).
-  if (items.length === 0) {
+  if (items.length === 0 && exclude.size === 0) {
     const size = new THREE.Vector3(); new THREE.Box3().setFromObject(model).getSize(size);
     const a = new THREE.Vector3(), z = new THREE.Vector3();
     const cands = [];

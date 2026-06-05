@@ -9,17 +9,24 @@ your desktop, like *Desktop Mate*. One codebase, runs in a browser **and** in El
 > spring-bone hair/tail physics, facial blink + lip-sync, and AI-driven emotes.
 
 ## Files
-- `index.html` + `avatar.js` — the engine (loads a model, idles/emotes, floats, grab-to-move).
-- `procedural.js` — procedural skeletal animator (humanoid idle + emotes) for rigs with no clips.
-- `spring.js` — spring-bone physics (hair/tail/ears sway); name-based with a geometric fallback.
+- `index.html` + `avatar.js` — the engine **orchestrator** (scene, render loop, model lifecycle, float/grab, the `EnigmaAvatar` control surface + bus `handleCommand`).
+- `rig.js` — **bone IDENTIFICATION cascade**: VRM humanoid → name regex → geometric/topological inference → per-model override. Maps any rig's bones to 19 canonical roles and degrades gracefully on non-bipeds. Unit-tested.
+- `procedural.js` — procedural skeletal animator (humanoid idle + emotes); consumes the roles `rig.js` resolves.
+- `spring.js` — spring-bone physics (hair/tail/ears sway); name-based + geometric fallback, with role-matched bones excluded so limbs never go floppy.
 - `facial.js` — facial layer: blendshapes → facial bones (jaw) → none; blink + lip-sync.
+- `loader.js` — multi-format asset loading (glTF/GLB · VRM · FBX, spec-gloss compat, FBX material re-binding).
+- `voice.js` — speech playback + amplitude lip-sync (Web-Audio RMS → mouth).
+- `ui.js` — the right-click menu + Settings dialog (all the DOM).
+- `default_avatar.js` — a **zero-asset procedural placeholder** (a simple rigged figure) shown when no model is installed, so the overlay works on any device out of the box.
 - `main.js` + `preload.js` + `package.json` — the Electron shell (transparent, click-through overlay) + model-import dialog.
+- `rig_overrides.json` — per-model bone-role overrides (force a role / exclude a bone / tune spring detection): a 1-line fix for any mis-identified rig.
 - `bus.py` — local WebSocket relay (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar.
-- `say.py` — CLI to drive the avatar (emotes, model swap, size, **say** a WAV).
+- `say.py` — CLI to drive the avatar (emotes, model swap, size, **say** a WAV, **demo**).
 - `speak.py` — **Kokoro TTS → lip-sync**: synthesize text and have the avatar speak it.
 - `import_unitypackage.py` — turn a Unity `.unitypackage` (VRChat avatar) into a loadable model folder.
 - `models/` + `models.json` — model folders + the user-model manifest (built-ins live in `avatar.js`).
-- `bone_limits.json` — salvaged 19-bone humanoid joint limits (clamps procedural posing).
+- `bone_limits.json` — 19-bone humanoid joint limits (clamps procedural posing; role names match `rig.js`).
+- `tests/` — Node unit tests (`npm test`) for the rig cascade + spring detection; also run under pytest via `tests/test_avatar_rig.py`.
 
 ## Run it on your desktop (NO admin)
 **Double-click the `Enigma Avatar` desktop icon**, or run `Start-Avatar.ps1` (shows logs),
@@ -31,6 +38,8 @@ for everything (models, **Add model…**, express, size, settings, quit). Launch
 - **left-drag** move · scroll or **+/-** resize (**0** resets) · **Ctrl+Alt+Q** quit · **Ctrl+Alt+A** force click-through · **H** info panel.
 
 ## Add / swap models
+> **First run on a new device:** `models/` isn't shipped (large + non-redistributable), so a fresh clone has no models. The overlay then shows a **built-in procedural placeholder** (a simple rigged figure that the engine animates) plus a hint — add a real model with either route below and it replaces the placeholder. Bring it back any time with `python say.py default`.
+
 - **Right-click → Add model…** — native file picker. Pick a `.glb`/`.gltf`/`.vrm`/`.fbx`
   (or a `.gltf` + its `.bin` + textures together), or a Unity **`.unitypackage`**
   (VRChat avatar) — it's copied into `models/`, registered, and loaded.

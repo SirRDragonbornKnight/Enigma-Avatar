@@ -14,6 +14,11 @@ const fs = require("fs");
 const os = require("os");
 const { spawnSync } = require("child_process");
 
+// Disable the HTTP/module cache so renderer edits always load fresh — this kills
+// the manual `?v=NN` cache-busting ritual in index.html / the JS imports (the
+// overlay is local, so reload cost is trivial). Must run before app is ready.
+app.commandLine.appendSwitch("disable-http-cache");
+
 let win = null;
 let forceInteractive = false;
 
@@ -39,7 +44,7 @@ let curDisplay = 0;                                   // index into screen.getAl
 function displays() { return screen.getAllDisplays(); }
 function primaryIndex() { const id = screen.getPrimaryDisplay().id; return Math.max(0, displays().findIndex((d) => d.id === id)); }
 function boundsFor(i) { const ds = displays(); return (Number.isInteger(i) && ds[i] ? ds[i] : screen.getPrimaryDisplay()).bounds; }
-function placeOnDisplay(i) {
+function placeOnDisplay(i, opts = {}) {
   if (!win) return;
   if (Number.isInteger(i) && displays()[i]) curDisplay = i;
   const b = boundsFor(curDisplay);
@@ -48,8 +53,9 @@ function placeOnDisplay(i) {
   try { win.webContents.send("avatar:displayChanged", displayList()); } catch {}   // keep the renderer's monitor menu in sync
   // Re-center the avatar on the new monitor. Its in-window position is stored in WORLD
   // coords; on a different-sized monitor that can land it at an edge or fully OFF-SCREEN
-  // (the "can't see the avatar on other monitors" bug). Recenter once the resize settles.
-  setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.send("avatar:center"); } catch {} }, 180);
+  // (the "can't see the avatar on other monitors" bug). Recenter once the resize settles —
+  // EXCEPT for a drag-hop (opts.center===false), where the live drag owns the position.
+  if (opts.center !== false) setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.send("avatar:center"); } catch {} }, 180);
 }
 // The display list the renderer renders in its "Move to monitor" menu: sorted
 // left→right (how the screens physically sit) with a human label, but each entry
@@ -202,6 +208,8 @@ function init() {
   });
   // Move the overlay to a chosen monitor (index into screen.getAllDisplays()).
   ipcMain.on("avatar:setDisplay", (_e, i) => placeOnDisplay(i));
+  // Same, but for a live drag-hop across a monitor edge — DON'T recenter (the drag positions it).
+  ipcMain.on("avatar:setDisplayDrag", (_e, i) => placeOnDisplay(i, { center: false }));
   // The renderer asks for the monitor list to build its right-click "Move to monitor" menu.
   ipcMain.handle("avatar:getDisplays", () => displayList());
   // Keep the overlay correctly placed on its current monitor if the layout changes.

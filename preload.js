@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   capture: (opts) => ipcRenderer.invoke("avatar:capture", opts || {}),
   // Move the overlay to a given monitor (index into the display list).
   setDisplay: (i) => ipcRenderer.send("avatar:setDisplay", i),
+  // Drag-hop variant: move to a monitor WITHOUT recentering (used while dragging across an edge).
+  setDisplayDrag: (i) => ipcRenderer.send("avatar:setDisplayDrag", i),
   // List monitors for the "Move to monitor" menu: { current, displays:[{index,label,primary,…}] }.
   getDisplays: () => ipcRenderer.invoke("avatar:getDisplays"),
   // Fire when the overlay hops monitors (hotkey/menu/layout change) so the menu re-ticks.

@@ -12,54 +12,19 @@
 // per-rig; tune({swingAxis:'z'}) if limbs swing sideways instead of forward).
 
 import * as THREE from "three";
+import { resolveRig } from "./rig.js";
 
 const DEG = Math.PI / 180;
-// SKIP: fingers/toes/face/dangly bits, IK rig helpers, AND deformation aids —
-// "helper"/"twist" bones (Mal0's Bip_*_Helper, lowerarm twists) must never win a
-// primary role over the real joint (avatar audit #4).
-const SKIP = /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits/i;
 
-// Map a bone name -> "side_part" role (or center part), or null to ignore.
-function roleOf(raw) {
-  const n = raw.toLowerCase();
-  if (SKIP.test(n)) return null;
-  // Side: left/right word or _l_/.l boundary, PLUS Blender ".L"/".R" tags that
-  // three.js de-dotted on import into a glued uppercase L/R (upper_arm.L → "upper_armL").
-  // Without this, EVERY Blender/Rigify limb loses its side and stays in the bind T-pose
-  // (this is exactly why Toy Chica was T-posed). The trailing (_ . digit | end) anchor
-  // keeps it a real SUFFIX tag, so mid-word capitals (Armature:Root → "ArmatureRoot") don't false-trigger.
-  let side = "";
-  if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n) || /[a-z]L([_.]|\d|$)/.test(raw)) side = "left";
-  else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw)) side = "right";
-  const has = (re) => re.test(n);
-  // Center bones are never side-tagged; a sided match (Bip_Pelvis_L/R) is an
-  // auxiliary bone, not the real spine — reject it so the true center bone wins
-  // regardless of traversal order (avatar audit #4).
-  if (has(/hips?|pelvis/)) return side ? null : "hips";
-  if (has(/upperchest|chest/)) return side ? null : "chest";
-  if (has(/spine|lowerback|waist|spine2/)) return side ? null : "spine";
-  if (has(/neck/)) return side ? null : "neck";
-  if (has(/head/)) return side ? null : "head";
-  let part = null;
-  if (has(/shoulder|clavicle/)) part = "shoulder";
-  else if (has(/forearm|elbow|lower[_ ]?arm/)) part = "forearm";
-  else if (has(/hand|wrist/)) part = "hand";
-  else if (has(/upper[_ ]?arm/) || (has(/arm(?!ature)/) && !has(/forearm/))) part = "arm";   // (?!ature): Blender's "Armature" skeleton name is NOT an arm — else legs/hair bones get stolen into arm roles (51dc)
-  else if (has(/thigh|up[_ ]?leg|upper[_ ]?leg/)) part = "leg";
-  else if (has(/calf|shin|knee|low(er)?[_ ]?leg/)) part = "shin";
-  else if (has(/foot|ankle/)) part = "foot";
-  else if (has(/leg/)) part = "leg";
-  if (!part) return null;
-  return side ? `${side}_${part}` : null;   // limbs need a side
-}
-
-export function buildProceduralRig(model, boneLimits = {}) {
-  const bones = {}, rest = {};
-  model.traverse((o) => {
-    if (!o.isBone) return;
-    const role = roleOf(o.name);
-    if (role && !bones[role]) { bones[role] = o; rest[role] = o.quaternion.clone(); }
-  });
+// Bone IDENTIFICATION lives in rig.js now (a VRM → name → geometry → override
+// cascade). This module is the MOTION layer: given the resolved role→bone map it
+// drives the layered idle + emotes. Pass `resolved` from resolveRig(); if omitted
+// (e.g. unit tests / standalone use), it resolves names+geometry itself.
+export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
+  const R = resolved || resolveRig(model, null);
+  const bones = R.roles;                 // role -> live bone
+  const rest = {};
+  for (const role in bones) rest[role] = bones[role].quaternion.clone();
 
   // Natural arm rest — RIG-AGNOSTIC. Many rigs bind in a T-pose (arms straight out).
   // The old fixed local-X "armRest" drop only matched Mixamo-style bones, so Blender/
@@ -215,7 +180,7 @@ export function buildProceduralRig(model, boneLimits = {}) {
   }
 
   return {
-    matched: Object.keys(bones).sort(),
+    matched: R.matched,
     update,
     params,
     setParams: (p) => Object.assign(params, p),
