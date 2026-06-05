@@ -26,7 +26,8 @@ your desktop, like *Desktop Mate*. One codebase, runs in a browser **and** in El
 - `import_unitypackage.py` — turn a Unity `.unitypackage` (VRChat avatar) into a loadable model folder.
 - `models/` + `models.json` — model folders + the user-model manifest (built-ins live in `avatar.js`).
 - `bone_limits.json` — 19-bone humanoid joint limits (clamps procedural posing; role names match `rig.js`).
-- `tests/` — Node unit tests (`npm test`) for the rig cascade + spring detection; also run under pytest via `tests/test_avatar_rig.py`.
+- `tests/` — Node unit tests (`npm test`) for the rig cascade + spring detection; also run under pytest via `tests/test_avatar_rig.py`. `tests/realmodels.test.js` locks the cascade's per-model role counts against the actual assets.
+- `tools/rig_report.mjs` — headless cascade inspector: `node tools/rig_report.mjs [model.glb] [--bones]` reads a model's real bones straight from its glTF JSON (no WebGL) and reports which of the 19 roles resolve and by which tier — so writing a `rig_overrides.json` entry is a measured edit, not a guess.
 
 ## Run it on your desktop (NO admin)
 **Double-click the `Enigma Avatar` desktop icon**, or run `Start-Avatar.ps1` (shows logs),

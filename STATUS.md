@@ -56,19 +56,28 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin — see the `
 ## Tests
 - **`npm test`** (in `mods/avatar/`) runs the Node unit tests in `tests/`: the rig cascade (name / geometry /
   override / VRM tiers, with negative assertions for graceful degradation) + spring detection.
+- **`node tools/rig_report.mjs`** — headless cascade inspector: extracts each model's REAL bone snapshot from
+  its glTF JSON (names + world positions + hierarchy, no WebGL / no mesh decode) and runs the SAME tiers the
+  engine uses, printing which of the 19 roles resolve and by which tier. `--bones` dumps every bone (height% /
+  side); pass a path for one model, or no args for all. `tests/realmodels.test.js` turns this into a regression
+  guard that LOCKS the per-model counts in "Per-avatar reality" below — so a cascade change that quietly breaks
+  a real rig fails the suite. (Skips cleanly on a fresh clone, where `models/` is gitignored-absent.)
 - Also wired into the project's pytest suite via **`tests/test_avatar_rig.py`** (alongside `tests/test_avatar_bone_data.py`,
   which locks the 19 role names in `bone_limits.json`). Verification of *rendering/feel* still needs real eyes
   (software-WebGL can't render skinned meshes) — drive the live overlay + `EnigmaAvatar.snap()` to inspect.
 
 ## Per-avatar reality (cascade results)
+_All counts below are now ASSERTED by `tests/realmodels.test.js` (verified 2026-06-05 via `tools/rig_report.mjs`)._
 - **Roxanne · 51dc** — 19 roles by name; full idle + hair/tail physics.
 - **Mal0 · Toy Chica · Fexa** — 19 roles (name + geometry filling torso/limb gaps; Chica's Blender `.L/.R` sides resolve — the old T-pose is fixed).
-- **Lolbit** — 17 (upper-arm role unmatched by name; override candidate). **Mangle** — 15 (no centred hips anchor).
+- **Lolbit** — 17: its arms are a 3-joint `Shoulder→Elbow→Wrist` chain with **no separate upper-arm bone**, so `left/right_arm` stay empty (Shoulder→`shoulder`, Elbow→`forearm`, Wrist→`hand`). **Mangle** — 15: no `hips` bone, chest is named `Spine1` (loses to `Spine` for the `spine` slot), and decorative `ShoulderPad` + a duplicated skeleton confuse the right side. Both are *override-able* (force the missing roles), but because it means mapping a role onto a joint it wasn't named for, the resulting arm-swing **feel needs a live look** — measure any candidate with `node tools/rig_report.mjs <model>` first.
 - **GLaDOS** — head/neck only (no body); her wires spring. Correct.
 - **Night Fury (Toothless)** — non-biped: geometry declines it (wings aren't arms), so it stays a spring creature (tail + wings sway), no bogus limb idle.
-- **grace_howard** (MMD/Japanese bone names) · **Spyro** (no skin/joints) — unresolved; `rig_overrides.json` candidates.
+- **grace_howard** — MMD export whose bone names are **Shift-JIS bytes that arrive as `U+FFFD` mojibake under three.js's UTF-8 glTF decode** (the same garbage in the tool AND the live engine). The name tier — and any `rig_overrides.json` keyed *by name* — therefore can't match them. NOT a 1-line override: it needs a **UTF-8 re-export** of the model (or new geometry-tier coverage), not a name map. **Spyro** — no skin/joints (static), correct.
 
 ## Next
-1. **Per-rig overrides** for the stragglers (grace MMD names; lolbit/mangle arms) via `rig_overrides.json`.
+1. **Stragglers** (measure each with `node tools/rig_report.mjs <model>`, confirm the swing live):
+   lolbit/mangle arm (+mangle hips/chest) via `rig_overrides.json`; grace_howard needs a **UTF-8 bone-name
+   re-export** before any name/override can bite (its names are mojibake under three.js — see Per-avatar above).
 2. **Visual pass** on the real overlay: per-rig limb-swing axis (`tune({swingAxis})`), jaw axis/sign (`facialTune`), lip-sync gain.
 3. **Enigma** (still pretraining): once it serves, Odysseus calls `avatar_express`/`avatar_say` as it talks — the bus path is built & tested.
