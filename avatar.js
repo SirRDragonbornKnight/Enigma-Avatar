@@ -664,7 +664,7 @@ function moveToDisplay(idx) {
   }
   if (window.avatarIPC?.setDisplay) { window.avatarIPC.setDisplay(idx); curDisplayIdx = idx; setStatus("monitor → " + idx); }
 }
-window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; if (ui?.isMenuOpen()) ui.rebuildMenu(); });
+window.avatarIPC?.onDisplayChanged?.((info) => { if (!info) return; DISPLAYS = info.displays || []; curDisplayIdx = info.current ?? curDisplayIdx; });   // DISPLAYS feeds the drag-hop; no monitor menu to rebuild
 // Recenter the avatar on the current monitor after a move — its position is in world
 // coords, so a hop to a different-sized screen can strand it at an edge / off-screen.
 // Snap it to centre-lower of the (now-resized) window so it's always immediately visible.
@@ -715,16 +715,12 @@ ui = createUI({
   setStatus, baseName, kindOf, profileFor, modelMaterials, flags,
   builtinModels: BUILTIN_MODELS,
   getCurKey: () => curKey,
-  getSizeScale: () => sizeScale,
   getAttachObjs: () => attachObjs,
-  getDisplays: () => DISPLAYS,
-  getCurDisplayIdx: () => curDisplayIdx,
   getBonesShown: () => bonesShown,
   loadModel, attachMesh, detachAttachment, clearAttachments,
   express: (t, d) => EnigmaAvatar.express(t, d),
-  resizeBy, applySize, DEFAULT_SIZE,
-  moveToDisplay, showSkeleton, recolor, hueShift, springTune, tuneAttachment,
-  refreshDisplays, syncInteractive,
+  showSkeleton, recolor, hueShift, springTune, tuneAttachment,
+  syncInteractive,
 });
 
 addEventListener("contextmenu", (e) => {
