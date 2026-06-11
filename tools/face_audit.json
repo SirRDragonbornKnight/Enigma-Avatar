@@ -1,0 +1,2918 @@
+[
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\anime_cat_girl\\anime_cat_girl.glb",
+  "generator": "Sketchfab-16.12.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "anime_cat_girl"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\anime_catgirl\\anime_catgirl.glb",
+  "generator": "Sketchfab-16.59.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "anime_catgirl"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\aveline_robot__4v3line_vyse\\aveline_robot__4v3line_vyse.glb",
+  "generator": "Sketchfab-16.87.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "eyes_47",
+   "eye_r_43",
+   "eye_up_r_41",
+   "eye_down_r_42",
+   "eye_l_46",
+   "eye_up_l_44",
+   "eye_down_l_45"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "aveline_robot__4v3line_vyse"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\bunny-robot-r34\\bunny-robot-r34.glb",
+  "generator": "Sketchfab-16.85.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "bunny-robot-r34"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\classic_frenni_fazclaire\\classic_frenni_fazclaire.glb",
+  "generator": "Sketchfab-17.14.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "Eye.R_06",
+   "Eye.L_07"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "classic_frenni_fazclaire"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\classic_type_0\\classic_type_0.glb",
+  "generator": "Sketchfab-17.14.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "Eye.R_06",
+   "Eye.L_07"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "classic_type_0"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\fexa_blender\\fexa_blender.glb",
+  "generator": "Sketchfab-16.65.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "Eye.R_Fexa_Armature",
+   "Eye.L_Fexa_Armature"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "fexa_blender"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\glados\\scene.gltf",
+  "generator": "Sketchfab-16.59.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "headbits_eye_leftright_5",
+   "headbits_eye_flap01_3",
+   "headbits_eye_flap02_4"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "glados"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\lola_bunny\\lola_bunny.glb",
+  "generator": "Sketchfab-17.8.0",
+  "vrm": false,
+  "jawBones": [
+   "head jaw_030"
+  ],
+  "lidBones": [
+   "head eyelid upper left 1_051",
+   "head eyelid upper left 1_end_0184",
+   "head eyelid upper left 2_052",
+   "head eyelid upper left 2_end_0185",
+   "head eyelid upper left 3_053",
+   "head eyelid upper left 3_end_0186",
+   "head eyelid lower left 1_054",
+   "head eyelid lower left 1_end_0187",
+   "head eyelid lower left 2_055",
+   "head eyelid lower left 2_end_0188",
+   "head eyelid lower left 3_056",
+   "head eyelid lower left 3_end_0189",
+   "head eyelid corner left 1_058",
+   "head eyelid corner left 1_end_0191",
+   "head eyelid corner left 2_059",
+   "head eyelid corner left 2_end_0192",
+   "head eyelid corner right 1_061",
+   "head eyelid corner right 1_end_0194",
+   "head eyelid corner right 2_062",
+   "head eyelid corner right 2_end_0195",
+   "head eyelid upper right 1_063",
+   "head eyelid upper right 1_end_0176",
+   "head eyelid upper right 2_064",
+   "head eyelid upper right 2_end_0197",
+   "head eyelid upper right 3_065",
+   "head eyelid upper right 3_end_0198",
+   "head eyelid lower right 1_066",
+   "head eyelid lower right 1_end_0199",
+   "head eyelid lower right 2_067",
+   "head eyelid lower right 2_end_0200",
+   "head eyelid lower right 3_068",
+   "head eyelid lower right 3_end_0201"
+  ],
+  "eyeBones": [
+   "head eyeball left_057",
+   "head eyeball left_end_0190",
+   "head eyeball right_069",
+   "head eyeball right_end_0202"
+  ],
+  "browBones": [
+   "head eyebrow middle_071",
+   "head eyebrow middle_end_0204",
+   "head eyebrow right 1_076",
+   "head eyebrow right 1_end_0208",
+   "head eyebrow right 2_077",
+   "head eyebrow right 2_end_0209",
+   "head eyebrow right 3_078",
+   "head eyebrow right 3_end_0210",
+   "head eyebrow right 4_079",
+   "head eyebrow right 4_end_0211",
+   "head eyebrow left 1_080",
+   "head eyebrow left 1_end_0212",
+   "head eyebrow left 2_081",
+   "head eyebrow left 2_end_0213",
+   "head eyebrow left 3_082",
+   "head eyebrow left 3_end_0214",
+   "head eyebrow left 4_083",
+   "head eyebrow left 4_end_0215"
+  ],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "bones",
+  "lostChannels": [],
+  "model": "lola_bunny"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\makiro\\Makiro.glb",
+  "generator": "Sketchfab-12.65.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [
+   "Eye_L_Armature",
+   "Eye_R_Armature",
+   "LeftEye_Armature",
+   "RightEye_Armature"
+  ],
+  "browBones": [],
+  "meshMorphs": [
+   {
+    "mesh": 0,
+    "meshName": "Body_0",
+    "count": 19,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.0858,
+      "centroidFrac": [
+       0.5,
+       0.499,
+       0.927
+      ],
+      "regionSizeFrac": [
+       0.107,
+       0.136,
+       0.032
+      ],
+      "meanDir": [
+       0.0,
+       0.057,
+       -0.226
+      ],
+      "maxDelta": 0.01931,
+      "guess": "low/other"
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.0858,
+      "centroidFrac": [
+       0.5,
+       0.499,
+       0.927
+      ],
+      "regionSizeFrac": [
+       0.107,
+       0.136,
+       0.032
+      ],
+      "meanDir": [
+       0.0,
+       0.057,
+       -0.226
+      ],
+      "maxDelta": 0.01931,
+      "guess": "low/other"
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.0008,
+      "centroidFrac": [
+       0.5,
+       0.496,
+       0.918
+      ],
+      "regionSizeFrac": [
+       0.056,
+       0.0,
+       0.0
+      ],
+      "meanDir": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "maxDelta": 2e-05,
+      "guess": "low/other"
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.0008,
+      "centroidFrac": [
+       0.5,
+       0.496,
+       0.918
+      ],
+      "regionSizeFrac": [
+       0.056,
+       0.0,
+       0.0
+      ],
+      "meanDir": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "maxDelta": 2e-05,
+      "guess": "low/other"
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 17,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 18,
+      "name": null,
+      "affectedFrac": 0.0858,
+      "centroidFrac": [
+       0.5,
+       0.499,
+       0.927
+      ],
+      "regionSizeFrac": [
+       0.107,
+       0.136,
+       0.032
+      ],
+      "meanDir": [
+       0.0,
+       0.057,
+       -0.226
+      ],
+      "maxDelta": 0.01931,
+      "guess": "low/other"
+     }
+    ]
+   },
+   {
+    "mesh": 1,
+    "meshName": "Body_1",
+    "count": 19,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 17,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 18,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     }
+    ]
+   },
+   {
+    "mesh": 2,
+    "meshName": "Body_2",
+    "count": 19,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 17,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 18,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     }
+    ]
+   },
+   {
+    "mesh": 3,
+    "meshName": "Body_3",
+    "count": 19,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 17,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     },
+     {
+      "i": 18,
+      "name": null,
+      "affectedFrac": 0.0,
+      "note": "zero delta",
+      "guess": ""
+     }
+    ]
+   }
+  ],
+  "totalMorphs": 76,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [
+   {
+    "anim": "Take 01",
+    "mesh": 0,
+    "meshName": "Body_0",
+    "dur": 4.12,
+    "keyframes": 16,
+    "tracks": [
+     {
+      "morph": 18,
+      "max": 1.0,
+      "duty": 0.625,
+      "pulses": 1,
+      "pulseWidths": [
+       0.42
+      ],
+      "meanOn": 0.687,
+      "pattern": "sustained"
+     }
+    ]
+   },
+   {
+    "anim": "Take 01",
+    "mesh": 1,
+    "meshName": "Body_1",
+    "dur": 4.12,
+    "keyframes": 16,
+    "tracks": [
+     {
+      "morph": 18,
+      "max": 1.0,
+      "duty": 0.625,
+      "pulses": 1,
+      "pulseWidths": [
+       0.42
+      ],
+      "meanOn": 0.687,
+      "pattern": "sustained"
+     }
+    ]
+   },
+   {
+    "anim": "Take 01",
+    "mesh": 2,
+    "meshName": "Body_2",
+    "dur": 4.12,
+    "keyframes": 16,
+    "tracks": [
+     {
+      "morph": 18,
+      "max": 1.0,
+      "duty": 0.625,
+      "pulses": 1,
+      "pulseWidths": [
+       0.42
+      ],
+      "meanOn": 0.687,
+      "pattern": "sustained"
+     }
+    ]
+   },
+   {
+    "anim": "Take 01",
+    "mesh": 3,
+    "meshName": "Body_3",
+    "dur": 4.12,
+    "keyframes": 16,
+    "tracks": [
+     {
+      "morph": 18,
+      "max": 1.0,
+      "duty": 0.625,
+      "pulses": 1,
+      "pulseWidths": [
+       0.42
+      ],
+      "meanOn": 0.687,
+      "pattern": "sustained"
+     }
+    ]
+   }
+  ],
+  "animCount": 1,
+  "ladderMode": "morph-geom?",
+  "lostChannels": [
+   "76 UNNAMED morphs undetectable by name",
+   "baked clip drives morphs the ladder can't identify (learning data unused)"
+  ],
+  "model": "makiro"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\mal0_scp-1471\\mal0_scp-1471.glb",
+  "generator": "Sketchfab-16.59.0",
+  "vrm": false,
+  "jawBones": [
+   "DEF-jaw_012"
+  ],
+  "lidBones": [],
+  "eyeBones": [
+   "ORG-eye.L_017",
+   "ORG-eye.L_end_018",
+   "ORG-eye.L_end_end_0226",
+   "ORG-eye.R_019",
+   "ORG-eye.R_end_020",
+   "ORG-eye.R_end_end_0227"
+  ],
+  "browBones": [
+   "Brow1C.L_068",
+   "Brow1.L_069",
+   "Brow1.L_end_070",
+   "Brow1.L_end_end_0233",
+   "Brow1.L.001_071",
+   "Brow1.L.001_end_072",
+   "Brow1.L.001_end_end_0234",
+   "Brow1.L.002_073",
+   "Brow1.L.002_end_074",
+   "Brow1.L.002_end_end_0235",
+   "Brow1C.R_075",
+   "Brow1.R_076",
+   "Brow1.R_end_077",
+   "Brow1.R_end_end_0236",
+   "Brow1.R.001_078",
+   "Brow1.R.001_end_079",
+   "Brow1.R.001_end_end_0220",
+   "Brow1.R.002_080",
+   "Brow1.R.002_end_081",
+   "Brow1.R.002_end_end_0238"
+  ],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "bones",
+  "lostChannels": [],
+  "model": "mal0_scp-1471"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\marie\\marie.glb",
+  "generator": "Sketchfab-14.87.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "marie"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\roxanne_wolf\\scene.gltf",
+  "generator": "Sketchfab-12.98.0",
+  "vrm": false,
+  "jawBones": [
+   "Jaw_06",
+   "Jaw_end_078"
+  ],
+  "lidBones": [
+   "Left Upper EyeLID_08",
+   "Left Upper EyeLID_end_098",
+   "Left Lower EyeLID_09",
+   "Left Lower EyeLID_end_081",
+   "Right Upper EyeLID_011",
+   "Right Upper EyeLID_end_095",
+   "Right Lower EyeLID_012",
+   "Right Lower EyeLID_end_087"
+  ],
+  "eyeBones": [
+   "Left EyeBall_07",
+   "Left EyeBall_end_085",
+   "Right EyeBall_010",
+   "Right EyeBall_end_083"
+  ],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "bones",
+  "lostChannels": [],
+  "model": "roxanne_wolf"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\shibahu\\shibahu.glb",
+  "generator": "Sketchfab-13.59.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [
+   {
+    "mesh": 26,
+    "meshName": "0",
+    "count": 17,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.5737,
+      "centroidFrac": [
+       0.499,
+       0.275,
+       0.822
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.643,
+       0.246
+      ],
+      "meanDir": [
+       0.0,
+       -0.389,
+       -0.162
+      ],
+      "maxDelta": 2.36579,
+      "guess": ""
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.4925,
+      "centroidFrac": [
+       0.501,
+       0.367,
+       0.833
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.494,
+       0.164
+      ],
+      "meanDir": [
+       0.083,
+       -0.338,
+       -0.23
+      ],
+      "maxDelta": 2.86661,
+      "guess": "low/other"
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.4125,
+      "centroidFrac": [
+       0.481,
+       0.368,
+       0.84
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.494,
+       0.164
+      ],
+      "meanDir": [
+       0.121,
+       -0.377,
+       -0.311
+      ],
+      "maxDelta": 2.28003,
+      "guess": "low/other"
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.4783,
+      "centroidFrac": [
+       0.535,
+       0.327,
+       0.834
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.661,
+       0.252
+      ],
+      "meanDir": [
+       -0.129,
+       -0.07,
+       -0.14
+      ],
+      "maxDelta": 1.43829,
+      "guess": "low/other"
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.5111,
+      "centroidFrac": [
+       0.505,
+       0.349,
+       0.835
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.588,
+       0.17
+      ],
+      "meanDir": [
+       -0.109,
+       -0.127,
+       -0.118
+      ],
+      "maxDelta": 2.86667,
+      "guess": ""
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.6032,
+      "centroidFrac": [
+       0.498,
+       0.315,
+       0.832
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.57,
+       0.247
+      ],
+      "meanDir": [
+       -0.079,
+       -0.25,
+       -0.314
+      ],
+      "maxDelta": 2.06849,
+      "guess": ""
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.3111,
+      "centroidFrac": [
+       0.45,
+       0.426,
+       0.837
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.368,
+       0.157
+      ],
+      "meanDir": [
+       0.18,
+       -0.506,
+       -0.273
+      ],
+      "maxDelta": 2.79244,
+      "guess": "low/other+moves-down"
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.4754,
+      "centroidFrac": [
+       0.463,
+       0.31,
+       0.838
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.614,
+       0.23
+      ],
+      "meanDir": [
+       0.145,
+       -0.277,
+       -0.239
+      ],
+      "maxDelta": 3.94316,
+      "guess": "low/other"
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.3711,
+      "centroidFrac": [
+       0.498,
+       0.411,
+       0.829
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.35,
+       0.164
+      ],
+      "meanDir": [
+       0.141,
+       -0.423,
+       -0.141
+      ],
+      "maxDelta": 2.92763,
+      "guess": "low/other"
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.5246,
+      "centroidFrac": [
+       0.521,
+       0.277,
+       0.821
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.629,
+       0.243
+      ],
+      "meanDir": [
+       0.002,
+       -0.26,
+       -0.313
+      ],
+      "maxDelta": 2.15429,
+      "guess": ""
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.452,
+      "centroidFrac": [
+       0.5,
+       0.362,
+       0.837
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.558,
+       0.164
+      ],
+      "meanDir": [
+       -0.163,
+       -0.494,
+       -0.004
+      ],
+      "maxDelta": 1.84834,
+      "guess": "low/other+moves-down"
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.3185,
+      "centroidFrac": [
+       0.494,
+       0.381,
+       0.834
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.519,
+       0.155
+      ],
+      "meanDir": [
+       0.002,
+       -0.327,
+       0.079
+      ],
+      "maxDelta": 2.8716,
+      "guess": "low/other"
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.5955,
+      "centroidFrac": [
+       0.504,
+       0.304,
+       0.829
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.619,
+       0.241
+      ],
+      "meanDir": [
+       -0.126,
+       -0.348,
+       0.027
+      ],
+      "maxDelta": 1.57174,
+      "guess": ""
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.5936,
+      "centroidFrac": [
+       0.501,
+       0.307,
+       0.829
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.544,
+       0.238
+      ],
+      "meanDir": [
+       -0.127,
+       -0.32,
+       0.016
+      ],
+      "maxDelta": 2.87067,
+      "guess": ""
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.6427,
+      "centroidFrac": [
+       0.506,
+       0.301,
+       0.825
+      ],
+      "regionSizeFrac": [
+       0.917,
+       0.629,
+       0.246
+      ],
+      "meanDir": [
+       -0.126,
+       -0.376,
+       -0.092
+      ],
+      "maxDelta": 2.19586,
+      "guess": ""
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0321,
+      "centroidFrac": [
+       0.496,
+       0.365,
+       0.828
+      ],
+      "regionSizeFrac": [
+       0.649,
+       0.073,
+       0.033
+      ],
+      "meanDir": [
+       0.003,
+       -0.0,
+       0.051
+      ],
+      "maxDelta": 0.12049,
+      "guess": "low/other"
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.0963,
+      "centroidFrac": [
+       0.491,
+       0.358,
+       0.758
+      ],
+      "regionSizeFrac": [
+       0.973,
+       0.948,
+       0.999
+      ],
+      "meanDir": [
+       -0.011,
+       0.138,
+       0.013
+      ],
+      "maxDelta": 0.00092,
+      "guess": "low/other"
+     }
+    ]
+   },
+   {
+    "mesh": 27,
+    "meshName": "1",
+    "count": 17,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.4666,
+      "centroidFrac": [
+       0.5,
+       0.226,
+       0.831
+      ],
+      "regionSizeFrac": [
+       0.842,
+       0.653,
+       0.246
+      ],
+      "meanDir": [
+       0.0,
+       -0.273,
+       -0.32
+      ],
+      "maxDelta": 2.28487,
+      "guess": "low/other"
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.365,
+      "centroidFrac": [
+       0.498,
+       0.312,
+       0.842
+      ],
+      "regionSizeFrac": [
+       0.82,
+       0.469,
+       0.165
+      ],
+      "meanDir": [
+       0.001,
+       -0.356,
+       -0.26
+      ],
+      "maxDelta": 2.55408,
+      "guess": "low/other"
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.3805,
+      "centroidFrac": [
+       0.487,
+       0.302,
+       0.847
+      ],
+      "regionSizeFrac": [
+       0.823,
+       0.512,
+       0.165
+      ],
+      "meanDir": [
+       -0.005,
+       -0.371,
+       -0.226
+      ],
+      "maxDelta": 1.22743,
+      "guess": "low/other"
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.4655,
+      "centroidFrac": [
+       0.522,
+       0.249,
+       0.838
+      ],
+      "regionSizeFrac": [
+       0.823,
+       0.66,
+       0.287
+      ],
+      "meanDir": [
+       0.003,
+       0.271,
+       -0.05
+      ],
+      "maxDelta": 0.70001,
+      "guess": "low/other"
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.403,
+      "centroidFrac": [
+       0.506,
+       0.287,
+       0.846
+      ],
+      "regionSizeFrac": [
+       0.82,
+       0.586,
+       0.172
+      ],
+      "meanDir": [
+       0.001,
+       0.09,
+       -0.057
+      ],
+      "maxDelta": 2.5475,
+      "guess": "low/other"
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.4906,
+      "centroidFrac": [
+       0.499,
+       0.263,
+       0.84
+      ],
+      "regionSizeFrac": [
+       0.842,
+       0.552,
+       0.246
+      ],
+      "meanDir": [
+       0.006,
+       -0.18,
+       -0.385
+      ],
+      "maxDelta": 1.67025,
+      "guess": "low/other"
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.3287,
+      "centroidFrac": [
+       0.481,
+       0.339,
+       0.842
+      ],
+      "regionSizeFrac": [
+       0.849,
+       0.542,
+       0.165
+      ],
+      "meanDir": [
+       -0.009,
+       -0.142,
+       -0.179
+      ],
+      "maxDelta": 1.00673,
+      "guess": "low/other"
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.4121,
+      "centroidFrac": [
+       0.481,
+       0.25,
+       0.852
+      ],
+      "regionSizeFrac": [
+       0.846,
+       0.66,
+       0.173
+      ],
+      "meanDir": [
+       0.002,
+       -0.145,
+       -0.291
+      ],
+      "maxDelta": 1.69336,
+      "guess": "low/other"
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.1737,
+      "centroidFrac": [
+       0.5,
+       0.417,
+       0.837
+      ],
+      "regionSizeFrac": [
+       0.842,
+       0.367,
+       0.165
+      ],
+      "meanDir": [
+       -0.01,
+       -0.439,
+       -0.193
+      ],
+      "maxDelta": 2.5549,
+      "guess": "low/other"
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.4671,
+      "centroidFrac": [
+       0.508,
+       0.25,
+       0.832
+      ],
+      "regionSizeFrac": [
+       0.849,
+       0.636,
+       0.246
+      ],
+      "meanDir": [
+       -0.008,
+       -0.234,
+       -0.318
+      ],
+      "maxDelta": 1.41582,
+      "guess": "low/other"
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.3602,
+      "centroidFrac": [
+       0.502,
+       0.296,
+       0.849
+      ],
+      "regionSizeFrac": [
+       0.849,
+       0.571,
+       0.165
+      ],
+      "meanDir": [
+       0.004,
+       -0.379,
+       -0.022
+      ],
+      "maxDelta": 1.0676,
+      "guess": "low/other"
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.2213,
+      "centroidFrac": [
+       0.497,
+       0.319,
+       0.845
+      ],
+      "regionSizeFrac": [
+       0.842,
+       0.526,
+       0.157
+      ],
+      "meanDir": [
+       -0.0,
+       -0.031,
+       0.147
+      ],
+      "maxDelta": 2.54928,
+      "guess": "low/other"
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.3613,
+      "centroidFrac": [
+       0.509,
+       0.249,
+       0.851
+      ],
+      "regionSizeFrac": [
+       0.842,
+       0.628,
+       0.172
+      ],
+      "meanDir": [
+       0.0,
+       -0.22,
+       0.166
+      ],
+      "maxDelta": 1.44611,
+      "guess": "low/other"
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.349,
+      "centroidFrac": [
+       0.502,
+       0.253,
+       0.851
+      ],
+      "regionSizeFrac": [
+       0.82,
+       0.533,
+       0.169
+      ],
+      "meanDir": [
+       0.0,
+       -0.198,
+       0.139
+      ],
+      "maxDelta": 2.54731,
+      "guess": "low/other"
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.4623,
+      "centroidFrac": [
+       0.504,
+       0.254,
+       0.837
+      ],
+      "regionSizeFrac": [
+       0.849,
+       0.636,
+       0.246
+      ],
+      "meanDir": [
+       -0.002,
+       -0.306,
+       -0.144
+      ],
+      "maxDelta": 1.63196,
+      "guess": "low/other"
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.0219,
+      "centroidFrac": [
+       0.525,
+       0.365,
+       0.701
+      ],
+      "regionSizeFrac": [
+       0.902,
+       0.756,
+       0.909
+      ],
+      "meanDir": [
+       -0.22,
+       0.196,
+       -0.049
+      ],
+      "maxDelta": 0.00092,
+      "guess": "low/other"
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 0.1229,
+      "centroidFrac": [
+       0.5,
+       0.376,
+       0.83
+      ],
+      "regionSizeFrac": [
+       0.804,
+       0.187,
+       0.091
+      ],
+      "meanDir": [
+       -0.0,
+       -0.124,
+       0.105
+      ],
+      "maxDelta": 0.0934,
+      "guess": "low/other"
+     }
+    ]
+   },
+   {
+    "mesh": 28,
+    "meshName": "2",
+    "count": 17,
+    "named": 0,
+    "morphs": [
+     {
+      "i": 0,
+      "name": null,
+      "affectedFrac": 0.2111,
+      "centroidFrac": [
+       0.5,
+       0.4,
+       0.612
+      ],
+      "regionSizeFrac": [
+       0.688,
+       0.914,
+       0.378
+      ],
+      "meanDir": [
+       -0.0,
+       0.649,
+       -0.23
+      ],
+      "maxDelta": 0.37915,
+      "guess": "low/other"
+     },
+     {
+      "i": 1,
+      "name": null,
+      "affectedFrac": 0.1206,
+      "centroidFrac": [
+       0.5,
+       0.575,
+       0.564
+      ],
+      "regionSizeFrac": [
+       0.556,
+       0.9,
+       0.17
+      ],
+      "meanDir": [
+       -0.0,
+       -0.044,
+       -0.34
+      ],
+      "maxDelta": 0.14828,
+      "guess": "low/other"
+     },
+     {
+      "i": 2,
+      "name": null,
+      "affectedFrac": 0.2111,
+      "centroidFrac": [
+       0.66,
+       0.471,
+       0.554
+      ],
+      "regionSizeFrac": [
+       0.669,
+       0.815,
+       0.373
+      ],
+      "meanDir": [
+       0.063,
+       -0.634,
+       -0.063
+      ],
+      "maxDelta": 0.14827,
+      "guess": "low/other+moves-down+R-side"
+     },
+     {
+      "i": 3,
+      "name": null,
+      "affectedFrac": 0.1307,
+      "centroidFrac": [
+       0.521,
+       0.251,
+       0.627
+      ],
+      "regionSizeFrac": [
+       0.688,
+       0.774,
+       0.393
+      ],
+      "meanDir": [
+       -0.115,
+       0.747,
+       -0.093
+      ],
+      "maxDelta": 0.31303,
+      "guess": "low/other"
+     },
+     {
+      "i": 4,
+      "name": null,
+      "affectedFrac": 0.191,
+      "centroidFrac": [
+       0.5,
+       0.434,
+       0.601
+      ],
+      "regionSizeFrac": [
+       0.688,
+       0.926,
+       0.393
+      ],
+      "meanDir": [
+       -0.004,
+       0.427,
+       -0.219
+      ],
+      "maxDelta": 0.34045,
+      "guess": "low/other"
+     },
+     {
+      "i": 5,
+      "name": null,
+      "affectedFrac": 0.3467,
+      "centroidFrac": [
+       0.573,
+       0.346,
+       0.582
+      ],
+      "regionSizeFrac": [
+       0.795,
+       0.692,
+       0.505
+      ],
+      "meanDir": [
+       0.002,
+       0.048,
+       -0.481
+      ],
+      "maxDelta": 0.9076,
+      "guess": "low/other"
+     },
+     {
+      "i": 6,
+      "name": null,
+      "affectedFrac": 0.3317,
+      "centroidFrac": [
+       0.64,
+       0.493,
+       0.563
+      ],
+      "regionSizeFrac": [
+       0.743,
+       0.9,
+       0.427
+      ],
+      "meanDir": [
+       0.07,
+       -0.45,
+       -0.07
+      ],
+      "maxDelta": 0.08797,
+      "guess": "low/other+R-side"
+     },
+     {
+      "i": 7,
+      "name": null,
+      "affectedFrac": 0.3116,
+      "centroidFrac": [
+       0.591,
+       0.358,
+       0.606
+      ],
+      "regionSizeFrac": [
+       0.755,
+       0.692,
+       0.393
+      ],
+      "meanDir": [
+       0.007,
+       0.192,
+       -0.114
+      ],
+      "maxDelta": 0.52073,
+      "guess": "low/other"
+     },
+     {
+      "i": 8,
+      "name": null,
+      "affectedFrac": 0.3166,
+      "centroidFrac": [
+       0.632,
+       0.506,
+       0.562
+      ],
+      "regionSizeFrac": [
+       0.724,
+       0.9,
+       0.391
+      ],
+      "meanDir": [
+       0.005,
+       -0.353,
+       -0.128
+      ],
+      "maxDelta": 0.08699,
+      "guess": "low/other+R-side"
+     },
+     {
+      "i": 9,
+      "name": null,
+      "affectedFrac": 0.2864,
+      "centroidFrac": [
+       0.65,
+       0.412,
+       0.582
+      ],
+      "regionSizeFrac": [
+       0.724,
+       0.748,
+       0.432
+      ],
+      "meanDir": [
+       0.008,
+       -0.248,
+       0.0
+      ],
+      "maxDelta": 0.31303,
+      "guess": "low/other+R-side"
+     },
+     {
+      "i": 10,
+      "name": null,
+      "affectedFrac": 0.1055,
+      "centroidFrac": [
+       0.494,
+       0.526,
+       0.567
+      ],
+      "regionSizeFrac": [
+       0.556,
+       0.887,
+       0.17
+      ],
+      "meanDir": [
+       0.043,
+       0.147,
+       -0.239
+      ],
+      "maxDelta": 0.18386,
+      "guess": "low/other"
+     },
+     {
+      "i": 11,
+      "name": null,
+      "affectedFrac": 0.1608,
+      "centroidFrac": [
+       0.5,
+       0.485,
+       0.592
+      ],
+      "regionSizeFrac": [
+       0.605,
+       0.9,
+       0.233
+      ],
+      "meanDir": [
+       0.001,
+       0.352,
+       -0.256
+      ],
+      "maxDelta": 0.18885,
+      "guess": "low/other"
+     },
+     {
+      "i": 12,
+      "name": null,
+      "affectedFrac": 0.1407,
+      "centroidFrac": [
+       0.512,
+       0.767,
+       0.561
+      ],
+      "regionSizeFrac": [
+       0.347,
+       0.33,
+       0.148
+      ],
+      "meanDir": [
+       -0.058,
+       -0.176,
+       -0.45
+      ],
+      "maxDelta": 0.02971,
+      "guess": "lower-face"
+     },
+     {
+      "i": 13,
+      "name": null,
+      "affectedFrac": 0.0804,
+      "centroidFrac": [
+       0.5,
+       0.806,
+       0.543
+      ],
+      "regionSizeFrac": [
+       0.303,
+       0.239,
+       0.023
+      ],
+      "meanDir": [
+       0.001,
+       -0.277,
+       -0.514
+      ],
+      "maxDelta": 0.08181,
+      "guess": "eye-region"
+     },
+     {
+      "i": 14,
+      "name": null,
+      "affectedFrac": 0.201,
+      "centroidFrac": [
+       0.519,
+       0.361,
+       0.652
+      ],
+      "regionSizeFrac": [
+       0.605,
+       0.887,
+       0.273
+      ],
+      "meanDir": [
+       -0.116,
+       0.707,
+       -0.101
+      ],
+      "maxDelta": 0.29884,
+      "guess": "low/other"
+     },
+     {
+      "i": 15,
+      "name": null,
+      "affectedFrac": 0.7085,
+      "centroidFrac": [
+       0.505,
+       0.539,
+       0.537
+      ],
+      "regionSizeFrac": [
+       0.997,
+       1.0,
+       0.974
+      ],
+      "meanDir": [
+       -0.004,
+       -0.085,
+       0.074
+      ],
+      "maxDelta": 8e-05,
+      "guess": ""
+     },
+     {
+      "i": 16,
+      "name": null,
+      "affectedFrac": 1.0,
+      "centroidFrac": [
+       0.5,
+       0.53,
+       0.547
+      ],
+      "regionSizeFrac": [
+       1.0,
+       1.0,
+       1.0
+      ],
+      "meanDir": [
+       0.0,
+       0.225,
+       0.919
+      ],
+      "maxDelta": 0.54997,
+      "guess": ""
+     }
+    ]
+   }
+  ],
+  "totalMorphs": 51,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [
+   {
+    "anim": "Take 001",
+    "mesh": 26,
+    "meshName": "0",
+    "dur": 9.7,
+    "keyframes": 125,
+    "tracks": [
+     {
+      "morph": 0,
+      "max": 1.0,
+      "duty": 0.088,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.67,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 1,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 2,
+      "max": 1.0,
+      "duty": 0.136,
+      "pulses": 2,
+      "pulseWidths": [
+       0.77,
+       0.3
+      ],
+      "meanOn": 0.693,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 3,
+      "max": 1.0,
+      "duty": 0.072,
+      "pulses": 1,
+      "pulseWidths": [
+       0.77
+      ],
+      "meanOn": 0.704,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 4,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 1,
+      "pulseWidths": [
+       0.1
+      ],
+      "meanOn": 0.625,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 5,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       1.0
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 6,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       0.13
+      ],
+      "meanOn": 0.6,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 7,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       0.93
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 8,
+      "max": 1.0,
+      "duty": 0.048,
+      "pulses": 1,
+      "pulseWidths": [
+       0.17
+      ],
+      "meanOn": 0.583,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 9,
+      "max": 1.0,
+      "duty": 0.232,
+      "pulses": 1,
+      "pulseWidths": [
+       0.9
+      ],
+      "meanOn": 0.897,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 10,
+      "max": 1.0,
+      "duty": 0.288,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.917,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 11,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       1.07
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 12,
+      "max": 1.0,
+      "duty": 0.08,
+      "pulses": 2,
+      "pulseWidths": [
+       0.8,
+       0.47
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 13,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 14,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 0,
+      "pulseWidths": [],
+      "meanOn": 0.75,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 15,
+      "max": 1.0,
+      "duty": 0.344,
+      "pulses": 18,
+      "pulseWidths": [
+       0.13,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07
+      ],
+      "meanOn": 0.653,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 16,
+      "max": 1.0,
+      "duty": 0.472,
+      "pulses": 1,
+      "pulseWidths": [
+       1.97
+      ],
+      "meanOn": 0.671,
+      "pattern": "pulsed"
+     }
+    ]
+   },
+   {
+    "anim": "Take 001",
+    "mesh": 27,
+    "meshName": "1",
+    "dur": 9.7,
+    "keyframes": 125,
+    "tracks": [
+     {
+      "morph": 0,
+      "max": 1.0,
+      "duty": 0.088,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.67,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 1,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 2,
+      "max": 1.0,
+      "duty": 0.136,
+      "pulses": 2,
+      "pulseWidths": [
+       0.77,
+       0.3
+      ],
+      "meanOn": 0.693,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 3,
+      "max": 1.0,
+      "duty": 0.072,
+      "pulses": 1,
+      "pulseWidths": [
+       0.77
+      ],
+      "meanOn": 0.704,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 4,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 1,
+      "pulseWidths": [
+       0.1
+      ],
+      "meanOn": 0.625,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 5,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       1.0
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 6,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       0.13
+      ],
+      "meanOn": 0.6,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 7,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       0.93
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 8,
+      "max": 1.0,
+      "duty": 0.048,
+      "pulses": 1,
+      "pulseWidths": [
+       0.17
+      ],
+      "meanOn": 0.583,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 9,
+      "max": 1.0,
+      "duty": 0.232,
+      "pulses": 1,
+      "pulseWidths": [
+       0.9
+      ],
+      "meanOn": 0.897,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 10,
+      "max": 1.0,
+      "duty": 0.288,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.917,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 11,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       1.07
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 12,
+      "max": 1.0,
+      "duty": 0.08,
+      "pulses": 2,
+      "pulseWidths": [
+       0.8,
+       0.47
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 13,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 14,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 0,
+      "pulseWidths": [],
+      "meanOn": 0.75,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 15,
+      "max": 1.0,
+      "duty": 0.344,
+      "pulses": 18,
+      "pulseWidths": [
+       0.13,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07
+      ],
+      "meanOn": 0.653,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 16,
+      "max": 1.0,
+      "duty": 0.472,
+      "pulses": 1,
+      "pulseWidths": [
+       1.97
+      ],
+      "meanOn": 0.671,
+      "pattern": "pulsed"
+     }
+    ]
+   },
+   {
+    "anim": "Take 001",
+    "mesh": 28,
+    "meshName": "2",
+    "dur": 9.7,
+    "keyframes": 125,
+    "tracks": [
+     {
+      "morph": 0,
+      "max": 1.0,
+      "duty": 0.088,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.67,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 1,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 2,
+      "max": 1.0,
+      "duty": 0.136,
+      "pulses": 2,
+      "pulseWidths": [
+       0.77,
+       0.3
+      ],
+      "meanOn": 0.693,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 3,
+      "max": 1.0,
+      "duty": 0.072,
+      "pulses": 1,
+      "pulseWidths": [
+       0.77
+      ],
+      "meanOn": 0.704,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 4,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 1,
+      "pulseWidths": [
+       0.1
+      ],
+      "meanOn": 0.625,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 5,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       1.0
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 6,
+      "max": 1.0,
+      "duty": 0.04,
+      "pulses": 1,
+      "pulseWidths": [
+       0.13
+      ],
+      "meanOn": 0.6,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 7,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       0.93
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 8,
+      "max": 1.0,
+      "duty": 0.048,
+      "pulses": 1,
+      "pulseWidths": [
+       0.17
+      ],
+      "meanOn": 0.583,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 9,
+      "max": 1.0,
+      "duty": 0.232,
+      "pulses": 1,
+      "pulseWidths": [
+       0.9
+      ],
+      "meanOn": 0.897,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 10,
+      "max": 1.0,
+      "duty": 0.288,
+      "pulses": 1,
+      "pulseWidths": [
+       1.13
+      ],
+      "meanOn": 0.917,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 11,
+      "max": 1.0,
+      "duty": 0.056,
+      "pulses": 1,
+      "pulseWidths": [
+       1.07
+      ],
+      "meanOn": 0.643,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 12,
+      "max": 1.0,
+      "duty": 0.08,
+      "pulses": 2,
+      "pulseWidths": [
+       0.8,
+       0.47
+      ],
+      "meanOn": 0.7,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 13,
+      "max": 1.0,
+      "duty": 0.024,
+      "pulses": 1,
+      "pulseWidths": [
+       0.07
+      ],
+      "meanOn": 0.667,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 14,
+      "max": 1.0,
+      "duty": 0.032,
+      "pulses": 0,
+      "pulseWidths": [],
+      "meanOn": 0.75,
+      "pattern": "pulsed"
+     },
+     {
+      "morph": 15,
+      "max": 1.0,
+      "duty": 0.344,
+      "pulses": 18,
+      "pulseWidths": [
+       0.13,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07,
+       0.07
+      ],
+      "meanOn": 0.653,
+      "pattern": "blink-like"
+     },
+     {
+      "morph": 16,
+      "max": 1.0,
+      "duty": 0.472,
+      "pulses": 1,
+      "pulseWidths": [
+       1.97
+      ],
+      "meanOn": 0.671,
+      "pattern": "pulsed"
+     }
+    ]
+   }
+  ],
+  "animCount": 1,
+  "ladderMode": "morph-geom?",
+  "lostChannels": [
+   "51 UNNAMED morphs undetectable by name",
+   "baked clip drives morphs the ladder can't identify (learning data unused)"
+  ],
+  "model": "shibahu"
+ },
+ {
+  "file": "C:\\Users\\SirKn\\Enigma Engine\\mods\\avatar\\models\\valkyrie_tyan_nsfw\\valkyrie_tyan_nsfw.glb",
+  "generator": "Sketchfab-15.70.0",
+  "vrm": false,
+  "jawBones": [],
+  "lidBones": [],
+  "eyeBones": [],
+  "browBones": [],
+  "meshMorphs": [],
+  "totalMorphs": 0,
+  "namedMorphs": 0,
+  "openNameHits": [],
+  "blinkNameHits": [],
+  "mouthishNames": [],
+  "weightTracks": [],
+  "animCount": 0,
+  "ladderMode": "none",
+  "lostChannels": [],
+  "model": "valkyrie_tyan_nsfw"
+ }
+]

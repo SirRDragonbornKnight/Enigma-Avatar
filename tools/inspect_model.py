@@ -31,6 +31,76 @@ def morph_names(g, m):
     t = prims[0].get("targets") or []
     return [f"<morph {i}>" for i in range(len(t))]
 
+FACE_RE = re.compile(r"jaw|eye(?!brow)|lid|blink|mouth|lip|teeth|tongue|brow|cheek|"
+                     r"face|head", re.I)
+
+def node_name(nodes, i):
+    try:
+        return nodes[i].get("name", f"<node {i}>") or f"<node {i}>"
+    except Exception:
+        return f"<node {i}>"
+
+def report_animations(g):
+    nodes = g.get("nodes") or []
+    accs = g.get("accessors") or []
+    anims = g.get("animations") or []
+    print("\n== ANIMATIONS:", len(anims))
+    if not anims:
+        print("  (none baked in — body is posed by OUR procedural rig only)")
+        return
+    for ai, a in enumerate(anims):
+        chans = a.get("channels") or []
+        samps = a.get("samplers") or []
+        paths = {}
+        targets = set()
+        face_targets = set()
+        weights_anim = False
+        dur = 0.0
+        for c in chans:
+            t = c.get("target") or {}
+            p = t.get("path", "?")
+            paths[p] = paths.get(p, 0) + 1
+            if p == "weights":
+                weights_anim = True
+            ni = t.get("node")
+            if ni is not None:
+                nm = node_name(nodes, ni)
+                targets.add(nm)
+                if FACE_RE.search(nm):
+                    face_targets.add(nm)
+        # duration = max input-accessor time across samplers (accessor.max[0])
+        for s in samps:
+            ia = s.get("input")
+            if ia is not None and ia < len(accs):
+                mx = (accs[ia].get("max") or [0])
+                if mx and mx[0] and mx[0] > dur:
+                    dur = mx[0]
+        nm = a.get("name", f"<anim {ai}>")
+        print(f"  anim[{ai}] \"{nm}\"  ~{dur:.2f}s  channels={len(chans)}  paths={paths}  bones_animated={len(targets)}")
+        if weights_anim:
+            print(f"       *** MORPH-WEIGHT animation present (baked FACIAL/blendshape motion) ***")
+        if face_targets:
+            print(f"       face/head bones animated ({len(face_targets)}): {sorted(face_targets)[:12]}")
+
+def report_face_rig(g):
+    nodes = g.get("nodes") or []
+    skins = g.get("skins") or []
+    joint_ids = set()
+    for s in skins:
+        for j in (s.get("joints") or []):
+            joint_ids.add(j)
+    face_bones = [node_name(nodes, j) for j in joint_ids if FACE_RE.search(node_name(nodes, j))]
+    print("\n== FACE-RIG SCAN (bones in skins matching jaw/eye/lid/mouth/brow/head):", len(face_bones))
+    for b in sorted(set(face_bones)):
+        print(f"    + {b}")
+    # total morph channels across all meshes
+    total_morphs = 0
+    for m in (g.get("meshes") or []):
+        prims = m.get("primitives") or []
+        if prims:
+            total_morphs += len(prims[0].get("targets") or [])
+    print(f"  total morph targets across all meshes: {total_morphs}")
+
 def main(path):
     g = load_gltf_json(path)
     ext_used = g.get("extensionsUsed") or []
@@ -66,6 +136,9 @@ def main(path):
     print("\n== MATERIALS:", len(mats))
     for i, mt in enumerate(mats):
         print(f"  [{i}] {mt.get('name','')}")
+
+    report_face_rig(g)
+    report_animations(g)
 
     # VRM specifics — these carry the avatar's own toggle menu + spring config
     ext = g.get("extensions") or {}
