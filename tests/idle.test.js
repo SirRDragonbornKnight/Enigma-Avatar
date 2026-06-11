@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { buildProceduralRig } from "../procedural.js";
+import { LIVE } from "../idleprofile.js";            // the humanoid personality (the old universal defaults)
 import { fullBiped } from "./fixtures.js";
 
 // Deterministic runs: the idle schedules events via Math.random — pin it per test.
@@ -29,6 +30,7 @@ const roleQuat = (rig, model, role) => {
 function run(seconds, opts = {}) {
   const model = fullBiped();
   const rig = buildProceduralRig(model, {});
+  rig.setParams(LIVE);                               // 2026-06-11 pivot: the engine defaults DEAD — these property tests assert the LIVE personality (what a humanoid's profile enables)
   const hips = roleQuat(rig, model, "hips"), chest = roleQuat(rig, model, "chest"), head = roleQuat(rig, model, "head");
   // The ARM CHAIN gets its own pop meter — the audit's three real pops (IK reach-margin entry snap,
   // unblended release→hang, gesture→gesture switch) all lived on the arms, where the trunk-only
@@ -104,6 +106,7 @@ test("finger grip — setGrip curls the finger joints and releases smoothly", ()
   withRandom(9, () => {
     const model = fullBiped();
     const rig = buildProceduralRig(model, {});
+    rig.setParams(LIVE);                             // pivot: engine defaults DEAD — give the test rig the live humanoid personality
     let finger = null;
     model.traverse((o) => { if (!finger && o.isBone && /finger/i.test(o.name)) finger = o; });
     if (!finger) return;                                              // fixture without finger bones → nothing to assert
@@ -125,6 +128,7 @@ test("idle v4 — gesture exit blends (no single-frame snap back to idle)", () =
   withRandom(5, () => {
     const model = fullBiped();
     const rig = buildProceduralRig(model, {});
+    rig.setParams(LIVE);                             // pivot: engine defaults DEAD — give the test rig the live humanoid personality
     const chest = roleQuat(rig, model, "chest");
     for (let i = 0; i < 120; i++) rig.update(DT, false);          // settle into idle
     rig.setGesture("clap", 0.8);
@@ -134,5 +138,22 @@ test("idle v4 — gesture exit blends (no single-frame snap back to idle)", () =
     let maxStep = 0;
     for (let i = 0; i < 30; i++) { rig.update(DT, false); maxStep = Math.max(maxStep, prev.angleTo(chest)); prev.copy(chest); }
     assert.ok(maxStep < 0.02, `post-gesture re-entry is blended (max step ${(maxStep * 180 / Math.PI).toFixed(2)}°/frame)`);
+  });
+});
+
+test("PER-MODEL PIVOT — the engine default (no profile) is perfectly still after settle", () => {
+  withRandom(11, () => {
+    const model = fullBiped();
+    const rig = buildProceduralRig(model, {});        // NO setParams — the 2026-06-11 default: dead toolbox
+    const chest = roleQuat(rig, model, "chest"), head = roleQuat(rig, model, "head");
+    const lArm = roleQuat(rig, model, "left_arm"), lFore = roleQuat(rig, model, "left_forearm");
+    for (let i = 0; i < 600; i++) rig.update(DT, false);   // 10s: the static stance targets damp in, then nothing
+    const c0 = chest.clone(), h0 = head.clone(), a0 = lArm.clone(), f0 = lFore.clone();
+    let maxDrift = 0;
+    for (let i = 0; i < 300; i++) {                        // 5 further seconds: NOTHING may move
+      rig.update(DT, false);
+      maxDrift = Math.max(maxDrift, c0.angleTo(chest), h0.angleTo(head), a0.angleTo(lArm), f0.angleTo(lFore));
+    }
+    assert.ok(maxDrift < 1e-4, `no profile -> still (max drift ${(maxDrift * 180 / Math.PI).toFixed(5)} deg over 5s)`);
   });
 });

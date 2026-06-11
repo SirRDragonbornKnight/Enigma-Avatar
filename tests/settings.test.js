@@ -240,15 +240,31 @@ test("Cloth has its OWN weight section (fabric is separate from the body jiggle)
   } finally { dom.cleanup(); }
 });
 
-test("Rotate-by-dragging toggle calls setRotateMode", () => {
+test("rotate is Alt+drag (no mode checkbox) and the Idle section tunes THIS model", () => {
   const dom = installDOM();
   try {
-    const { api, calls } = makeApi();
-    createUI(api).showSettings();
-    const cb = checkboxByLabel("Rotate by dragging");
-    assert.ok(cb, "Rotate-by-dragging toggle exists");
-    cb.checked = true; fire(cb, "change");
-    assert.ok(calls.some((c) => c[0] === "setRotateMode" && c[1] === true), "→ setRotateMode(true)");
+    const m = makeApi({ getIdleProfile: () => ({ drift: 1, breathe: 0.045, swayAmp: 0.012, look: 0.17, armLife: 1, wrist: 0.06, ambient: 1, shiftEvery: 13, poseEvery: 38, fidgetEvery: 9 }) });
+    m.api.tuneIdle = (p) => m.calls.push(["tuneIdle", p]);
+    createUI(m.api).showSettings();
+    // The MODE checkbox is gone — armed, it hijacked plain drag ("can't move her, can rotate"; 2026-06-11).
+    assert.ok(!checkboxByLabel("Rotate by dragging"), "rotate MODE checkbox removed");
+    assert.ok([...document.querySelectorAll("div")].some((d) => /hold Alt and drag/i.test(d.textContent || "")), "Alt+drag hint shown instead");
+    // Per-model Idle section: sliders route through tuneIdle, with display-scale round-trips.
+    const slider = (label) => {
+      for (const r of document.querySelectorAll("div")) {
+        const sp = r.querySelector(":scope > span");
+        if (sp && (sp.textContent || "").startsWith(label)) { const i = r.querySelector('input[type="range"]'); if (i) return i; }
+      }
+      return null;
+    };
+    const li = slider("Liveliness");
+    assert.ok(li, "Idle 'Liveliness' slider exists");
+    li.value = "1.5"; fire(li, "input");
+    assert.ok(m.calls.some((c) => c[0] === "tuneIdle" && c[1] && Math.abs(c[1].drift - 1.5) < 1e-6), "→ tuneIdle({drift:1.5})");
+    const br = slider("Breath");
+    assert.ok(br, "Idle 'Breath' slider exists");
+    br.value = "0.9"; fire(br, "input");
+    assert.ok(m.calls.some((c) => c[0] === "tuneIdle" && c[1] && Math.abs(c[1].breathe - 0.045) < 1e-6), "display 0.9 → breathe 0.045 (scale round-trip)");
   } finally { dom.cleanup(); }
 });
 

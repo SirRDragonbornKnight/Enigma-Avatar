@@ -253,7 +253,38 @@ export function createUI(api) {
       rst.onclick = (e) => { e.stopPropagation(); if (api.setRot) api.setRot({ x: 0, y: 0, z: 0 }); else api.setYaw(0); buildSettings(); };
       rotWrap.appendChild(rst);
       body.appendChild(sRow("Rotate °", rotWrap));
-      if (api.setRotateMode) body.appendChild(sCheck("Rotate by dragging (↔ turn, ↕ tilt)", api.getRotateMode ? api.getRotateMode() : false, (v) => api.setRotateMode(v)));
+      // Rotate-by-drag is a MODIFIER now, not a mode — the armed mode hijacked plain drag
+      // ("can't move her, can rotate"; 2026-06-11). Alt can't be left on by accident.
+      const rotHint = document.createElement("div");
+      rotHint.textContent = "Rotate by hand: hold Alt and drag her (↔ turn, ↕ tilt)";
+      rotHint.style.cssText = "padding:4px 0 2px;opacity:.55;font-size:11px;";
+      body.appendChild(rotHint);
+    }
+
+    // --- Idle — THIS avatar's own behavior (per-model since 2026-06-11: there is no universal
+    //     idle anymore; these numbers ARE her personality, seeded from what she actually has).
+    if (api.getIdleProfile) {
+      const ip = api.getIdleProfile();
+      body.appendChild(divider());
+      body.appendChild(sectionHead("Idle — this avatar's own behavior (0 = off · saved per model)"));
+      const tn = (k, scale = 1) => (v) => api.tuneIdle && api.tuneIdle({ [k]: v / scale });
+      body.appendChild(weightRow("Liveliness ×", ip.drift ?? 1, tn("drift"), 2));
+      body.appendChild(weightRow("Breath", (ip.breathe ?? 0) * 20, tn("breathe", 20), 2));          // display ≈ 0..2 (0.045 rad → 0.9)
+      body.appendChild(weightRow("Posture sway", (ip.swayAmp ?? 0) * 80, tn("swayAmp", 80), 2));    // 0.012 rad → 0.96
+      body.appendChild(weightRow("Glances", (ip.look ?? 0) * 6, tn("look", 6), 2));                 // 0.17 rad → ~1
+      body.appendChild(weightRow("Arm life", ip.armLife ?? 0, tn("armLife"), 1));
+      body.appendChild(weightRow("Wrist micro", (ip.wrist ?? 0) * 16, tn("wrist", 16), 2));         // 0.06 → 0.96
+      body.appendChild(weightRow("Ambient micro", ip.ambient ?? 0, tn("ambient"), 2));
+      body.appendChild(weightRow("Weight shift (s)", ip.shiftEvery ?? 0, tn("shiftEvery"), 40));
+      body.appendChild(weightRow("Arm pose (s)", ip.poseEvery ?? 0, tn("poseEvery"), 90));
+      body.appendChild(weightRow("Fidget (s)", ip.fidgetEvery ?? 0, tn("fidgetEvery"), 30));
+      if (api.reseedIdle) {
+        const rs = document.createElement("button");
+        rs.textContent = "↺ Re-seed from this model's capabilities";
+        rs.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:4px 0;";
+        rs.onclick = (e) => { e.stopPropagation(); api.reseedIdle(); buildSettings(); };
+        body.appendChild(rs);
+      }
     }
 
     // Size is scroll-only (hover the avatar + wheel; +/- and 0 on the keyboard; AI bus `size`).

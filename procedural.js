@@ -272,20 +272,26 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     return Math.max((L[axis + "_min"] ?? -180) * DEG, Math.min((L[axis + "_max"] ?? 180) * DEG, v));
   };
 
-  // IDLE v4 tunables (the dead v3 knobs — armSwing/twist/sway/shift/… — are GONE; these are all live).
-  // Numbers come from the 2026-06-10 research pass: real breathing is 0.2–0.33 Hz; standing postural
-  // sway is ~0.5–1.0° in the 0.2–0.5 Hz band; people micro-shift weight every ~4–25 s.
+  // PER-MODEL IDLE (2026-06-11 pivot): every idle layer ships at ZERO — the engine carries no
+  // universal personality (the one-size idle read wrong on every body plan; user ruling). The
+  // life comes from THIS model's profiles.json `idle` block (seeded by idleprofile.js from its
+  // real capabilities, then individually tuned). Reactive channels — cursor-look, gestures,
+  // emotes, lip-sync, springs, grip — are NOT idle and run regardless of these numbers.
+  // (Amplitude/cadence reference values live in idleprofile.js LIVE: breath 0.27 Hz, sway ~0.7°.)
   const params = {
-    breathe: 0.045,    // chest breath amplitude (rad) — the single biggest "alive" signal
-    breatheRate: 1.7,  // breath angular rate (rad/s) ≈ 0.27 Hz ≈ 16 breaths/min
-    look: 0.17,        // idle head-glance amplitude
-    elbowFlex: 0.10,   // relaxed elbow bend while the arms hang
-    drift: 1.0,        // master liveliness (tune({drift:1.4}) livelier · {drift:0.6} calmer)
-    swayAmp: 0.012,    // postural sway amplitude (rad ≈ 0.7°) — inverted-pendulum micro, ALWAYS on
-    wrist: 0.06,       // hand/wrist micro-motion
-    shiftEvery: 13,    // mean seconds between weight shifts (jittered ±50%, modulated by energy)
-    poseEvery: 38,     // mean seconds between arm poses (clasp/on-hip; jittered)
-    ambient: 1.0,      // ambient micro-motion master (0 = off) for every unresolved bone (fingers / extra limbs / segments)
+    breathe: 0,        // chest breath amplitude (rad) — the single biggest "alive" signal
+    breatheRate: 1.7,  // breath angular rate (rad/s) ≈ 0.27 Hz ≈ 16 breaths/min (a rate, not an amplitude)
+    look: 0,           // idle head-glance amplitude (cursor-look is separate and stays live)
+    elbowFlex: 0,      // relaxed elbow bend while the arms hang
+    drift: 1.0,        // master liveliness multiplier (a profile can calm/excite everything at once)
+    swayAmp: 0,        // postural sway amplitude (rad)
+    wrist: 0,          // hand/wrist micro-motion
+    shiftEvery: 0,     // mean seconds between weight shifts (0 = never)
+    poseEvery: 0,      // mean seconds between arm poses (clasp/on-hip; 0 = never)
+    ambient: 0,        // ambient micro-motion master for unresolved bones (0 = off)
+    armLife: 0,        // arm-hang + finger noise scale (0 = arms/fingers rest still; grip still works)
+    fidgetEvery: 0,    // mean seconds between appendage fidgets (0 = never)
+    fidgetRegions: [], // which spring regions may fidget (empty = any safe appendage)
   };
 
   let t = 0, expr = "", exprT = 0, exprDur = 2.5, _additive = false, lookX = 0, lookY = 0, lookW = 0;
@@ -351,16 +357,19 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (list.length) console.log(`[avatar] idle: ambient micro-motion on ${list.length} unresolved bones (+ ${Object.keys(bones).length} role bones, ${handDesc.size} finger bones boosted)`);
   }
   function maybeFidget(dt) {
+    if (!(params.fidgetEvery > 0) || !extras.impulse) return;   // per-model: a profile with no fidgets never kicks
     fidgetT += dt;
-    if (fidgetT < fidgetNext || !extras.impulse) return;
-    fidgetT = 0; fidgetNext = 5 + Math.random() * 7;
+    if (fidgetT < fidgetNext) return;
+    fidgetT = 0; fidgetNext = jitter(params.fidgetEvery);
     const side = Math.random() < 0.5 ? -1 : 1;
-    const tries = [                                    // safe appendages only (never NSFW regions); first one this model HAS wins
+    let tries = [                                      // safe appendages only (never NSFW regions); first one this model HAS wins
       ["tail", { x: side * (0.9 + Math.random() * 0.7), y: 0.25, z: 0 }, 0.45],
       ["ear", { x: side * 0.5, y: 0.4, z: 0 }, 0.16],
       ["wing", { x: 0, y: 0.6, z: side * 0.5 }, 0.4],
       ["hair", { x: side * 0.3, y: 0.12, z: 0 }, 0.3],
     ];
+    if (Array.isArray(params.fidgetRegions) && params.fidgetRegions.length)
+      tries = tries.filter(([r]) => params.fidgetRegions.includes(r));   // the profile names which appendages are HERS to fidget
     for (let i = tries.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [tries[i], tries[j]] = [tries[j], tries[i]]; }
     for (const [region, v, dur] of tries) if (extras.impulse(region, v, dur)) return;
   }
@@ -556,7 +565,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // WEIGHT SHIFT — a new randomized contrapposto every shiftEvery±50% s (restless → more often).
     // Targets are DC offsets the damped springs CHASE (velocity preserved → re-shift mid-shift can't pop).
     wT += dt;
-    if (wT >= wNext) {
+    if (params.shiftEvery > 0 && wT >= wNext) {        // 0 = this model never shifts weight (wPose stays the neutral stance)
       wT = 0; wNext = jitter(params.shiftEvery) / Math.max(0.6, energy);
       wSide = wSide === 0 ? (Math.random() < 0.5 ? -1 : 1) : (Math.random() < 0.25 ? 0 : -wSide);   // mostly alternate, sometimes square
       const m = 0.75 + Math.random() * 0.55, s = wSide;                                             // never the exact same stance twice
@@ -588,7 +597,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     pose("chest", breath * bAmp + swayP * 0.3 + exSpine * 0.5 + exHipP * 0.5, 0, spr("chestR").x);
 
     // head/neck: glance wander (own noise seeds) + cursor look + trailing stance + breath bob
-    const glY = fnoise(t * 0.11, 20) * lk, glP = fnoise(t * 0.13, 21) * 0.05;
+    const glY = fnoise(t * 0.11, 20) * lk, glP = fnoise(t * 0.13, 21) * params.look * 0.3;   // pitch glance rides params.look like yaw (was a bare 0.05 — moved even when idle glances were OFF)
     pose("neck", -breath * bAmp * 0.45 + exHeadP * 0.3 + lookY * lookW * 0.35, lookX * lookW * 0.35, spr("hipR").x * -0.3);
     pose("head", glP * (1 - lookW) + lookY * lookW + exHeadP, (glY + spr("headY").x) * (1 - lookW) + lookX * lookW + exHeadY, spr("headR").x);
 
@@ -609,24 +618,29 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // TARGET spring-chased from wherever the hand IS — entry, exit ("release"), and retargets are
     // pop-free by construction — and the held target itself WANDERS a little (moving hold).
     armT += dt;
-    if (armT >= armNext) {
-      armT = 0;
-      if (armMode === "hang") {
-        if (clapLocal && stanceAnchors && Math.random() < 0.75) {
-          const r = Math.random();
-          armMode = r < 0.5 ? "clasp" : (r < 0.75 ? "hipL" : "hipR");
-          armTgtLive = false;                            // seed the target springs from the LIVE hand positions on entry
-          armNext = jitter(13);                          // hold the pose ~6.5–19.5s
-        } else armNext = jitter(params.poseEvery * 0.4); // declined → another chance sooner
-      } else if (armMode !== "release") { armMode = "release"; armNext = jitter(params.poseEvery); }   // let go: chase the rest position, then resume the hang math (springs stay live — no snap)
+    if (params.poseEvery > 0) {
+      if (armT >= armNext) {
+        armT = 0;
+        if (armMode === "hang") {
+          if (clapLocal && stanceAnchors && Math.random() < 0.75) {
+            const r = Math.random();
+            armMode = r < 0.5 ? "clasp" : (r < 0.75 ? "hipL" : "hipR");
+            armTgtLive = false;                            // seed the target springs from the LIVE hand positions on entry
+            armNext = jitter(13);                          // hold the pose ~6.5–19.5s
+          } else armNext = jitter(params.poseEvery * 0.4); // declined → another chance sooner
+        } else if (armMode !== "release") { armMode = "release"; armNext = jitter(params.poseEvery); }   // let go: chase the rest position, then resume the hang math (springs stay live — no snap)
+      }
+    } else if (armMode !== "hang" && armMode !== "release") {
+      armMode = "release"; armT = 0; armNext = Infinity;   // poses tuned OFF mid-hold → let go cleanly, never re-enter
     }
     const armSwayL = spr("armL"), armSwayR = spr("armR");
     dampSpring(armSwayL, swayP, 0.9, dt); dampSpring(armSwayR, swayP, 1.05, dt);   // arms DRAG behind the torso, each with its own lag
+    const aL = params.armLife;                          // per-model: 0 = the hang noise is gone, arms rest still (static base flex stays — it's a pose, not motion)
     if (armMode === "hang" || !clapLocal) {
-      flex("left_arm", 0.035 + armSwayL.x * 0.9 + fnoise(t * 0.16, 31) * 0.022 * energy, 0.03 + fnoise(t * 0.12, 32) * 0.016);
-      flex("right_arm", 0.035 + armSwayR.x * 0.9 + fnoise(t * 0.16, 33) * 0.022 * energy, 0.03 + fnoise(t * 0.12, 34) * 0.016);
-      flex("left_forearm", params.elbowFlex + fnoise(t * 0.19, 35) * 0.03 * energy);
-      flex("right_forearm", params.elbowFlex + fnoise(t * 0.19, 36) * 0.03 * energy);
+      flex("left_arm", 0.035 + armSwayL.x * 0.9 + fnoise(t * 0.16, 31) * 0.022 * energy * aL, 0.03 + fnoise(t * 0.12, 32) * 0.016 * aL);
+      flex("right_arm", 0.035 + armSwayR.x * 0.9 + fnoise(t * 0.16, 33) * 0.022 * energy * aL, 0.03 + fnoise(t * 0.12, 34) * 0.016 * aL);
+      flex("left_forearm", params.elbowFlex + fnoise(t * 0.19, 35) * 0.03 * energy * aL);
+      flex("right_forearm", params.elbowFlex + fnoise(t * 0.19, 36) * 0.03 * energy * aL);
     } else {
       chestRef.updateWorldMatrix(true, false);
       if (stanceHips) stanceHips.updateWorldMatrix(true, false);
@@ -707,7 +721,8 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (fingers.L.length || fingers.R.length) {
       const curl = (list, grip) => {
         for (const f of list) {
-          const amt = ((0.05 + 0.05 * fnoise(t * 0.19, f.seed)) * (0.6 + 0.4 * energy) * D + grip * 0.4) * (0.5 + 0.32 * f.depth);
+          // drift rides armLife (per-model; 0 = fingers rest at bind) — GRIP is reactive and always works
+          const amt = ((0.05 + 0.05 * fnoise(t * 0.19, f.seed)) * (0.6 + 0.4 * energy) * D * params.armLife + grip * 0.4) * (0.5 + 0.32 * f.depth);
           _aq.copy(f.rest).multiply(_q.setFromAxisAngle(f.ax, amt));
           if (kAmb >= 1) f.b.quaternion.copy(_aq); else f.b.quaternion.slerp(_aq, kAmb);
         }

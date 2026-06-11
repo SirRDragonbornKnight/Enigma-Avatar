@@ -16,6 +16,7 @@ import { buildSpringBones } from "./spring.js";
 import { createPhysics } from "./physics.js";
 import { buildFacial } from "./facial.js";
 import { resolveRig, ROLES } from "./rig.js";
+import { seedIdleProfile } from "./idleprofile.js";   // per-model idle personalities (2026-06-11: no universal idle)
 import { buildDefaultAvatar } from "./default_avatar.js";
 import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./mathutil.js";
 
@@ -394,7 +395,6 @@ function onModelLoaded(asset) {
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
   proc = buildProceduralRig(model, BONE_LIMITS, resolved);
-  if (proc?.setParams && profileFor(curKey).idle) proc.setParams(profileFor(curKey).idle);   // per-model idle feel — each avatar can carry its own breath/sway/liveliness in its profile
   console.log("[avatar] roles:", resolved.matched.length, JSON.stringify(resolved.report.bySource), resolved.matched.length ? "→ " + resolved.matched.join(", ") : "(none)");
   setStatus(`loaded ✓ ${resolved.matched.length ? "procedural idle on " + resolved.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
@@ -423,6 +423,18 @@ function onModelLoaded(asset) {
     excludeNames: [...eyeBones.map((e) => e.bone.name), ...(facial?.boneNames?.() || [])],   // eye-look owns the eyes; facial owns the jaw/lids (ambient there = tremble when facial is off)
     impulse: (r, v, d) => (spring && springOn && spring.impulse ? spring.impulse(r, v, d) : false),   // fidgets ride the spring physics — and must NOT queue while springs are toggled OFF (the queue only drains in spring.update → re-enabling would fire a burst)
   });
+  // PER-MODEL IDLE (2026-06-11 pivot): the engine ships still — life comes from THIS model's own
+  // idle profile. Seed it once from what the model actually HAS (after bindExtras so spring
+  // regions are known); from then on prof.idle is hers alone (Settings → Idle / bus tune).
+  if (proc?.setParams) {
+    const prof = profileFor(curKey);
+    if (!prof.idle || prof.idle._seed == null) {
+      prof.idle = { ...seedIdleProfile(idleCapsNow()), ...(prof.idle || {}) };   // pre-pivot hand-tuning (if any) stays on top of the seed
+      saveProfileSoon();
+      console.log("[avatar] idle: seeded this model's own profile —", JSON.stringify(prof.idle));
+    }
+    proc.setParams(prof.idle);
+  }
   // flush relayed mutations that were queued while THIS window's copy lagged the model switch
   if (_staleCmds.length) {
     const q = _staleCmds.filter((x) => x.key === curKey);
@@ -643,6 +655,27 @@ function facialTune(p) {
   const prof = profileFor(curKey); prof.facial = { ...(prof.facial || {}), ...numericOnly(p) };
   if (facial) facial.setParams(prof.facial); saveProfileSoon();
   return facial ? { mode: facial.mode, info: facial.info, params: facial.params } : null;
+}
+// PER-MODEL IDLE (2026-06-11 pivot): prof.idle IS this avatar's personality — the engine itself
+// ships still. idleTune edits it live (same shape as springTune); the seed comes from what the
+// model actually HAS, so a wolf, a robot and a statue start with different (or no) behavior.
+function idleTune(p) {
+  const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...numericOnly(p) };
+  if (proc) proc.setParams(prof.idle); saveProfileSoon(); return proc ? proc.params : prof.idle;
+}
+function idleCapsNow() {                              // what THIS model has, for its idle seed
+  let boneCount = 0; model?.traverse?.((o) => { if (o.isBone) boneCount++; });
+  return {
+    roles: proc ? proc.matched : [],
+    regions: spring?.regions ? spring.regions().filter((r) => !r.nsfw).map((r) => r.region) : [],
+    boneCount,
+    facialMode: facial?.mode || "none",
+  };
+}
+function reseedIdleNow() {                            // regenerate the personality from capabilities (Settings "Re-seed")
+  const prof = profileFor(curKey);
+  prof.idle = seedIdleProfile(idleCapsNow());
+  if (proc) proc.setParams(prof.idle); saveProfileSoon(); return { ...prof.idle };
 }
 // Every material by OBJECT (incl. unnamed AND duplicate-named), in traversal order, WITH the
 // owning mesh name — the stable INDEX the overlay OWNS and reports over the AI bus
@@ -1223,7 +1256,7 @@ const EnigmaAvatar = {
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
   tune: (p) => { if (proc) proc.setParams(p); const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...numericOnly(p) }; saveProfileSoon(); return proc ? proc.params : null; },   // idle feel, SAVED per model (each avatar its own)
-  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, menu: ui.isOpen() } }),
+  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, rotateMode, menu: ui.isOpen() }, idleProfile: profileFor(curKey).idle || null }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
   gesture: (name, dur) => {                                              // animated action — idle suspended
@@ -1434,6 +1467,8 @@ const UI_CMDS = {
   setShadowOn:      { scope: "all", fn: (v) => setShadowOn(v) },
   springTune:       { scope: "all", bound: true, fn: (p) => springTune(p) },
   facialTune:       { scope: "all", bound: true, fn: (p) => facialTune(p) },
+  idleTune:         { scope: "all", bound: true, fn: (p) => idleTune(p) },       // per-model idle personality (Settings → Idle)
+  reseedIdle:       { scope: "all", bound: true, fn: () => reseedIdleNow() },    // regenerate it from the model's capabilities
   setRegionWeight:  { scope: "all", bound: true, fn: (r, w) => setRegionWeight(r, w) },
   setLookMode:      { scope: "all", fn: (m) => setLookMode(m) },
   attachMesh:       { scope: "all", bound: true, fn: (u, o) => attachMesh(u, o) },
@@ -1476,6 +1511,7 @@ const uiResizeBy = relayed("resizeBy"), uiApplySize = relayed("applySize"), uiRo
 const uiShowSkeleton = relayed("showSkeleton"), uiRecolor = relayed("recolor"), uiHueShift = relayed("hueShift");
 const uiResetColors = relayed("resetColors"), uiSetMeshVisible = relayed("setMeshVisible"), uiSetMorphValue = relayed("setMorphValue");
 const uiSetRegionWeight = relayed("setRegionWeight"), uiSetRotateMode = relayed("setRotateMode"), uiSetLookMode = relayed("setLookMode");
+const uiIdleTune = relayed("idleTune"), uiReseedIdle = relayed("reseedIdle");   // per-model idle (Settings → Idle)
 // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
 // the initiator, or a window created mid-session (display plugged in) would number its copies
 // differently and a later relayed detach(id) would silently miss there.
@@ -1528,7 +1564,9 @@ ui = createUI({
   setMeshLabel: relayed("setMeshLabel"),                                    // rename a part (legible Settings list)
   setRotAxis: uiSetRotAxis, setRot: uiSetRot, getRot: () => getRot(),      // 3-axis rotation for Settings
   setYaw: (deg) => uiSetRotAxis("y", deg), getYaw: () => getRot().y,       // back-compat (Y axis only)
-  getRotateMode: () => rotateMode, setRotateMode: uiSetRotateMode,         // drag-to-spin toggle for Settings
+  getRotateMode: () => rotateMode, setRotateMode: uiSetRotateMode,         // drag-to-spin (AI/bus only since 2026-06-11 — the user path is Alt+drag)
+  getIdleProfile: () => ({ ...(profileFor(curKey).idle || {}) }),          // THIS model's idle personality (Settings → Idle)
+  tuneIdle: uiIdleTune, reseedIdle: uiReseedIdle,                          // edit it live / regenerate from capabilities
   getLookMode: () => lookMode, setLookMode: uiSetLookMode, hasEyes: () => hasEyes(),   // cursor-look mode (head/eyes/both) for Settings
   springRegions: () => springRegions(), setRegionWeight: uiSetRegionWeight,  // per-area jiggle weights for Settings
   morphs: () => allMorphsInfo(), setMorphValue: uiSetMorphValue,             // shape-key sliders for Settings
@@ -1570,7 +1608,7 @@ addEventListener("pointerdown", (e) => {
   if (cursor.over) {
     ui.hideGallery();
     if (!locked) {
-      if (rotateMode) { spinning = true; _spinX = cursor.x; _spinY = cursor.y; _spinRot = getRot(); _downX = cursor.x; _downY = cursor.y; }   // drag rotates (↔ yaw, ↕ pitch) — any window (peers relay the live preview)
+      if (e.altKey || rotateMode) { spinning = true; _spinX = cursor.x; _spinY = cursor.y; _spinRot = getRot(); _downX = cursor.x; _downY = cursor.y; }   // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.
       else {                                                     // GRAB: main drives her global position from the OS cursor until release → seamless across monitors
         held = true; _downX = cursor.x; _downY = cursor.y;
         const g = localPxToGlobal(cursor.x, cursor.y);
