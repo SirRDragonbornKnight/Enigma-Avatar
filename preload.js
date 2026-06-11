@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   renameModel: (id, label) => ipcRenderer.invoke("avatar:renameModel", id, label),
   // Live scan of models/ (the source of truth) → [{id,label,url,builtin,thumb}]. No manifest drift.
   listModels: () => ipcRenderer.invoke("avatar:listModels"),
+  // Model repair (in-Settings editor): inspect a model's bone names → {nodes,mojibake,recoverable,names},
+  // or rewrite them into a repaired COPY → {ok,id,url,label,renamed,repaired}. Original untouched.
+  diagnoseModel: (id) => ipcRenderer.invoke("avatar:diagnoseModel", id),
+  repairModel: (opts) => ipcRenderer.invoke("avatar:repairModel", opts || {}),
   // Persist files dropped onto the overlay into models/ (drag-drop → permanent add).
   importDropped: (paths) => ipcRenderer.invoke("avatar:importDropped", paths),
   // Capture the current avatar → models/<id>/.thumb.png for the gallery.

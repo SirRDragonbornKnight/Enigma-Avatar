@@ -1476,6 +1476,10 @@ ui = createUI({
   springRegions: () => springRegions(), setRegionWeight: uiSetRegionWeight,  // per-area jiggle weights for Settings
   morphs: () => allMorphsInfo(), setMorphValue: uiSetMorphValue,             // shape-key sliders for Settings
   renameModel: (id, label) => uiIPC?.renameModel?.(id, label),               // gallery model rename → manifest label (+ refresh broadcast)
+  // Model repair (in-Settings editor): live role resolution + the file-repair backend.
+  getRoleInfo: () => ({ matched: proc ? proc.matched.length : 0, total: ROLES.length, missing: proc ? ROLES.filter((r) => !proc.matched.includes(r)) : ROLES.slice() }),
+  diagnoseModel: (id) => uiIPC?.diagnoseModel?.(id),
+  repairModel: (opts) => uiIPC?.repairModel?.(opts),
   syncInteractive,
 });
 

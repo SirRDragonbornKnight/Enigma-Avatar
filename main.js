@@ -377,6 +377,38 @@ function init() {
     bringToDisplay(list[i].id);
   });
 
+  // --- MODEL REPAIR (the in-Settings editor backend) — diagnose + rewrite bone names into a
+  // repaired COPY (the original is never touched). Pure-Node GLB patcher in tools/fix_model.mjs.
+  const meshInModelDir = (id) => {
+    const dir = path.join(MODELS_DIR, id);
+    if (!fs.existsSync(dir)) return null;
+    const f = fs.readdirSync(dir).find((n) => lib.MESH_EXT.has(path.extname(n).toLowerCase()));
+    return f ? path.join(dir, f) : null;
+  };
+  const fixModelMod = () => import(require("url").pathToFileURL(path.join(__dirname, "tools", "fix_model.mjs")).href);
+  ipcMain.handle("avatar:diagnoseModel", async (_e, id) => {
+    try {
+      if (!lib.safeId(id)) return { error: "bad model id" };
+      const file = meshInModelDir(id); if (!file) return { error: "no model file" };
+      if (path.extname(file).toLowerCase() === ".fbx") return { error: "FBX repair not supported (re-export as glTF)" };
+      const { diagnoseModel } = await fixModelMod();
+      return diagnoseModel(file);
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  });
+  ipcMain.handle("avatar:repairModel", async (_e, opts = {}) => {
+    try {
+      const { id, ops } = opts;
+      if (!lib.safeId(id)) return { error: "bad model id" };
+      const file = meshInModelDir(id); if (!file) return { error: "no model file" };
+      const newId = lib.freeSlug(id.replace(/_fixed(_\d+)?$/, "") + "_fixed");   // <id>_fixed (disambiguated), never clobbers
+      const outDir = path.join(MODELS_DIR, newId);
+      const { repairModel } = await fixModelMod();
+      const res = repairModel(file, outDir, ops || {});
+      const meshName = path.basename(res.out);
+      return { ok: true, id: newId, url: `./models/${newId}/${meshName}`, label: lib.title(newId), renamed: res.renamed, repaired: res.repaired };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  });
+
   ipcMain.handle("avatar:importModel", importModel);
   ipcMain.handle("avatar:importProp", importProp);
   ipcMain.handle("avatar:removeModel", (_e, id) => lib.removeModel(id));

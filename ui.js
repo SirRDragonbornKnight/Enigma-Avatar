@@ -156,7 +156,7 @@ export function createUI(api) {
     r.oninput = (e) => { e.stopPropagation(); const v = parseFloat(r.value); if (!Number.isNaN(v)) opts.onChange(v); };
     return r;
   };
-  let _colorsOpen = false, _partsOpen = true, _advOpen = false, _morphsOpen = false;   // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
+  let _colorsOpen = false, _partsOpen = true, _advOpen = false, _morphsOpen = false, _repairOpen = false;   // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
   // Friendly names for the jiggle regions the spring reports (trust-no-names: these label a
   // structural region tag, not a bone name). Cloth is split into its own Settings box.
   const REGION_LABEL = { breast: "Breast", butt: "Butt", genital: "Genital", belly: "Belly / tummy", hair: "Hair", tail: "Tail", ear: "Ears", wing: "Wings", cloth: "Cloth / fabric", accessory: "Accessory", jiggle: "Jiggle bones", other: "Other dangly" };
@@ -413,6 +413,24 @@ export function createUI(api) {
     const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
     body.appendChild(sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v)));
 
+    // --- Model repair (the in-Settings editor) — diagnose this model's rig + rewrite broken bone
+    //     names into a repaired COPY (the original is never touched). Bone names ARE the engine's
+    //     identity layer, so fixing them is how a mis-rigged model (marie's mojibake, a fluff-named
+    //     arm) becomes drivable. Desktop-only (needs the file backend).
+    if (api.repairModel && api.getCurKey) {
+      const curId = (/\/models\/([^/]+)\//.exec(api.getCurKey() || "") || [])[1];
+      if (curId) {
+        body.appendChild(divider());
+        const ch = document.createElement("div"); ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
+        const caret = document.createElement("span"); caret.textContent = _repairOpen ? "▾" : "▸"; caret.style.fontSize = "9px";
+        const lbl = document.createElement("span"); lbl.textContent = "Model repair (fix the rig / bone names)";
+        ch.append(caret, lbl); body.appendChild(ch);
+        const box = document.createElement("div"); box.style.display = _repairOpen ? "block" : "none"; body.appendChild(box);
+        ch.onclick = (e) => { e.stopPropagation(); _repairOpen = box.style.display === "none"; box.style.display = _repairOpen ? "block" : "none"; caret.textContent = _repairOpen ? "▾" : "▸"; if (_repairOpen) renderRepair(box, curId); };
+        if (_repairOpen) renderRepair(box, curId);
+      }
+    }
+
     // --- Fit attachment (props / clothes / furniture): place the selected item ---
     const attachObjs = api.getAttachObjs();
     if (attachObjs.length) {
@@ -452,6 +470,63 @@ export function createUI(api) {
       renderFit();
     }
   }
+  // The MODEL-REPAIR panel body (async — diagnose is an IPC round-trip). Shows live role resolution,
+  // bone-name health, and one-click fixes that write a repaired COPY into the library, then load it.
+  const CANON_RENAME = {   // rename target the name tier recognizes, per role (assisted role assignment)
+    hips: "Hips", spine: "Spine", chest: "Chest", neck: "Neck", head: "Head",
+    left_shoulder: "LeftShoulder", left_arm: "LeftUpperArm", left_forearm: "LeftLowerArm", left_hand: "LeftHand",
+    right_shoulder: "RightShoulder", right_arm: "RightUpperArm", right_forearm: "RightLowerArm", right_hand: "RightHand",
+    left_leg: "LeftUpperLeg", left_shin: "LeftLowerLeg", left_foot: "LeftFoot",
+    right_leg: "RightUpperLeg", right_shin: "RightLowerLeg", right_foot: "RightFoot",
+  };
+  function renderRepair(box, curId) {
+    box.innerHTML = "";
+    const note = (t, dim = true) => { const d = document.createElement("div"); d.textContent = t; d.style.cssText = `font-size:11px;line-height:1.4;${dim ? "opacity:.6;" : ""}margin:3px 0;`; return d; };
+    const BTN = "padding:4px 10px;background:rgba(110,195,255,.16);color:#cfe9ff;border:1px solid rgba(110,195,255,.4);border-radius:5px;cursor:pointer;font:12px system-ui;margin-top:4px;";
+    // 1) live role resolution (synchronous, from the engine)
+    const ri = api.getRoleInfo ? api.getRoleInfo() : null;
+    if (ri) {
+      box.appendChild(note(`Body roles resolved: ${ri.matched} / ${ri.total}` + (ri.missing.length ? "  —  missing: " + ri.missing.join(", ") : "  ✓ full skeleton"), ri.missing.length > 0));
+    }
+    box.appendChild(note("Scanning bone names…"));
+    const doRepair = async (ops, label) => {
+      setStatus(label + "…");
+      const res = await api.repairModel({ id: curId, ops });
+      if (!res || res.error) { setStatus("repair failed: " + (res?.error || "?")); return; }
+      setStatus(`repaired ✓ ${res.renamed || 0} renamed, ${res.repaired || 0} names fixed → ${res.label}`);
+      await refreshModelList();
+      api.loadModel(res.url, res.label);                 // switch to the repaired copy (gallery now lists both)
+      hideSettings();
+    };
+    Promise.resolve(api.diagnoseModel ? api.diagnoseModel(curId) : null).then((d) => {
+      const scanLine = box.lastChild; if (scanLine) box.removeChild(scanLine);
+      if (!d || d.error) { box.appendChild(note("Name scan unavailable: " + (d?.error || "—"))); return; }
+      const broken = (d.mojibake || 0) + (d.recoverable || 0);
+      box.appendChild(note(`Bones in file: ${d.nodes}` + (broken ? `  —  ${broken} with broken names` : "  ✓ names look clean"), broken > 0));
+      // a) repair broken/garbled names (marie's mojibake class)
+      if (broken > 0) {
+        const b = document.createElement("button"); b.textContent = `Fix ${broken} broken bone name${broken > 1 ? "s" : ""} → new copy`; b.style.cssText = BTN;
+        b.onclick = (e) => { e.stopPropagation(); doRepair({ repairMojibake: true }, "repairing bone names"); };
+        box.appendChild(b);
+      }
+      // b) assisted role assignment — for each MISSING role, rename a chosen bone to a canonical name
+      if (ri && ri.missing.length && Array.isArray(d.names)) {
+        box.appendChild(note("Assign a missing role to a bone (renames it so the rig resolves):", false));
+        const boneNames = d.names.filter(Boolean);
+        for (const role of ri.missing) {
+          const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 0;";
+          const rl = document.createElement("span"); rl.textContent = role.replace(/_/g, " "); rl.style.cssText = "font-size:11px;width:96px;flex:0 0 auto;opacity:.85;";
+          const sel = document.createElement("select"); sel.style.cssText = "flex:1;min-width:0;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:11px system-ui;padding:2px;";
+          const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "(pick a bone…)"; sel.appendChild(o0);
+          for (const nm of boneNames) { const o = document.createElement("option"); o.value = nm; o.textContent = nm; sel.appendChild(o); }
+          sel.onchange = (e) => { e.stopPropagation(); if (sel.value) doRepair({ renames: { [sel.value]: CANON_RENAME[role] || role } }, `assigning ${role}`); };
+          row.append(rl, sel); box.appendChild(row);
+        }
+      }
+      box.appendChild(note("Repairs write a NEW model (original kept). Switch back anytime in the gallery."));
+    }).catch((e) => { box.appendChild(note("scan error: " + (e?.message || e))); });
+  }
+
   function showSettings() {
     buildSettings();
     settings.style.display = "flex";

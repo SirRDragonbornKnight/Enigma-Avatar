@@ -288,6 +288,47 @@ test("a lip-sync-driven (auto) morph is labeled, not a dead slider", () => {
   } finally { dom.cleanup(); }
 });
 
+test("Model repair: expanding shows the role summary + a Fix-names button that calls repairModel", async () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    // expand the "Model repair" section
+    let header = null;
+    for (const span of S().querySelectorAll("span")) if (span.textContent.includes("Model repair")) { header = span.parentElement; break; }
+    assert.ok(header, "Model repair section present (desktop api)");
+    header.click();
+    await new Promise((r) => setTimeout(r, 5));   // let the async diagnose resolve
+    assert.ok(calls.some((c) => c[0] === "diagnoseModel" && c[1] === "roxanne_wolf"), "diagnoses the CURRENT model by id");
+    assert.ok(S().textContent.includes("17 / 19"), "shows live role resolution (17/19, 2 missing)");
+    let fixBtn = null;
+    for (const b of S().querySelectorAll("button")) if (/Fix \d+ broken bone name/.test(b.textContent)) fixBtn = b;
+    assert.ok(fixBtn, "a Fix-broken-names button appears (mock reports 5 broken)");
+    fixBtn.click();
+    await new Promise((r) => setTimeout(r, 5));
+    assert.ok(calls.some((c) => c[0] === "repairModel" && c[1]?.id === "roxanne_wolf" && c[1]?.ops?.repairMojibake === true), "→ repairModel({id, ops:{repairMojibake:true}})");
+  } finally { dom.cleanup(); }
+});
+
+test("Model repair: a missing role offers a bone dropdown that renames a bone to a canonical name", async () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    let header = null;
+    for (const span of S().querySelectorAll("span")) if (span.textContent.includes("Model repair")) { header = span.parentElement; break; }
+    header.click();
+    await new Promise((r) => setTimeout(r, 5));
+    // find the select whose row labels the missing 'left arm' role
+    let sel = null;
+    for (const span of S().querySelectorAll("span")) if (span.textContent === "left arm" && span.parentElement) { sel = span.parentElement.querySelector("select"); break; }
+    assert.ok(sel, "missing role 'left arm' has a bone-picker dropdown");
+    sel.value = "L_fluffShoulder"; fire(sel, "change");
+    await new Promise((r) => setTimeout(r, 5));
+    assert.ok(calls.some((c) => c[0] === "repairModel" && c[1]?.ops?.renames?.L_fluffShoulder === "LeftUpperArm"), "→ renames the picked bone to the canonical 'LeftUpperArm'");
+  } finally { dom.cleanup(); }
+});
+
 test("menu has a single 'Choose model…' entry that opens the gallery (no inline list)", () => {
   const dom = installDOM();
   try {

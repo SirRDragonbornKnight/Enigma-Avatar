@@ -90,6 +90,10 @@ export function makeApi(over = {}) {
       { index: 2, name: null, label: null, visible: false },   // UNNAMED + hidden
     ],
     setMeshVisible: rec("setMeshVisible"), setMeshLabel: rec("setMeshLabel"),
+    // model-repair (in-Settings editor): role resolution + the file-repair backend (async)
+    getRoleInfo: () => ({ matched: 17, total: 19, missing: ["left_arm", "right_arm"] }),
+    diagnoseModel: async (id) => { calls.push(["diagnoseModel", id]); return { nodes: 200, mojibake: 5, recoverable: 0, names: ["Spine", "L_fluffShoulder", "L_elbow"] }; },
+    repairModel: async (opts) => { calls.push(["repairModel", opts]); return { ok: true, id: "m_fixed", url: "./models/m_fixed/m.glb", label: "M fixed", renamed: 1, repaired: 0 }; },
     setYaw: rec("setYaw"), getYaw: () => 0,
     setRotAxis: rec("setRotAxis"), setRot: rec("setRot"), getRot: () => ({ x: 0, y: 0, z: 0 }),
     getRotateMode: () => false, setRotateMode: rec("setRotateMode"),
