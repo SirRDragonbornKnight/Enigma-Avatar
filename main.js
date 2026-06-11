@@ -34,6 +34,7 @@ let gPos = { x: 0, y: 0 };
 // Drag is owned by main: while a grab is active we follow the OS cursor (which works across
 // every monitor, unlike a per-window pointermove that dies at the window edge).
 let _drag = null;                 // { grabX, grabY, winId } | null  (grab offset in DIP)
+let _dragDisplayId = null;        // the display the cursor is over DURING a drag — re-arbitrate interactivity when she crosses a bezel so the release is caught
 let _dragTimer = null;
 let _overByWin = new Map();       // winId -> bool (this window's silhouette hit-test result)
 let currentModelUrl = null;       // last model the brain loaded → peers mirror it
@@ -107,7 +108,7 @@ function applyInteractive() {
   try { cursorDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id; } catch {}
   for (const w of liveWindows()) {
     let interactive;
-    if (_drag) interactive = w.win.webContents.id === _drag.winId;       // dragging → only the grabber is live
+    if (_drag) interactive = w.displayId === cursorDisplayId;            // dragging → the window UNDER THE CURSOR is live, so the release is caught on whatever monitor she's been dragged onto (a cross-bezel release used to reach no window → stuck to the cursor)
     else {
       const over = _overByWin.get(w.win.webContents.id) || false;
       interactive = (forceInteractive || over) && (w.displayId === cursorDisplayId);
@@ -119,11 +120,17 @@ function applyInteractive() {
 // --- drag (main-owned, follows the OS cursor across every monitor) ----------
 function startDrag(winId, grabX, grabY) {
   _drag = { winId, grabX, grabY };
+  _dragDisplayId = null;
   applyInteractive();
   if (_dragTimer) clearInterval(_dragTimer);
   _dragTimer = setInterval(() => {
     if (!_drag) return;
-    try { const c = screen.getCursorScreenPoint(); setGlobalPos(c.x - _drag.grabX, c.y - _drag.grabY); } catch {}
+    try {
+      const c = screen.getCursorScreenPoint();
+      setGlobalPos(c.x - _drag.grabX, c.y - _drag.grabY);
+      const did = screen.getDisplayNearestPoint(c).id;
+      if (did !== _dragDisplayId) { _dragDisplayId = did; applyInteractive(); }   // crossed to a new monitor → hand interactivity to THAT window so its pointerup ends the drag
+    } catch {}
   }, 8);   // ~120 Hz cursor-follow; cheap, only while a grab is held
 }
 function endDrag() {
@@ -290,7 +297,9 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: "Bring to primary monitor", click: recoverToPrimary },
     { label: "Bring to monitor", enabled: list.length > 1, submenu: monitorItems },
+    { label: "Drop her (unstick from cursor)", click: endDrag },   // escape hatch: force-release a drag that got stuck to the cursor, without closing her
     { type: "separator" },
+    { label: "Open Settings", click: () => { const w = windowForGlobalPos(); if (w) try { w.webContents.executeJavaScript("window.EnigmaAvatar && EnigmaAvatar.settings && EnigmaAvatar.settings()").catch(() => {}); } catch {} } },   // reach Settings on her current monitor even when she can't be clicked
     { label: "Reload avatar", click: () => { for (const w of liveWindows()) { try { w.win.reload(); } catch {} } } },   // ALL windows — peers must pick up reloaded code/model too (each re-receives init/pos/model on did-finish-load)
     { type: "separator" },
     { label: "Quit Enigma Avatar", accelerator: "Ctrl+Alt+Q", click: () => { console.error("[main] quit via tray"); app.quit(); } },

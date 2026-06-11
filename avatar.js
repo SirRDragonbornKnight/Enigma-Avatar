@@ -1263,6 +1263,7 @@ const EnigmaAvatar = {
   showSkeleton: (on) => showSkeleton(on),                                 // overlay the rig to inspect bones; persists
   bonesShown: () => bonesShown,
   snap: (opts) => snapshot(opts || {}),                                   // capture the avatar in isolation → PNG (inspect)
+  settings: (open) => { if (open === false) ui.hideSettings(); else ui.showSettings(); },   // open/close Settings — tray escape hatch (reach it when she can't be clicked) + AI
   materials: () => allMaterialsInfo().map(({ m, mesh }, index) => ({ index, name: m.name || null, mesh, hex: m.color ? "#" + m.color.getHexString(THREE.SRGBColorSpace) : null })),   // recolorable parts BY INDEX (live authority); name+mesh are hints only
   recolor: (target, hex) => recolor(target, hex),                        // tint a part by INDEX (live authority) or name; saved per avatar
   hueShift: (name, deg) => hueShift(name, deg),                          // rotate a part's hue (keeps detail); saved
@@ -1366,13 +1367,13 @@ window.avatarIPC?.onInit?.((info) => {
   setStatus(_isBrain ? "brain window ready" : "mirror window ready");
   _initSeen = true; maybeStart();
 });
-let _wasDragFlag = false;
+let _wasDragFlag = false, _dragActive = false;   // _dragActive: a main-owned drag is in flight (broadcast to EVERY window via p.drag) — so ANY window's pointerup can release it, even one that didn't start the grab
 window.avatarIPC?.onGlobalPos?.((p) => {
   if (!p || !isFinite(p.gx) || !isFinite(p.gy)) return;
   const moved = Math.abs(p.gx - gPos.x) + Math.abs(p.gy - gPos.y) > 0.5;
   gPos.x = p.gx; gPos.y = p.gy; if (p.disp) curDisp = p.disp; _gReady = true;
   if (p.drag && (gGlide || gliding)) { gGlide = null; gliding = false; }   // a main-owned drag (from ANY window) outranks an AI glide — without this the two write gPos in turn and she rubber-bands
-  const df = !!p.drag;
+  const df = !!p.drag; _dragActive = df;
   if (_isBrain && df !== _wasDragFlag) { _wasDragFlag = df; proc?.setGrip?.("both", df); }   // carried by the body → she grips with both hands for the ride
   if (moved && _isBrain) wake(0.6);   // keep the brain (→ pose broadcast) lively while she's dragged from another monitor
 });
@@ -1584,8 +1585,8 @@ addEventListener("pointerdown", (e) => {
 });
 addEventListener("pointerup", (e) => {
   if (spinning) { spinning = false; uiSetRot(_spinTo(e)); _downX = -999; wake(2); return; }   // commit the dragged rotation (persists + re-scans silhouette); hold full rate so the hair settles
+  if (held || _dragActive) window.avatarIPC?.dragEnd?.();        // release the main-owned drag — even one that STARTED on another monitor's window (a cross-bezel release never reaches the grabber → stuck to the cursor)
   if (held) {
-    window.avatarIPC?.dragEnd?.();                               // release the main-owned drag
     const tap = _downX > -100 && Math.abs(e.clientX - _downX) < 6 && Math.abs(e.clientY - _downY) < 6;   // a click/pet (pressed + released with minimal movement)
     if (tap) { if (_isBrain) EnigmaAvatar.express(Math.random() < 0.5 ? "happy" : "wag", 1.6); else window.avatarIPC?.poke?.(); }   // happy reaction (peers route it to the brain)
   }
