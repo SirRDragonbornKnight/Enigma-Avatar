@@ -64,6 +64,94 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   aimArm("left_forearm", "left_hand");
   aimArm("right_forearm", "right_hand");
 
+  // Natural LEG rest — the SAME disease, other limb (Mal0 bound waving; anime_catgirl BINDS in a
+  // ~76° SQUAT: femur horizontal, knees folded — Sketchfab bakes whatever pose the rip was captured
+  // in). Every rest-relative layer (stance, gestures, IK anchors, axis/FSIGN derivation, model
+  // height) was building on that crouch. Stand the leg up at build: thigh straight down, shin
+  // straight down, foot leveled — gated on the BIND knee being clearly folded (<150°), so normal
+  // standing/A-pose rigs are never touched. (Runs BEFORE the flex-axis/FSIGN derivation on purpose.)
+  const aimTo = (role, childRole, tgtDir) => {          // aimArm's core with a caller-chosen target, no skip heuristic
+    const a = bones[role], c = bones[childRole]; if (!a || !c || !a.parent) return;
+    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
+    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
+    _dir.normalize();
+    _wq.setFromUnitVectors(_dir, _tgt.copy(tgtDir).normalize());
+    a.parent.getWorldQuaternion(_pq);
+    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+    rest[role] = adjust.multiply(rest[role]);
+    a.quaternion.copy(rest[role]);
+  };
+  // TRUNK rest — a squat-bound rig CURLS forward too (her hips→head line leaned well off
+  // vertical, head down, hair over her face). Two passes, both gated so upright binds are
+  // never touched: (1) level the whole trunk rigidly at the HIPS (the legs are re-aimed just
+  // below, so this can't tilt them); (2) any remaining forward curl is unwound through
+  // chest→neck→head, each taking a fraction of what's left (a distributed un-slouch reads
+  // natural; dumping it all on one joint reads broken).
+  const _headRef = bones.head || bones.neck || bones.chest;
+  const _trunkLean = () => {                            // current hips→head direction (unit), or null
+    const lo = bones.hips || bones.spine; if (!lo || !_headRef || lo === _headRef) return null;
+    lo.getWorldPosition(_aw); _headRef.getWorldPosition(_cw);
+    _dir.copy(_cw).sub(_aw);
+    return _dir.lengthSq() > 1e-8 ? _dir.normalize() : null;
+  };
+  const _up = new THREE.Vector3(0, 1, 0);
+  const _levelAt = (b, restKey, dirNow, frac) => {      // rotate `b`'s rest by frac of (dirNow → up), in ITS parent space
+    _wq.setFromUnitVectors(dirNow, _up);
+    if (frac < 1) _wq.slerp(new THREE.Quaternion(), 1 - frac);
+    b.parent.getWorldQuaternion(_pq);
+    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+    rest[restKey] = adjust.multiply(rest[restKey]);
+    b.quaternion.copy(rest[restKey]);
+    model.updateWorldMatrix(true, true);
+  };
+  let _lean = _trunkLean();
+  if (_lean && bones.hips?.parent && _lean.y > 0.3 && _lean.y < 0.978) {   // upright-ish but >~12° off vertical → a baked slouch, not a style
+    const was = Math.acos(Math.min(1, _lean.y)) * 180 / Math.PI;
+    _levelAt(bones.hips, "hips", _lean, 1);
+    for (const [role, frac] of [["chest", 0.5], ["neck", 0.5], ["head", 1]]) {   // unwind the REMAINING internal curl leaf-ward
+      const b = bones[role]; if (!b || !b.parent || b === bones.hips) continue;
+      _lean = _trunkLean();
+      if (!_lean || _lean.y >= 0.995) break;
+      _levelAt(b, role, _lean, frac);
+    }
+    console.log(`[avatar] trunk rest leveled: hips→head was ${was.toFixed(0)}° off vertical (slouch-bound rig)`);
+  }
+
+  const _down = new THREE.Vector3(0, -1, 0);
+  for (const side of ["left", "right"]) {
+    const th = bones[side + "_leg"], sh = bones[side + "_shin"], ft = bones[side + "_foot"];
+    if (!th || !sh || !ft) continue;
+    const tp = new THREE.Vector3(), sp = new THREE.Vector3(), fp = new THREE.Vector3();
+    th.getWorldPosition(tp); sh.getWorldPosition(sp); ft.getWorldPosition(fp);
+    const v1 = tp.sub(sp), v2 = fp.sub(sp);
+    if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) continue;
+    const kneeDeg = v1.angleTo(v2) * 180 / Math.PI;     // 180 = straight
+    if (kneeDeg > 150) continue;                        // standing bind → never touch
+    aimTo(side + "_leg", side + "_shin", _down);
+    model.updateWorldMatrix(true, true);
+    aimTo(side + "_shin", side + "_foot", _down);
+    model.updateWorldMatrix(true, true);
+    const toe = ft.children && ft.children[0];          // level the foot (its bind pitch belonged to the squat)
+    if (toe) {
+      ft.getWorldPosition(_aw); toe.getWorldPosition(_cw);
+      _dir.copy(_cw).sub(_aw);
+      if (_dir.lengthSq() > 1e-8) {
+        _dir.normalize();
+        if (Math.abs(_dir.y) > 0.45) {                  // clearly pitched → flatten, keeping its own heading
+          _tgt.copy(_dir); _tgt.y = 0;
+          if (_tgt.lengthSq() < 1e-6) _tgt.set(0, 0, 1);
+          _wq.setFromUnitVectors(_dir, _tgt.normalize());
+          ft.parent.getWorldQuaternion(_pq);
+          const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+          rest[side + "_foot"] = adjust.multiply(rest[side + "_foot"]);
+          ft.quaternion.copy(rest[side + "_foot"]);
+          model.updateWorldMatrix(true, true);
+        }
+      }
+    }
+    console.log(`[avatar] leg rest normalized (${side}): bind knee ${kneeDeg.toFixed(0)}° → standing (squat-bound rig)`);
+  }
+
   // LIMB FLEXION AXIS — a rig's per-bone local frame is unknowable: on this model the upper-arm's local-X
   // is ABDUCTION (arm spreads sideways), the forearm's local-X is the elbow, and legs vary again. So the
   // big motion poses must NOT assume "pitch = forward bend". Instead we rotate each limb about the BODY'S

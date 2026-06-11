@@ -33,3 +33,34 @@ test("hairRig — only real body bones become roles; dangly bones do not", () =>
   // hair / BackStrand / tail / skirt bones must NOT be mistaken for body roles.
   assert.deepEqual(matched(hairRig()), ["head", "hips", "left_forearm", "left_hand"]);
 });
+
+// SQUAT-BOUND rig (anime_catgirl: the GLB binds knees at ~76 deg, femur horizontal) -
+// buildProceduralRig must stand the legs up at build (the leg twin of the aimArm
+// waving-bind fix) and must NOT touch a normal standing bind.
+import * as THREE from "three";
+test("squat-bound legs are normalized to standing at build; straight rigs untouched", () => {
+  const ang = (model, names) => {
+    model.updateWorldMatrix(true, true);
+    const p = {};
+    model.traverse((o) => { if (o.isBone && names.includes(o.name)) p[o.name] = o.getWorldPosition(new THREE.Vector3()); });
+    const v1 = p[names[0]].clone().sub(p[names[1]]), v2 = p[names[2]].clone().sub(p[names[1]]);
+    return v1.angleTo(v2) * 180 / Math.PI;
+  };
+  const NAMES = ["LeftThigh", "LeftShin", "LeftFoot"];
+  const std = fullBiped();                      // 1) standing bind: untouched
+  const before = ang(std, NAMES);
+  buildProceduralRig(std, {});
+  assert.ok(Math.abs(ang(std, NAMES) - before) < 3, "standing bind stays as authored");
+  const sq = fullBiped();                       // 2) squat bind -> standing after build
+  sq.traverse((o) => {
+    if (!o.isBone) return;
+    if (/^(Left|Right)Thigh$/.test(o.name)) o.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -1.2));
+    if (/^(Left|Right)Shin$/.test(o.name)) o.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 1.9));
+  });
+  sq.updateWorldMatrix(true, true);
+  const folded = ang(sq, NAMES);
+  assert.ok(folded < 130, `fixture folds the knee (got ${folded.toFixed(0)} deg)`);
+  buildProceduralRig(sq, {});
+  const after = ang(sq, NAMES);
+  assert.ok(after > 165, `legs stood up at build (knee ${folded.toFixed(0)} -> ${after.toFixed(0)} deg)`);
+});
