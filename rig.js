@@ -217,6 +217,34 @@ export function resolveGeometry(snap, opts = {}) {
   return out;
 }
 
+// ── Tier 3.5: structural "between" repair — fill a MIDDLE joint that naming/geometry missed
+// because the rig uses JOINT-STYLE names. Many rigs name the UPPER ARM "shoulder"
+// (shoulder→elbow→wrist), so the clavicle wins `${side}_shoulder` and the real upper arm is
+// dropped — left_arm/right_arm stay empty on lola, sexy_roxanne, renamon (3 of 12 models, the
+// single most-missed role). The fix needs no names at all: the bone sitting BETWEEN the resolved
+// proximal and distal joints in the BONE HIERARCHY *is* the middle joint, anatomically always.
+// Same shape recovers a chest between spine and neck. Fills only empty roles → never overrides.
+function boneBetween(snap, proxId, distId) {
+  // walk up the parent chain from the distal bone; the child-of-prox on that path is the middle.
+  let cur = distId;
+  for (let g = 0; g < 128 && cur >= 0; g++) {
+    const par = snap[cur].parent;
+    if (par === proxId) return cur !== distId ? cur : -1;   // cur===dist ⇒ prox & dist are directly linked, no middle bone exists
+    cur = par;
+  }
+  return -1;   // distal isn't a descendant of proximal (unexpected rig) → leave the gap
+}
+export function resolveBetween(snap, roleIds, source) {
+  const fill = (midRole, proxRole, distRole) => {
+    if (roleIds[midRole] != null || roleIds[proxRole] == null || roleIds[distRole] == null) return;
+    const id = boneBetween(snap, roleIds[proxRole], roleIds[distRole]);
+    if (id >= 0) { roleIds[midRole] = id; if (source) source[midRole] = "between"; }
+  };
+  fill("left_arm", "left_shoulder", "left_forearm");     // upper arm named "shoulder" (joint-style rigs)
+  fill("right_arm", "right_shoulder", "right_forearm");
+  fill("chest", "spine", "neck");                        // an upper-torso bone the centerline walk skipped
+}
+
 // ── Tier 4: per-model override (force / exclude). Mutates roleIds + source. ──
 export function applyOverride(roleIds, source, entry, byName) {
   if (!entry) return;
@@ -269,6 +297,7 @@ export function resolveRig(model, vrm = null, opts = {}) {
     const geo = resolveGeometry(snap, { existing: roleIds, excludeIds });
     for (const role in geo) fill(role, geo[role], "geometry");
   }
+  resolveBetween(snap, roleIds, source);                              // tier 3.5: structural middle-joint repair (joint-style "shoulder" = upper arm)
   if (ov) applyOverride(roleIds, source, ov, byName);                  // tier 4 (force)
 
   const roles = {}; for (const r in roleIds) roles[r] = bones[roleIds[r]];
