@@ -11,6 +11,7 @@ import * as THREE from "three";
 
 export function createPhysics({ scene, loadAsset }) {
   let RAPIER = null, world = null, floorBody = null;
+  let avatarBody = null, avatarR = 0, avatarHalf = 0;   // a kinematic capsule tracking HER body, so props collide with her
   let initing = null;
   const props = [];                 // [{ body, obj, radius }]
   let floorY = -4.6;                // world-space floor line (screen bottom) — avatar.js updates it
@@ -32,6 +33,21 @@ export function createPhysics({ scene, loadAsset }) {
     if (!isFinite(y)) return;
     floorY = y;
     if (floorBody) floorBody.setTranslation({ x: 0, y: floorY - 0.5, z: 0 }, true);
+  }
+
+  // Track HER body as a KINEMATIC capsule (driven by us, unaffected by impacts) so props bounce off
+  // her instead of passing through. Called every frame with her live torso centre + size; the capsule
+  // is rebuilt only when her SIZE changes meaningfully (a resize), else just repositioned — cheap.
+  function setAvatar(c) {
+    if (!world || !c || !isFinite(c.x) || !isFinite(c.y)) return;
+    const r = Math.max(0.05, c.r), half = Math.max(0.05, c.halfH);
+    if (!avatarBody || Math.abs(r - avatarR) > avatarR * 0.15 + 1e-3 || Math.abs(half - avatarHalf) > avatarHalf * 0.15 + 1e-3) {
+      if (avatarBody) world.removeRigidBody(avatarBody);                 // size changed → rebuild the collider (rapier can't resize one live)
+      avatarBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(c.x, c.y, 0));
+      world.createCollider(RAPIER.ColliderDesc.capsule(half, r).setRestitution(0.45).setFriction(0.6), avatarBody);
+      avatarR = r; avatarHalf = half;
+    }
+    avatarBody.setNextKinematicTranslation({ x: c.x, y: c.y, z: 0 });    // smooth kinematic move → proper contact velocity
   }
 
   // Spawn a prop mesh as a dynamic ball and hurl it. from = {x,y} world, vel = {x,y} world/s.
@@ -86,5 +102,5 @@ export function createPhysics({ scene, loadAsset }) {
     return awake;                                         // keep the frame rate up only while something moves
   }
 
-  return { throwProp, clearProps, step, setFloor, count: () => props.length };
+  return { throwProp, clearProps, step, setFloor, setAvatar, count: () => props.length };
 }

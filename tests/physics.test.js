@@ -32,3 +32,31 @@ test("rapier: a dropped ball falls, bounces, and settles on the floor", async ()
   assert.ok(Math.abs(t.y - (floorY + r)) < 0.05, `at rest ON the floor line (y ${t.y.toFixed(3)} ≈ ${(floorY + r).toFixed(3)})`);
   assert.ok(t.x > 0.5, "rolled/travelled with its throw velocity");
 });
+
+test("rapier: a ball dropped onto HER body capsule hits it and deflects off (she's a solid rounded body)", async () => {
+  await RAPIER.init({});
+  const world = new RAPIER.World({ x: 0, y: -14, z: 0 });
+  const floor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -3.5, 0));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.5, 50).setRestitution(0.3), floor);
+  // a kinematic capsule standing at the origin = her body (half-height 0.7, radius 0.25, top ≈ y 0.95)
+  const her = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0, 0));
+  world.createCollider(RAPIER.ColliderDesc.capsule(0.7, 0.25).setRestitution(0.45).setFriction(0.6), her);
+  const startX = 0.06;
+  const ball = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(startX, 2.2, 0));   // dropped just off-centre onto her
+  ball.setEnabledTranslations(true, true, false, true);
+  world.createCollider(RAPIER.ColliderDesc.ball(0.16).setRestitution(0.6).setDensity(1.2), ball);
+
+  world.timestep = 1 / 120;
+  let hitHer = false, falling = false, tunneled = false;
+  for (let i = 0; i < 120 * 5; i++) {
+    her.setNextKinematicTranslation({ x: 0, y: 0, z: 0 });   // ticked every step (as setAvatar does live) → stays an active obstacle
+    world.step();
+    const v = ball.linvel(), t = ball.translation();
+    if (v.y < -1) falling = true;
+    if (falling && v.y > 0.3) hitHer = true;                 // bounced UP after falling = a real contact with her body
+    if (Math.abs(t.x) < 0.30 && t.y < -0.95 && t.y > -3.0) tunneled = true;   // passed straight DOWN through the capsule's volume
+  }
+  assert.ok(hitHer, "the ball made contact with her body (deflected up off the capsule)");
+  assert.ok(!tunneled, "the ball never passed straight through her body volume");
+  assert.ok(Math.abs(ball.translation().x) > 0.30, "the off-centre drop ROLLED OFF her body to the side (a rounded solid), didn't pass through");
+});

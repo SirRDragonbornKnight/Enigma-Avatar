@@ -12,7 +12,7 @@ export function createUI(api) {
   const EMOTES = ["happy", "talk", "wag", "nod", "alert", "sad", "shake"];
   // Animated whole-body MOTIONS (vs EMOTES = upper-body expressions) — fired from the right-click "Move"
   // submenu so the user can test them directly (they otherwise live only on the AI bus).
-  const MOTIONS = [{ name: "jump", label: "Jump" }, { name: "flip", label: "Flip" }, { name: "laydown", label: "Lay down" }, { name: "getup", label: "Get up" }, { name: "clap", label: "Clap" }, { name: "throwball", label: "Throw ball" }, { name: "clearballs", label: "Clear balls" }];
+  const MOTIONS = [{ name: "jump", label: "Jump" }, { name: "flip", label: "Flip" }, { name: "laydown", label: "Lay down" }, { name: "getup", label: "Get up" }, { name: "clap", label: "Clap" }, { name: "throwball", label: "Throw ball" }, { name: "dropball", label: "Drop ball on her" }, { name: "clearballs", label: "Clear balls" }];
 
   let menuShown = false, settingsShown = false, galleryShown = false, _galleryVer = 0;
   let _settingsPos = null, _galleryPos = null;   // remember where the user dragged each panel (per session)

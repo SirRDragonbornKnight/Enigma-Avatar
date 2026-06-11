@@ -119,6 +119,11 @@ function throwBall() {
   EnigmaAvatar.express("happy", 1.4);                     // she enjoys it
   wake(3); setStatus("throw!");
 }
+function dropBall() {                                     // a ball falls onto her → bounces off her body capsule (shows she's SOLID)
+  const h = (modelDims.h || BASE_H) * sizeScale;
+  physics.throwProp(BALL_URL, { x: pos.x + (Math.random() - 0.5) * h * 0.12, y: pos.y + h * 1.3 }, { x: (Math.random() - 0.5) * 1.2, y: 0.5 }, Math.max(0.22, h * 0.11));
+  wake(3); setStatus("drop!");
+}
 // Pose-broadcast layout (brain serializes its live skeleton → peers mirror it). Both windows load the
 // same model → identical bone/morph order, so the Float32Array buffer is self-describing by length.
 let _poseBones = [], _poseMorphs = [], poseLen = 0, _poseBuf = null, _lastPose = null, _poseTag = 0;   // tag = hash of curKey — length alone can coincide across models (audit hardening)
@@ -961,9 +966,17 @@ function restEyes() { for (const e of eyeBones) e.bone.quaternion.copy(e.rest); 
 function eyeSide(n) { const s = String(n).toLowerCase(); if (/right|_r_|_r\b|\.r_|\.r\b|^r_|r_?eye/.test(s)) return "R"; if (/left|_l_|_l\b|\.l_|\.l\b|^l_|l_?eye/.test(s)) return "L"; return "C"; }
 function resolveEyes(model) {                                  // TRUST NO NAMES, but "eye" is reliable; exclude brow/lid/lash/_end tips
   const all = [];
-  model?.traverse((o) => { if (o.isBone) { const n = o.name || ""; if (/eye/i.test(n) && !/_end|brow|lid|lash|socket|blink/i.test(n)) all.push(o); } });
+  // exclude not just the obvious non-eyeballs but EYE-LOOK IMPOSTERS the scan caught driving gaze:
+  // an "Eyepatch" (fexa) and an "Eye_Con" controller (sexy_roxanne) both contain "eye" but must NOT
+  // be rotated — a patch isn't a gaze target, and a controller double-applies onto the real eyes.
+  model?.traverse((o) => { if (o.isBone) { const n = o.name || ""; if (/eye/i.test(n) && !/_end|brow|lid|lash|socket|blink|patch|controll|ctrl|eye[_ ]?con\b|_aim|aim$|target|look[_ ]?at/i.test(n)) all.push(o); } });
   const set = new Set(all);
-  const top = all.filter((o) => { for (let p = o.parent; p; p = p.parent) if (set.has(p)) return false; return true; });   // topmost eye per chain (no parent+child double-drive)
+  let top = all.filter((o) => { for (let p = o.parent; p; p = p.parent) if (set.has(p)) return false; return true; });   // topmost eye per chain (no parent+child double-drive)
+  // SIDED eyes win over CENTER candidates: if any L/R eye exists, drop the unsided ones (a stray
+  // controller/center bone that slipped the name filter). A true single-eye rig (aveline, glados)
+  // has only center candidates → those are kept.
+  const sidedTop = top.filter((o) => eyeSide(o.name) !== "C");
+  if (sidedTop.length) top = sidedTop;
   model?.updateWorldMatrix(true, true);
   const seen = new Set(); eyeBones = [];
   for (const o of top) {
@@ -1042,11 +1055,14 @@ function animate() {
   if (facial && facialOn) facial.update(dt);                    // blink + lip-sync (jaw / morphs / VRM weights)
   if (spring && springOn) { rig.updateWorldMatrix(false, true); spring.update(dt); }  // hair/tail/wires sway
   if (vrm) vrm.update(dt);                                       // VRM spring bones / look-at / expressions
-  // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, step the world
+  // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
+  // as a collision capsule (props bounce off her), step the world.
   if (physics.count() > 0 && _gReady) {
     const [, bpx] = dipToLocalPx(gPos.x, curDisp.y + curDisp.height, myOrigin, myBounds, innerWidth, innerHeight);
     const fy = toWorld(0, bpx).y + 0.02;
     if (_floorWY === null || Math.abs(fy - _floorWY) > 1e-3) { _floorWY = fy; physics.setFloor(fy); }
+    const hW = (modelDims.h || BASE_H) * sizeScale, rr = Math.max(0.1, (modelDims.w || 1.5) * sizeScale * 0.28);
+    physics.setAvatar({ x: pos.x, y: pos.y + hW * 0.5 + _motionY, halfH: Math.max(0.1, hW * 0.5 - rr), r: rr });   // capsule spanning feet→head, centred mid-body
     if (physics.step(dt)) wake(0.5);                             // hold full frame rate while something is in flight
   }
   renderer.render(scene, camera);
@@ -1176,6 +1192,7 @@ const EnigmaAvatar = {
   gesture: (name, dur) => {                                              // animated action — idle suspended
     const n = String(name || "").toLowerCase().replace(/[ _-]/g, "");
     if (n === "throwball" || n === "throw") { throwBall(); return "throwball"; }            // rigid-body toy (rapier) — she hurls the baseball
+    if (n === "dropball" || n === "drop") { dropBall(); return "dropball"; }                // a ball drops onto her → bounces off (she's solid)
     if (n === "clearballs" || n === "clearball") { physics.clearProps(); setStatus("balls cleared"); return "clearballs"; }
     if (["jump", "flip", "laydown", "lay", "getup", "standup"].includes(n)) {
       const r = motion(n, dur);
