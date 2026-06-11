@@ -1,5 +1,9 @@
 {
   "_comment": "Per-model bone-role overrides for rig.js (tier 4), keyed by model URL (the same key as profiles.json). Most models need NO entry — the VRM/name/geometry tiers resolve them. Add one only when a specific rig is mis-identified. Shape per URL: { \"roles\": { \"left_arm\": \"ExactBoneName\", ... }  FORCES a role, beating vrm/name/geometry; \"exclude\": [\"BoneName\", ...]  blocks a bone from ever holding a role; \"spring\": { \"extra\": [\"BoneName\"], \"never\": [\"BoneName\"] }  force/suppress dangly-bone physics; \"face\": { \"mouthMorph\": <int> }  PINS the mouth-open morph INDEX (use only when a model's morphs are UNNAMED and the geometric jaw-drop detector picks wrong; must be a non-negative integer in range) }. A future mis-identified rig is a 1-line fix here — no code or regex changes.",
+  "./models/makiro/Makiro.glb": {
+    "_why": "HairTOP is a SINGLE bone owning the whole upper hair mass — sprung alone it pivots as one rigid slab ('glitching, top half not flowing'; user 2026-06-10). It must ride the head rigidly; the BackStrand/FrontHair CHAINS keep their physics.",
+    "spring": { "never": ["HairTOP_Armature"] }
+  },
   "_example./models/some_model/scene.gltf": {
     "roles": { "head": "Bone_07", "left_arm": "shoulder.L" },
     "exclude": ["Armature", "Bip_Pelvis_L"],
