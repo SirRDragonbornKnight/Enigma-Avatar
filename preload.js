@@ -55,6 +55,11 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // Brain → main → peers: the live skeleton pose (one Float32Array buffer per frame). Transferred.
   sendPose: (buffer) => ipcRenderer.send("avatar:pose", buffer),
   onPose: (cb) => ipcRenderer.on("avatar:pose", (_e, buf) => cb(buf)),
+  // Brain → main → peers: live rigid-body PROP transforms (the thrown/dropped ball), relative to her
+  // root. Props live only in the brain's scene, so peers render ghost copies → balls show on the
+  // monitor she's actually on, not just the primary. [count, per prop: dx,dy,qx,qy,qz,qw,scale].
+  sendProps: (buffer) => ipcRenderer.send("avatar:props", buffer),
+  onProps: (cb) => ipcRenderer.on("avatar:props", (_e, buf) => cb(buf)),
   // Main → peers: load this model (the brain resolved/switched it). url or "__default__".
   onModel: (cb) => ipcRenderer.on("avatar:model", (_e, url) => cb(url)),
   // Brain → main: the brain finished loading a model → main tells the peers to match.

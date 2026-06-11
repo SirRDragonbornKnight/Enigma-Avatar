@@ -353,6 +353,8 @@ function init() {
 
   // Brain → peers: live skeleton pose, once per brain frame.
   ipcMain.on("avatar:pose", (e, buf) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id) toPeers("avatar:pose", buf); });
+  // Brain → peers: live physics-prop transforms (the ball), so it renders on whatever monitor she's on.
+  ipcMain.on("avatar:props", (e, buf) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id) toPeers("avatar:props", buf); });
   // Brain → peers: mirror the model the brain just loaded/switched to.
   ipcMain.on("avatar:modelLoaded", (e, url) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id && url) { currentModelUrl = url; console.error("[main] brain loaded " + url + " → relaying to " + (liveWindows().length - 1) + " peer(s)"); toPeers("avatar:model", url); } });
   // Peer → brain: a tap/pet on a peer window → the brain plays a happy reaction.

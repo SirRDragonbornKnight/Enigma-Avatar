@@ -84,6 +84,27 @@ export function createPhysics({ scene, loadAsset }) {
     props.length = 0;
   }
 
+  // Serialize each live prop's visual transform RELATIVE to her root (ox,oy) so PEER windows can
+  // render ghost copies on whatever monitor she's actually on — physics props live only in the
+  // brain's scene (it can draw on the primary display alone), so without this the ball spawns
+  // off-screen whenever she's parked on another monitor. Layout (flat, transferable):
+  //   [ count, then per prop: dx, dy, qx, qy, qz, qw, scale ]
+  // World units are model-tied (worldH is a fixed per-window constant), so an offset-from-her-root
+  // is portable across displays of any size/DPI — and because the ghosts hang off HER root, they
+  // automatically fall off-screen on every monitor she isn't standing on (no per-monitor logic).
+  function serializeProps(ox, oy) {
+    const n = props.length, buf = new Float32Array(1 + n * 7);
+    buf[0] = n;
+    let k = 1;
+    for (const p of props) {
+      const o = p.obj, q = o.quaternion;
+      buf[k++] = o.position.x - ox; buf[k++] = o.position.y - oy;
+      buf[k++] = q.x; buf[k++] = q.y; buf[k++] = q.z; buf[k++] = q.w;
+      buf[k++] = o.scale.x;
+    }
+    return buf;
+  }
+
   const _q = new THREE.Quaternion();
   function step(dt) {
     if (!world || !props.length) return false;
@@ -102,5 +123,5 @@ export function createPhysics({ scene, loadAsset }) {
     return awake;                                         // keep the frame rate up only while something moves
   }
 
-  return { throwProp, clearProps, step, setFloor, setAvatar, count: () => props.length };
+  return { throwProp, clearProps, step, setFloor, setAvatar, serializeProps, count: () => props.length };
 }

@@ -111,6 +111,9 @@ let proc = null, spring = null, facial = null, BONE_LIMITS = {};
 const physics = createPhysics({ scene, loadAsset });
 const BALL_URL = "./props/worn_baseball_ball/worn_baseball_ball.glb";
 let _floorWY = null;
+let _lastPropN = 0;                                       // brain: # props in the last broadcast (send ONE empty buffer when balls clear → peers drop their ghosts)
+// PEER-side ghost props: a peer can't run physics, so it mirrors the brain's ball transforms onto clones.
+let _ghostProto = null, _ghosts = [], _lastProps = null, _ghostLoading = false;
 function throwBall() {
   const h = (modelDims.h || BASE_H) * sizeScale;
   // throw from her upper body, toward the cursor's side of the screen (or a random side)
@@ -1067,6 +1070,11 @@ function animate() {
   }
   renderer.render(scene, camera);
   if (_peerCount > 0 && window.avatarIPC?.sendPose) window.avatarIPC.sendPose(serializePose());   // → main → peer windows mirror this exact pose (skip entirely on single-monitor)
+  if (_peerCount > 0 && window.avatarIPC?.sendProps) {            // → peers render ghost balls on HER monitor (props live only in this brain scene)
+    const _pn = physics.count();
+    if (_pn > 0 || _lastPropN > 0) window.avatarIPC.sendProps(physics.serializeProps(pos.x, pos.y));   // n=0 buffer once when they clear → peers drop ghosts
+    _lastPropN = _pn;
+  }
   fpClock += dt;                                                 // refresh the grab footprint (a 2nd low-res render + readback) — less often when idle
   if (!held && fpClock > (active ? 0.16 : 0.5)) { fpClock = 0; computeFootprint(); computeOver(); }   // re-test the hover too: she GLIDES out from under a stationary cursor, and a stale `over` keeps eating desktop clicks where she WAS
 }
@@ -1084,9 +1092,34 @@ function peerFrame() {
     pos.set(_bp.x, _bp.y);
     rig.position.set(_bp.x, _bp.y + _motionY, 0);
     updateShadow();                                     // peers ground her too (the mirrored half needs the same contact patch)
+    applyGhosts();                                      // mirror the brain's physics props (the ball) onto THIS monitor
     fpClock += dt; if (fpClock > 0.3) { fpClock = 0; computeFootprint(); computeOver(); }   // keep her grabbable on this monitor
   }
   renderer.render(scene, camera);
+}
+// PEER: render ghost copies of the brain's physics props (the ball) — placed relative to OUR copy of
+// her root, so they land on the monitor she's standing on and fall off-screen on the others. The ball
+// asset is lazily loaded once (only if a prop ever arrives), then cloned per prop. Single prop type
+// for now (the bundled baseball); a future multi-prop world would key the clone by an asset id.
+function applyGhosts() {
+  const buf = _lastProps, n = buf && buf.length ? buf[0] | 0 : 0;
+  if (!n && !_ghosts.length) return;                       // nothing to draw and nothing to hide
+  if (n && !_ghostProto) { loadGhostProto(); return; }     // need the mesh first — paints next frame
+  for (let i = 0; i < n; i++) {
+    let g = _ghosts[i];
+    if (!g) { g = _ghostProto.clone(true); scene.add(g); _ghosts[i] = g; }
+    const k = 1 + i * 7;
+    g.position.set(pos.x + buf[k], pos.y + buf[k + 1], 0);
+    g.quaternion.set(buf[k + 2], buf[k + 3], buf[k + 4], buf[k + 5]);
+    g.scale.setScalar(buf[k + 6]);
+    g.visible = true;
+  }
+  for (let i = n; i < _ghosts.length; i++) if (_ghosts[i]) _ghosts[i].visible = false;   // hide retired ghosts (e.g. after "clear balls")
+}
+function loadGhostProto() {
+  if (_ghostLoading || _ghostProto) return;
+  _ghostLoading = true;
+  loadAsset(BALL_URL, (asset) => { _ghostLoading = false; if (!asset || !asset.scene) return; _ghostProto = asset.scene; _ghostProto.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); }, () => { _ghostLoading = false; });
 }
 // Pack the live skeleton into a flat Float32Array: [ modelTag, motionY, rigQuat(4), rigScale(1), bone quats…, morph influences… ].
 function serializePose() {
@@ -1354,6 +1387,7 @@ window.avatarIPC?.onModel?.((url) => {   // peers mirror the brain's current mod
   applyPeerModel(url);
 });
 window.avatarIPC?.onPose?.((buf) => { _lastPose = buf; });   // peer: latest brain pose to mirror next frame
+window.avatarIPC?.onProps?.((buf) => { _lastProps = buf; });   // peer: latest brain prop (ball) transforms to mirror
 window.avatarIPC?.onPoke?.(() => { EnigmaAvatar.express(Math.random() < 0.5 ? "happy" : "wag", 1.6); });   // brain reacts to a tap on a peer window
 
 // --- UI command relay — the menu/Settings work on ANY monitor -----------------

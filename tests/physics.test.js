@@ -4,6 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import RAPIER from "@dimforge/rapier3d-compat";
+import * as THREE from "three";
+import { createPhysics } from "../physics.js";
 
 test("rapier: a dropped ball falls, bounces, and settles on the floor", async () => {
   await RAPIER.init({});
@@ -59,4 +61,28 @@ test("rapier: a ball dropped onto HER body capsule hits it and deflects off (she
   assert.ok(hitHer, "the ball made contact with her body (deflected up off the capsule)");
   assert.ok(!tunneled, "the ball never passed straight through her body volume");
   assert.ok(Math.abs(ball.translation().x) > 0.30, "the off-centre drop ROLLED OFF her body to the side (a rounded solid), didn't pass through");
+});
+
+// The multi-monitor fix: physics props live ONLY in the brain (primary) window's scene, so when she's
+// parked on another monitor the ball spawned off-screen — "drop ball does not work." The brain now
+// serializes each prop RELATIVE to her root and broadcasts it; peers render ghost copies hung off
+// THEIR copy of her root. This proves the serialization is root-relative (hence portable to any peer).
+test("physics: serializeProps packs each prop relative to her root (peers ghost the ball on her monitor)", async () => {
+  const scene = new THREE.Scene();
+  const loadAsset = (url, onOk) => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1))); onOk({ scene: g }); };
+  const physics = createPhysics({ scene, loadAsset });
+  await physics.throwProp("ball.glb", { x: 5, y: 3 }, { x: 0, y: 0 }, 0.4);
+  physics.step(1 / 60);                                   // write the body→obj transform
+
+  const buf = physics.serializeProps(5, 3);              // serialize relative to her root, placed at the spawn point
+  assert.equal(buf.length, 1 + 7, "one prop → [count, dx,dy,qx,qy,qz,qw,scale]");
+  assert.equal(buf[0], 1, "count = 1");
+  assert.ok(Math.abs(buf[1]) < 0.2, `dx ≈ 0 (spawned at her root x) — got ${buf[1].toFixed(3)}`);
+  assert.ok(buf[7] > 0, `prop scale is positive — got ${buf[7].toFixed(3)}`);
+
+  const buf0 = physics.serializeProps(0, 0);             // a DIFFERENT root (another monitor) → the offset shifts by exactly the root delta
+  assert.ok(Math.abs((buf0[1] - buf[1]) - 5) < 1e-4, "dx is root-relative → portable across displays of any size");
+
+  physics.clearProps();
+  assert.equal(physics.serializeProps(0, 0)[0], 0, "after clear → 0 props (peers drop their ghosts)");
 });
