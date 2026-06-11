@@ -4,6 +4,10 @@
     "_why": "HairTOP is a SINGLE bone owning the whole upper hair mass — sprung alone it pivots as one rigid slab ('glitching, top half not flowing'; user 2026-06-10). It must ride the head rigidly; the BackStrand/FrontHair CHAINS keep their physics.",
     "spring": { "never": ["HairTOP_Armature"] }
   },
+  "./models/lola_bunny/lola_bunny.glb": {
+    "_why": "Her eyeball bones' parent frame flips the derived PITCH axis → eyes went UP when asked to look DOWN ('eyes go up instead of down', user 2026-06-11). Default range also over-rotated the pupil past the sclera ('go past her eye'). Verified live via query eyegaze: down→fwd.y -0.359, up→fwd.y -0.466 (inverted). Reverse pitch + tighten both ranges.",
+    "eye": { "flipY": -1, "maxX": 0.40, "maxY": 0.22 }
+  },
   "_example./models/some_model/scene.gltf": {
     "roles": { "head": "Bone_07", "left_arm": "shoulder.L" },
     "exclude": ["Armature", "Bip_Pelvis_L"],

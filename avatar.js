@@ -285,7 +285,8 @@ const flags = {
 const LOOK = { gainX: 1.4, gainY: 1.0, flipX: 1, flipY: -1, maxX: 0.6, maxY: 0.35 };  // cursor-look feel (flip signs per rig)
 let _lookX = 0, _lookY = 0, _lookW = 0, _cursorIdle = 99;       // smoothed look state
 // Eye-look: rotate the eye bones toward the cursor (in addition to / instead of the head).
-const EYE = { gain: 1.15, flipX: 1, flipY: 1, maxX: 0.62, maxY: 0.42 };   // eye-look feel + RANGE (more than before); flip per rig if they look the wrong way
+const EYE = { gain: 1.15, flipX: 1, flipY: 1, maxX: 0.62, maxY: 0.42 };   // GLOBAL eye-look defaults (feel + RANGE)
+let eyeCfg = { ...EYE };                                       // ACTIVE per-model eye config = EYE defaults + rig_overrides[curKey].eye — flip/range DIFFER per rig (e.g. lola reverses pitch + over-rotates past the socket)
 let eyeBones = [];                                             // [{bone, rest}] resolved per model
 let lookMode = "both";                                        // "both" | "head" | "eyes" — what tracks the cursor
 try { const lm = localStorage.getItem("enigmaAvatar.lookMode"); if (lm) lookMode = lm; } catch {}
@@ -470,6 +471,7 @@ let _loadSeq = 0;
 const _peerRetries = {};                           // url -> failed mirror-load attempts (peer only)
 function loadModel(url, label) {
   _cancelMotion();                                 // a model switch cancels any in-flight motion + lying hold + bone clip (stale baseline / rotation)
+  if (held) { held = false; window.avatarIPC?.dragEnd?.(); }   // …and never leave her glued to the cursor across a switch (main also endDrag()s on modelLoaded — belt + braces)
   const seq = ++_loadSeq;                          // guard: a slower earlier load must not clobber a newer switch
   if (url === DEFAULT_KEY) { curKey = DEFAULT_KEY; onModelLoaded(buildDefaultAvatar()); showOnboarding(); return; }   // zero-asset procedural placeholder
   setStatus(`loading ${label || url} …`);
@@ -957,8 +959,8 @@ function updateLook(dt) {
 // --- eye-look: rotate the eye bones toward the cursor (in addition to / instead of the head) -----
 function driveEyes(lx, ly, w) {
   if (!eyeBones.length) return;
-  const yaw = _clampN(lx * EYE.gain, -EYE.maxX, EYE.maxX) * EYE.flipX * w;
-  const pitch = _clampN(ly * EYE.gain, -EYE.maxY, EYE.maxY) * EYE.flipY * w;
+  const yaw = _clampN(lx * eyeCfg.gain, -eyeCfg.maxX, eyeCfg.maxX) * eyeCfg.flipX * w;
+  const pitch = _clampN(ly * eyeCfg.gain, -eyeCfg.maxY, eyeCfg.maxY) * eyeCfg.flipY * w;
   for (const e of eyeBones) {                                   // rotate about THIS bone's real anatomical axes, not raw local X/Y
     _eyeQy.setFromAxisAngle(e.up, yaw);                         // horizontal — turn left/right about the face-UP axis (THE fix: local-Y was the gaze axis → invisible roll)
     _eyeQp.setFromAxisAngle(e.right, pitch);                    // vertical — tilt up/down about the ear-to-ear (RIGHT) axis
@@ -997,6 +999,7 @@ function resolveEyes(model) {                                  // TRUST NO NAMES
     eyeBones.push({ bone: o, rest: o.quaternion.clone(), up, right });
   }
   if (eyeBones.length) console.log("[avatar] eyes:", eyeBones.map((e) => e.bone.name).join(", "));
+  eyeCfg = { ...EYE, ...(rigOverrides[curKey]?.eye || {}) };   // per-model eye flip/range (reversed pitch / over-rotation past the socket → a 1-line data fix in rig_overrides.json, no code change)
 }
 function hasEyes() { return eyeBones.length > 0; }
 function setLookMode(m) {
@@ -1242,7 +1245,7 @@ const EnigmaAvatar = {
   },
   lookTune: (p) => Object.assign(LOOK, p),                               // tune/flip cursor-look (gainX/Y, flipX/Y, maxX/Y)
   lookMode: (m) => setLookMode(m), getLookMode: () => lookMode, hasEyes: () => hasEyes(),   // head / eyes / both
-  eyeTune: (p) => Object.assign(EYE, p),                                 // eye-look feel (gain/flip/max — flip if eyes point wrong)
+  eyeTune: (p) => Object.assign(eyeCfg, p),                              // eye-look feel for the CURRENT model (gain/flip/max — flip if eyes point wrong); persist into rig_overrides[url].eye to make it stick
   lookAt: (px, py) => { cursor.x = px == null ? innerWidth / 2 : px; cursor.y = py == null ? innerHeight / 2 : py; cursor.seen = true; _cursorIdle = 0; wake(2); },   // force gaze at a screen point (AI / test)
   facialTune: (p) => facialTune(p),                                      // saved per-avatar (jaw axis/open)
   mouth: (a) => { if (facial) facial.setMouth(a); },                      // 0..1 jaw/mouth open

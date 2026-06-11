@@ -356,7 +356,7 @@ function init() {
   // Brain → peers: live physics-prop transforms (the ball), so it renders on whatever monitor she's on.
   ipcMain.on("avatar:props", (e, buf) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id) toPeers("avatar:props", buf); });
   // Brain → peers: mirror the model the brain just loaded/switched to.
-  ipcMain.on("avatar:modelLoaded", (e, url) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id && url) { currentModelUrl = url; console.error("[main] brain loaded " + url + " → relaying to " + (liveWindows().length - 1) + " peer(s)"); toPeers("avatar:model", url); } });
+  ipcMain.on("avatar:modelLoaded", (e, url) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id && url) { currentModelUrl = url; endDrag(); console.error("[main] brain loaded " + url + " → relaying to " + (liveWindows().length - 1) + " peer(s)"); toPeers("avatar:model", url); } });   // endDrag: a model switch must never leave her glued to the cursor (a switch mid-grab left _drag chasing the OS cursor forever)
   // Peer → brain: a tap/pet on a peer window → the brain plays a happy reaction.
   ipcMain.on("avatar:poke", () => toBrain("avatar:poke"));
   // Peer cursor → brain (throttled at the sender): the brain runs cursor-look but only its own
