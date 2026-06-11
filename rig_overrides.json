@@ -5,8 +5,8 @@
     "spring": { "never": ["HairTOP_Armature"] }
   },
   "./models/lola_bunny/lola_bunny.glb": {
-    "_why": "Her eyeball bones' parent frame flips the derived PITCH axis → eyes went UP when asked to look DOWN ('eyes go up instead of down', user 2026-06-11). Default range also over-rotated the pupil past the sclera ('go past her eye'). Verified live via query eyegaze: down→fwd.y -0.359, up→fwd.y -0.466 (inverted). Reverse pitch + tighten both ranges.",
-    "eye": { "flipY": -1, "maxX": 0.40, "maxY": 0.22 }
+    "_why": "Her eyeball bones' parent frame flips the derived PITCH axis → eyes went UP when asked to look DOWN ('eyes go up instead of down', user 2026-06-11). Range also over-rotated the pupil out of the sclera into the head mesh ('go past her eye' / 'behind her skin'). Verified live via query eyegaze (down→fwd.y -0.359, up -0.466 = inverted). Reverse pitch + tight range. Tightened 0.40/0.22 → 0.24/0.14 because the pupil still clipped behind the skin at the extremes.",
+    "eye": { "flipY": -1, "maxX": 0.24, "maxY": 0.14 }
   },
   "_example./models/some_model/scene.gltf": {
     "roles": { "head": "Bone_07", "left_arm": "shoulder.L" },

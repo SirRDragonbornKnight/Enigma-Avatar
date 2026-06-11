@@ -104,27 +104,35 @@ export function buildFacial(model, vrm = null, opts = {}) {
   if (jaw) {
     // open by rotating the jaw about an axis; sign/axis vary per rig → tunable.
     // (Mal0's Bip_Jaw opens on local X; tune({ jawAxis:'x'|'y'|'z', jawOpen:rad }).)
-    const P = { jawAxis: "x", jawOpen: 0.32, lidAxis: "x", lidClose: 0.5 };
+    const P = { jawAxis: "x", jawOpen: 0.32, lidAxis: "x", lidClose: 0.5, lidLower: -0.5, lidCorner: 0.3 };
+    for (const k in P) if (opts[k] != null) P[k] = opts[k];   // per-model face override (rig_overrides.json face:{lidAxis,lidClose,lidLower,...}) — eyelid rigs differ wildly
+    // A natural blink closes the UPPER lids one way and the LOWER lids the OPPOSITE way so they MEET in
+    // the middle; corners barely move. Driving every lid uniformly (the old behaviour) splays a multi-lid
+    // rig like lola (3 upper + 3 lower + 2 corner per eye) into a mess — her reported "blinking is wrong".
+    // Classify by name; a rig with no upper/lower naming falls back to uniform (all "u" → the old path).
+    const UP = /upper|top/i, LO = /lower|bottom|under/i, hasUL = lids.some((b) => UP.test(b.name) || LO.test(b.name));
+    const lidCat = lids.map((b) => !hasUL ? "u" : LO.test(b.name) ? "l" : UP.test(b.name) ? "u" : "c");   // u=upper(main) · l=lower(opposite) · c=corner(slight)
     const jawRest = jaw.quaternion.clone();
     const lidRest = lids.map((b) => b.quaternion.clone());
     const _e = new THREE.Euler(), _q = new THREE.Quaternion();
     const applyAxis = (bone, rest, axis, ang) => { _e.set(axis === "x" ? ang : 0, axis === "y" ? ang : 0, axis === "z" ? ang : 0, "XYZ"); bone.quaternion.copy(rest).multiply(_q.setFromEuler(_e)); };
-    let mouth = 0, mouthTgt = 0, blinkT = jitter(2, 5), blinking = 0;
+    let mouth = 0, mouthTgt = 0, blinkT = jitter(2, 5), blinking = 0, manualBlink = -1;
     return {
       mode: "bones",
-      info: `jaw bone "${jaw.name}"${lids.length ? ` + ${lids.length} eyelid bone(s)` : " (no eyelid bones — no blink)"}`,
+      info: `jaw bone "${jaw.name}"${lids.length ? ` + ${lids.length} eyelid bone(s)${hasUL ? " (upper/lower split)" : ""}` : " (no eyelid bones — no blink)"}`,
       boneNames: () => [jaw.name, ...lids.map((b) => b.name)],   // bones THIS layer owns — the ambient idle must not touch them (they'd tremble when facial is toggled off)
       params: P, setParams: (p) => Object.assign(P, p),
       setMouth: (a) => { mouthTgt = clamp01(a); },
+      setBlink: (v) => { manualBlink = v == null || v < 0 ? -1 : clamp01(v); },   // hold the lids at v (deliberate blink/wink/squint, and live axis calibration); <0 = back to the auto timer
       blink() { blinking = 0.22; },
       update(dt, blinkOn = true) {
         mouth += (mouthTgt - mouth) * Math.min(1, dt * 20);
         applyAxis(jaw, jawRest, P.jawAxis, mouth * P.jawOpen);
         if (blinkOn && lids.length) {
-          let c = 0;
-          if (blinking > 0) { blinking -= dt; c = clamp01(Math.sin((1 - blinking / 0.22) * Math.PI)); }
-          else { blinkT -= dt; if (blinkT <= 0) { blinking = 0.22; blinkT = jitter(2.5, 6); } }
-          lids.forEach((b, i) => applyAxis(b, lidRest[i], P.lidAxis, c * P.lidClose));
+          let c;
+          if (manualBlink >= 0) c = manualBlink;                 // held (AI blink / test)
+          else { c = 0; if (blinking > 0) { blinking -= dt; c = clamp01(Math.sin((1 - blinking / 0.22) * Math.PI)); } else { blinkT -= dt; if (blinkT <= 0) { blinking = 0.22; blinkT = jitter(2.5, 6); } } }
+          lids.forEach((b, i) => applyAxis(b, lidRest[i], P.lidAxis, c * P.lidClose * (lidCat[i] === "l" ? P.lidLower : lidCat[i] === "c" ? P.lidCorner : 1)));
         }
       },
     };

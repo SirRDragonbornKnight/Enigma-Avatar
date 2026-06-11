@@ -394,6 +394,7 @@ function onModelLoaded(asset) {
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
   proc = buildProceduralRig(model, BONE_LIMITS, resolved);
+  if (proc?.setParams && profileFor(curKey).idle) proc.setParams(profileFor(curKey).idle);   // per-model idle feel — each avatar can carry its own breath/sway/liveliness in its profile
   console.log("[avatar] roles:", resolved.matched.length, JSON.stringify(resolved.report.bySource), resolved.matched.length ? "→ " + resolved.matched.join(", ") : "(none)");
   setStatus(`loaded ✓ ${resolved.matched.length ? "procedural idle on " + resolved.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
@@ -406,7 +407,7 @@ function onModelLoaded(asset) {
     if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);   // per-avatar tuned physics (global hair feel)
     if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
   }
-  facial = buildFacial(model, vrm, { mouthMorph: rigOverrides[curKey]?.face?.mouthMorph });   // facial layer (index-override → morph-by-name → jaw bone → none); drives lip-sync + eye blinks
+  facial = buildFacial(model, vrm, { ...(rigOverrides[curKey]?.face || {}) });   // facial layer (index-override → morph-by-name → jaw bone → none); per-model face override (mouthMorph + lid blink axis/close/lower) flows straight in
   if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial);     // per-avatar jaw/face tuning
   console.log("[avatar] mouth:", facial.mode === "none" ? "NONE — this model has no mouth channel (speech without lip-sync)" : `${facial.mode} — ${facial.info}`);   // acknowledge the mouth channel (or its absence) AS SUCH — never fake one
   reapplyAttachments();                           // re-attach saved props/accessories for this model
@@ -1221,7 +1222,7 @@ const EnigmaAvatar = {
   load(url) { uiLoadModel(url, url); },                          // relayed — a devtools/global load must reach every window like any other
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
-  tune: (p) => { if (proc) proc.setParams(p); return proc ? proc.params : null; },
+  tune: (p) => { if (proc) proc.setParams(p); const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...numericOnly(p) }; saveProfileSoon(); return proc ? proc.params : null; },   // idle feel, SAVED per model (each avatar its own)
   state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, menu: ui.isOpen() } }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
@@ -1316,6 +1317,7 @@ function handleCommand(c) {
   else if (c.action === "gesture" || c.action === "act") return EnigmaAvatar.gesture(c.name ?? c.gesture, c.dur);   // animated action (clap, …)
   else if (c.action === "say" && c.url) EnigmaAvatar.say(c.url, c);     // play speech wav + lip-sync (+talk body language)
   else if (c.action === "mouth") EnigmaAvatar.mouth(c.value ?? 0);      // manual jaw drive (testing)
+  else if (c.action === "blink") { if (c.value != null) facial?.setBlink?.(c.value); else facial?.blink?.(); }   // value≥0 HOLDS the lids (wink/squint/calibrate), <0 resumes auto; no value = one quick blink
   else if (c.action === "setMorph") EnigmaAvatar.setMorph(c.index ?? c.idx ?? 0, c.value);   // probe a morph by index (find the mouth → face.mouthMorph)
   else if (c.action === "stop") EnigmaAvatar.stopSpeak();
   else if (c.action === "attach" && c.url) { const { action, reqId, ...o } = c; return uiAttach(c.url, o); }   // prop/accessory → bone — RELAYED so it appears on every monitor's copy
