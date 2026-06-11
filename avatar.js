@@ -404,6 +404,36 @@ function onModelLoaded(asset) {
     // Pass the role-matched bones as `exclude` so a humanoid's limbs are never sprung
     // (only true dangly bits), plus any per-model spring override (extra/never).
     spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {} });   // per-region jiggle weights restored from profile
+    // BIND-NORMALIZATION × DANGLY CHAINS: standing a squat-bound rig up rotates the head/trunk.
+    // Rigid accessories (ears, hats) must FOLLOW that rotation — but hair/tail are authored
+    // relative to GRAVITY, so their world hang must be PRESERVED ("hair to attach to her head",
+    // 2026-06-11: her strands plumed forward off the freshly-leveled head). Counter-rotate each
+    // sprung chain ROOT by the net normalization its ancestors received, then rebuild the
+    // springs so rests + verlet tips re-capture from the corrected pose.
+    if (spring?.count && proc?.restAdjust && Object.keys(proc.restAdjust).length) {
+      const sprungSet = new Set(spring.names);
+      const _net = new THREE.Quaternion(), _pq = new THREE.Quaternion();
+      let fixed = 0;
+      model.traverse((o) => {
+        if (!o.isBone || !sprungSet.has(o.name) || (o.parent && sprungSet.has(o.parent.name))) return;   // chain ROOTS only
+        _net.identity();
+        let any = false;
+        for (let p = o.parent; p; p = p.parent) {       // nearest→farthest with right-multiply = farthest ancestor's rotation applied first
+          const a = proc.restAdjust[p.name];
+          if (a) { _net.multiply(a); any = true; }
+        }
+        if (!any) return;
+        o.parent.getWorldQuaternion(_pq);
+        const adj = _pq.clone().invert().multiply(_net.clone().invert()).multiply(_pq);
+        o.quaternion.copy(adj.multiply(o.quaternion.clone()));
+        fixed++;
+      });
+      if (fixed) {
+        model.updateWorldMatrix(true, true);
+        spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {} });
+        console.log(`[avatar] gravity-preserved ${fixed} dangly chain root(s) against the bind normalization`);
+      }
+    }
     if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);   // per-avatar tuned physics (global hair feel)
     if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
   }

@@ -39,6 +39,11 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // down (true A-pose bind) are left untouched, so nothing that worked regresses.
   model.updateWorldMatrix(true, true);
   const _aw = new THREE.Vector3(), _cw = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3(), _pq = new THREE.Quaternion(), _wq = new THREE.Quaternion();
+  // Every WORLD rotation the bind normalization applies, per bone — so avatar.js can counter-rotate
+  // gravity-authored DANGLY chains (hair/tail) back to their authored world hang. Rigid accessories
+  // (ears, hats) correctly inherit the rotation; dangly rests must NOT (they're authored vs gravity).
+  const restAdjust = {};
+  const noteAdjust = (name, wq) => { restAdjust[name] = restAdjust[name] ? wq.clone().multiply(restAdjust[name]) : wq.clone(); };
   const aimArm = (armRole, childRole) => {
     const a = bones[armRole], c = bones[childRole]; if (!a || !c || !a.parent) return;
     a.getWorldPosition(_aw); c.getWorldPosition(_cw);
@@ -52,6 +57,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
     rest[armRole] = adjust.multiply(rest[armRole]);
     a.quaternion.copy(rest[armRole]);                   // apply immediately so frame 0 isn't a T-pose
+    noteAdjust(a.name, _wq);
   };
   aimArm("left_arm", "left_forearm");
   aimArm("right_arm", "right_forearm");
@@ -80,6 +86,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
     rest[role] = adjust.multiply(rest[role]);
     a.quaternion.copy(rest[role]);
+    noteAdjust(a.name, _wq);
   };
   // TRUNK rest — a squat-bound rig CURLS forward too (her hips→head line leaned well off
   // vertical, head down, hair over her face). Two passes, both gated so upright binds are
@@ -102,6 +109,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
     rest[restKey] = adjust.multiply(rest[restKey]);
     b.quaternion.copy(rest[restKey]);
+    noteAdjust(b.name, _wq);
     model.updateWorldMatrix(true, true);
   };
   let _lean = _trunkLean();
@@ -145,6 +153,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
           const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
           rest[side + "_foot"] = adjust.multiply(rest[side + "_foot"]);
           ft.quaternion.copy(rest[side + "_foot"]);
+          noteAdjust(ft.name, _wq);
           model.updateWorldMatrix(true, true);
         }
       }
@@ -829,6 +838,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
 
   return {
     matched: R.matched,
+    restAdjust,                          // boneName → net WORLD rotation the bind normalization applied there (for dangly-chain gravity preservation in avatar.js)
     update,
     params,
     setParams: (p) => Object.assign(params, p),
