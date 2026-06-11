@@ -39,16 +39,26 @@ async def _handler(ws) -> None:
                 cmd = json.loads(raw)
             except Exception:
                 continue                       # ignore non-JSON
-            if not isinstance(cmd, dict) or "action" not in cmd:
-                continue                       # ignore anything that isn't a command
+            if not isinstance(cmd, dict):
+                continue                       # ignore non-objects; relay any dict — commands
+                                               # AND replies (two-way: the overlay answers a
+                                               # {"action":"query",...} with {"type":"reply",...})
             data = json.dumps(cmd)
             for c in list(CLIENTS):
                 if c is ws:
                     continue                   # don't echo back to the producer
                 try:
-                    await c.send(data)
+                    # 1s cap: one stuck consumer (frozen renderer, full TCP buffer) must not
+                    # head-of-line-block every other producer/consumer on the hub forever.
+                    await asyncio.wait_for(c.send(data), timeout=1.0)
                 except Exception:
                     CLIENTS.discard(c)
+                    # CLOSE it too — a merely-discarded socket stays open, so the overlay still
+                    # believes it's connected and never auto-reconnects (silently severed).
+                    try:
+                        asyncio.ensure_future(c.close())
+                    except Exception:
+                        pass
     except Exception:
         pass                                   # a dropped client must not crash the hub
     finally:
@@ -57,7 +67,12 @@ async def _handler(ws) -> None:
 
 
 async def main(host: str = HOST, port: int = PORT) -> None:
-    async with websockets.serve(_handler, host, port):
+    # Local-trust boundary: native clients (the overlay, avbus.py, modkit) send NO Origin header,
+    # and Electron's file-loaded page sends "file://" (or the opaque "null"). A web page the user
+    # happens to visit sends its http(s) origin — refuse those at the handshake (HTTP 403), or any
+    # drive-by site could puppet the avatar (load arbitrary models, toggle meshes, read query
+    # replies) through ws://127.0.0.1. Binding to localhost stops the network, not the browser.
+    async with websockets.serve(_handler, host, port, origins=[None, "file://", "null"]):
         print(f"avatar bus: relaying on ws://{host}:{port}", file=sys.stderr, flush=True)
         await asyncio.Future()                 # run forever
 

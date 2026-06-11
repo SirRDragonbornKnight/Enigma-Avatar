@@ -29,6 +29,13 @@ function arm(prefix, sx, { shoulder = "Shoulder", upper = "UpperArm", fore = "Fo
       makeBone(prefix + fore, [sx * 0.26, 0, 0], [
         makeBone(prefix + hand, [sx * 0.22, 0, 0], [
           makeBone(prefix + "Hand_end", [sx * 0.08, 0, 0]),   // leaf so `hand` has a child to orient
+          // a real FINGER chain (3 joints) — exercises the finger-curl calibration + grip layer
+          // (the audit caught the grip test passing vacuously on a finger-less fixture)
+          makeBone(prefix + "IndexFinger1", [sx * 0.07, 0, 0.02], [
+            makeBone(prefix + "IndexFinger2", [sx * 0.035, 0, 0], [
+              makeBone(prefix + "IndexFinger3", [sx * 0.025, 0, 0]),
+            ]),
+          ]),
         ]),
       ]),
     ]),

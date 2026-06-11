@@ -30,7 +30,10 @@ Write-Host "Launching Enigma Avatar overlay." -ForegroundColor Green
 Write-Host "  Right-click the avatar for the menu (models, emotes, toggles)." -ForegroundColor DarkGray
 Write-Host "  Ctrl+Alt+Q quit   Ctrl+Alt+A toggle click-through   1/2/3 swap model   H hide panel" -ForegroundColor DarkGray
 try {
-  & "$node\npm.cmd" start
+  # Tee the overlay's output to a log — main.js writes its quit-reason / window-set / crash
+  # diagnostics to stderr, and without this they were invisible when launched hidden.
+  $avatarLog = Join-Path $env:TEMP "enigma_avatar.log"
+  & "$node\npm.cmd" start 2>&1 | Tee-Object -FilePath $avatarLog
 } finally {
   if ($bus -and -not $bus.HasExited) { Stop-Process -Id $bus.Id -Force -ErrorAction SilentlyContinue }
 }

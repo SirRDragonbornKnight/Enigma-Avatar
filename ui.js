@@ -7,25 +7,29 @@
 // createUI(api) → { showMenu, hideMenu, showSettings, hideSettings,
 //                   refreshModelList, isOpen, isSettingsOpen, containsEvent }
 export function createUI(api) {
-  const { THREE, BASE_H, rig, avatarIPC, setStatus, baseName, kindOf, profileFor, modelMaterials, flags } = api;
+  const { THREE, BASE_H, rig, avatarIPC, setStatus, baseName, kindOf, profileFor, flags } = api;
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const EMOTES = ["happy", "talk", "wag", "nod", "alert", "sad", "shake"];
+  // Animated whole-body MOTIONS (vs EMOTES = upper-body expressions) — fired from the right-click "Move"
+  // submenu so the user can test them directly (they otherwise live only on the AI bus).
+  const MOTIONS = [{ name: "jump", label: "Jump" }, { name: "flip", label: "Flip" }, { name: "laydown", label: "Lay down" }, { name: "getup", label: "Get up" }, { name: "clap", label: "Clap" }, { name: "throwball", label: "Throw ball" }, { name: "clearballs", label: "Clear balls" }];
 
-  let menuShown = false, settingsShown = false;
+  let menuShown = false, settingsShown = false, galleryShown = false, _galleryVer = 0;
+  let _settingsPos = null, _galleryPos = null;   // remember where the user dragged each panel (per session)
 
   // built-ins + user models from models.json
   const BUILTIN_MODELS = api.builtinModels;
   let MODEL_LIST = BUILTIN_MODELS.slice();
+  // The model library = a LIVE scan of models/ in the desktop app (the folder is the source of
+  // truth → no models.json drift). Browser fallback: read models.json. Each entry is
+  // {id,label,url,builtin,thumb}. Rebuilds whatever popup is open afterwards.
   function refreshModelList() {
-    return fetch("./models.json", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        const seen = new Set(BUILTIN_MODELS.map((m) => m.url));
-        const extra = (j?.models || []).filter((m) => m?.url && !seen.has(m.url)).map((m) => ({ id: m.id, url: m.url, label: m.label || m.id }));
-        MODEL_LIST = BUILTIN_MODELS.concat(extra);
-        if (menuShown) rebuildMenu();
-      })
-      .catch(() => {});
+    const load = avatarIPC?.listModels
+      ? avatarIPC.listModels().then((list) => { MODEL_LIST = Array.isArray(list) ? list : []; })   // desktop: the live folder scan is authoritative
+      : fetch("./models.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))         // browser fallback: read the manifest
+          .then((j) => { MODEL_LIST = (j?.models || []).filter((m) => m?.url).map((m) => ({ id: m.id, url: m.url, label: m.label || m.id, builtin: false, thumb: null })); });
+    return Promise.resolve(load).catch(() => {})
+      .then(() => { _galleryVer++; if (menuShown) rebuildMenu(); if (galleryShown && !_confirmRemove && !_renameId) buildGallery(); });   // bump the thumb cache-token on a real refresh; DON'T rebuild out from under an armed delete-confirm / rename
   }
   // Import a new avatar. Electron: native dialog → copy into models/ + register
   // (.glb/.gltf/.vrm/.fbx and .unitypackage via import_unitypackage.py). Browser: file picker.
@@ -41,7 +45,11 @@ export function createUI(api) {
         api.loadModel(res.url, res.label);
       } catch (e) { setStatus("import failed: " + (e?.message || e)); }
     } else {
-      document.getElementById("file")?.click();
+      // browser / no-IPC fallback: pick a single self-contained file and load it as a blob
+      const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".glb,.gltf,.vrm,.fbx"; inp.style.display = "none";
+      document.body.appendChild(inp);
+      inp.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) api.loadModel(URL.createObjectURL(f), f.name); inp.remove(); });
+      inp.click();
     }
   }
   // Attach a prop/accessory. Electron: native picker → copied into props/. Browser: blob.
@@ -59,6 +67,30 @@ export function createUI(api) {
     } else {
       _propInput.click();
     }
+  }
+  // Delete a USER-added model (built-ins aren't removable): drop its models.json entry + files
+  // via main, then refresh the list. The remove counterpart to "Add model…".
+  async function removeModelById(id, label) {
+    hideMenu();
+    if (!avatarIPC?.removeModel) { setStatus("remove needs the desktop app"); return; }
+    // is the model on screen the one being removed? (structural id compare — names untrusted)
+    const curId = (/\/models\/([^/]+)\//.exec(api.getCurKey() || "") || [])[1];
+    const wasCurrent = curId === id;
+    setStatus(`removing ${label}…`);
+    try {
+      const res = await avatarIPC.removeModel(id);
+      if (res?.error) { setStatus("remove failed: " + res.error); return; }
+      await refreshModelList();
+      // if the removed model was on screen, switch to whatever's LEFT (or the procedural placeholder
+      // if the library is now empty — built-ins can be deleted, so don't assume one exists), THEN
+      // rebuild the open gallery so the "current" highlight tracks the new model (audit #5 H3).
+      if (wasCurrent) {
+        const next = MODEL_LIST[0];
+        api.loadModel(next ? next.url : "__default__", next ? next.label : "Default");
+        if (galleryShown) buildGallery();
+      }
+      setStatus(`removed ${label}`);
+    } catch (e) { setStatus("remove failed: " + (e?.message || e)); }
   }
   const _propInput = document.createElement("input");
   _propInput.type = "file"; _propInput.accept = ".glb,.gltf,.vrm,.fbx"; _propInput.style.display = "none";
@@ -124,7 +156,69 @@ export function createUI(api) {
     r.oninput = (e) => { e.stopPropagation(); const v = parseFloat(r.value); if (!Number.isNaN(v)) opts.onChange(v); };
     return r;
   };
-  let _colorsOpen = false;   // remember the Colors section's expand state across re-opens
+  let _colorsOpen = false, _partsOpen = true, _advOpen = false, _morphsOpen = false;   // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
+  // Friendly names for the jiggle regions the spring reports (trust-no-names: these label a
+  // structural region tag, not a bone name). Cloth is split into its own Settings box.
+  const REGION_LABEL = { breast: "Breast", butt: "Butt", genital: "Genital", belly: "Belly / tummy", hair: "Hair", tail: "Tail", ear: "Ears", wing: "Wings", cloth: "Cloth / fabric", accessory: "Accessory", jiggle: "Jiggle bones", other: "Other dangly" };
+  // A 0..max "how much" knob (range slider + live readout) — jiggle-region weights and morph values.
+  const weightRow = (label, value, onChange, max = 2) => {
+    const r = document.createElement("div"); r.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;";
+    const l = document.createElement("span"); l.textContent = label; l.style.cssText = "opacity:.9;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    const out = document.createElement("span"); out.textContent = (+value).toFixed(1); out.style.cssText = "width:24px;text-align:right;opacity:.65;font:11px ui-monospace,Consolas,monospace;flex:0 0 auto;";
+    const s = document.createElement("input"); s.type = "range"; s.min = "0"; s.max = String(max); s.step = "0.1"; s.value = String(value);
+    s.style.cssText = "width:92px;flex:0 0 auto;";
+    s.oninput = (e) => { e.stopPropagation(); const v = parseFloat(s.value); if (Number.isNaN(v)) return; out.textContent = v.toFixed(1); onChange(v); };
+    r.append(l, s, out); return r;
+  };
+  // A jiggle CHAIN row: an explicit on/off checkbox + the weight slider. The bone chains were only
+  // controllable by knowing "slider at 0 = off" — the user asked for chains they can SEE and TOGGLE.
+  // Unchecking remembers the previous weight; rechecking restores it.
+  const chainRow = (label, value, onChange, max = 2) => {
+    const r = document.createElement("div"); r.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:7px;padding:6px 0;";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = +value > 0; cb.title = "this chain moves: on / off"; cb.style.flex = "0 0 auto";
+    const l = document.createElement("span"); l.textContent = label; l.style.cssText = "opacity:.9;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    const out = document.createElement("span"); out.textContent = (+value).toFixed(1); out.style.cssText = "width:24px;text-align:right;opacity:.65;font:11px ui-monospace,Consolas,monospace;flex:0 0 auto;";
+    const s = document.createElement("input"); s.type = "range"; s.min = "0"; s.max = String(max); s.step = "0.1"; s.value = String(value);
+    s.style.cssText = "width:80px;flex:0 0 auto;";
+    let last = +value > 0 ? +value : 1;                       // what "on" restores
+    s.oninput = (e) => {
+      e.stopPropagation(); const v = parseFloat(s.value); if (Number.isNaN(v)) return;
+      out.textContent = v.toFixed(1); cb.checked = v > 0; if (v > 0) last = v;
+      onChange(v);
+    };
+    cb.onchange = (e) => {
+      e.stopPropagation(); const v = cb.checked ? last : 0;
+      s.value = String(v); out.textContent = v.toFixed(1);
+      onChange(v);
+    };
+    r.append(cb, l, s, out); return r;
+  };
+  const sectionHead = (text) => { const d = document.createElement("div"); d.textContent = text; d.style.cssText = "opacity:.6;font-size:11px;margin:2px 0;"; return d; };
+  const divider = () => { const d = document.createElement("div"); d.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; return d; };
+  // Make a floating panel draggable by its header (the Settings / model gallery open centered and
+  // used to be pinned there — now you can move them out of the way). Header buttons still work.
+  function dragByHeader(panel, handle, onMove) {
+    handle.style.cursor = "move"; handle.style.touchAction = "none";
+    let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button,input,select,a,label")) return;   // don't hijack a header control (the ✕)
+      on = true; sx = e.clientX; sy = e.clientY;
+      const r = panel.getBoundingClientRect(); ox = r.left; oy = r.top;
+      try { handle.setPointerCapture(e.pointerId); } catch {}
+      e.preventDefault(); e.stopPropagation();
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (!on) return;
+      if (!(e.buttons & 1)) { on = false; return; }   // primary button no longer held (a pointerup we missed) → stop following the cursor
+      const nx = Math.max(8 - panel.offsetWidth + 56, Math.min(ox + (e.clientX - sx), innerWidth - 56));
+      const ny = Math.max(6, Math.min(oy + (e.clientY - sy), innerHeight - 28));
+      panel.style.left = nx + "px"; panel.style.top = ny + "px"; panel.style.right = "auto"; panel.style.bottom = "auto";
+      if (onMove) onMove(nx, ny);
+    });
+    const end = (e) => { if (on) { on = false; try { handle.releasePointerCapture(e.pointerId); } catch {} } };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  }
   function buildSettings() {
     const curKey = api.getCurKey();
     settings.innerHTML = "";
@@ -134,46 +228,166 @@ export function createUI(api) {
     const x = document.createElement("button"); x.textContent = "✕"; x.style.cssText = "border:0;background:transparent;color:#bbb;font-size:14px;line-height:1;cursor:pointer;padding:2px 4px;";
     x.onclick = (e) => { e.stopPropagation(); hideSettings(); };
     head.appendChild(x); settings.appendChild(head);
+    dragByHeader(settings, head, (px, py) => { _settingsPos = { x: px, y: py }; });
     const body = document.createElement("div"); body.style.cssText = "padding:8px 14px 14px;overflow-y:auto;overflow-x:hidden;min-height:0;flex:1 1 auto;"; settings.appendChild(body);
 
     const sel = document.createElement("select");
     for (const m of MODEL_LIST) { const o = document.createElement("option"); o.value = m.url; o.textContent = m.label; if (m.url === curKey) o.selected = true; sel.appendChild(o); }
     sel.onchange = (e) => { e.stopPropagation(); const m = MODEL_LIST.find((x) => x.url === sel.value); api.loadModel(sel.value, m?.label); };
     body.appendChild(sRow("Model", sel));
+    // Rotate (yaw) — turn the avatar to see its back / sides; saved per model. Plus a "drag to
+    // spin" mode so the user can turn it by dragging the body instead of moving the window.
+    if (api.setRotAxis || api.setYaw) {
+      const r0 = api.getRot ? api.getRot() : { x: 0, y: api.getYaw ? api.getYaw() : 0, z: 0 };
+      const setAxis = (axis, v) => (api.setRotAxis ? api.setRotAxis(axis, v) : api.setYaw(v));
+      const rotWrap = document.createElement("div"); rotWrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:0 0 auto;";
+      for (const axis of ["x", "y", "z"]) {            // pitch / yaw / roll — turn the avatar on every axis
+        const g = document.createElement("div"); g.style.cssText = "display:flex;align-items:center;gap:2px;";
+        const t = document.createElement("span"); t.textContent = axis.toUpperCase(); t.style.cssText = "opacity:.5;font-size:10px;";
+        const n = numInput(r0[axis] || 0, { min: "0", max: "360", step: "15", title: "rotate " + axis.toUpperCase() + " — " + (axis === "x" ? "pitch" : axis === "y" ? "yaw" : "roll") + " °", onChange: (v) => setAxis(axis, v) });
+        n.style.width = "42px";
+        g.append(t, n); rotWrap.appendChild(g);
+      }
+      const rst = document.createElement("button"); rst.textContent = "↺"; rst.title = "reset rotation (0,0,0)";
+      rst.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:1px 7px;cursor:pointer;";
+      rst.onclick = (e) => { e.stopPropagation(); if (api.setRot) api.setRot({ x: 0, y: 0, z: 0 }); else api.setYaw(0); buildSettings(); };
+      rotWrap.appendChild(rst);
+      body.appendChild(sRow("Rotate °", rotWrap));
+      if (api.setRotateMode) body.appendChild(sCheck("Rotate by dragging (↔ turn, ↕ tilt)", api.getRotateMode ? api.getRotateMode() : false, (v) => api.setRotateMode(v)));
+    }
 
     // Size is scroll-only (hover the avatar + wheel; +/- and 0 on the keyboard; AI bus `size`).
-    // Hair/tail physics — tuned live (type the value) and saved into this avatar's profile.
-    const sp = () => profileFor(curKey).spring || {};
-    const springNum = (label, key, min, max, step, dflt) =>
-      body.appendChild(sRow(label, numInput(sp()[key] ?? dflt, { min, max, step, onChange: (v) => api.springTune({ [key]: v }) })));
-    springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
-    springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
-    springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
-    springNum("Hair breeze", "breeze", "0", "0.6", "0.02", 0.16);
 
-    // Colors — tint each material (the color multiplies its texture); saved per avatar.
-    const mats = modelMaterials();
-    if (mats.size) {
+    // --- Jiggle (soft-body) — per AREA. The spring tags each soft/dangly bone with a region
+    //     (breast/butt/genital/belly/hair/tail/…); set how much each AREA moves (0 = rigid / off,
+    //     1 = default, 2 = bouncy). Saved per avatar. NSFW areas are first-class so e.g. Mal0's
+    //     breast/butt/genital chains can each be tuned or switched off. Cloth → its own box below.
+    const regions = api.springRegions ? api.springRegions() : [];
+    const bodyRegions = regions.filter((r) => r.region !== "cloth");
+    const clothRegion = regions.find((r) => r.region === "cloth");
+    if (bodyRegions.length) {
+      body.appendChild(divider());
+      body.appendChild(sectionHead("Jiggle — the soft-body bone CHAINS (✓ = moves; slider = how much)"));
+      for (const rg of bodyRegions) body.appendChild(chainRow((REGION_LABEL[rg.region] || rg.region) + " ·" + rg.count, rg.weight, (v) => api.setRegionWeight(rg.region, v)));
+    }
+    if (clothRegion) {
+      body.appendChild(divider());
+      body.appendChild(sectionHead("Cloth / fabric"));
+      body.appendChild(chainRow("Cloth sway ·" + clothRegion.count, clothRegion.weight, (v) => api.setRegionWeight("cloth", v)));
+      const note = document.createElement("div"); note.textContent = "drives cloth bones; cloth with no bones can't sway (needs vertex sim)";
+      note.style.cssText = "opacity:.45;font-size:10px;line-height:1.3;"; body.appendChild(note);
+    }
+
+    // Advanced physics — the GLOBAL spring feel (hair/tail). Collapsed: most users only touch the
+    // per-area jiggle above. Tuned live (type the value) + saved into this avatar's profile.
+    {
+      const sp = () => profileFor(curKey).spring || {};
+      body.appendChild(divider());
+      const ch = document.createElement("div"); ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
+      const caret = document.createElement("span"); caret.textContent = _advOpen ? "▾" : "▸"; caret.style.fontSize = "9px";
+      const lbl = document.createElement("span"); lbl.textContent = "Advanced physics (global feel)";
+      ch.append(caret, lbl); body.appendChild(ch);
+      const advBox = document.createElement("div"); advBox.style.display = _advOpen ? "block" : "none"; body.appendChild(advBox);
+      ch.onclick = (e) => { e.stopPropagation(); _advOpen = advBox.style.display === "none"; advBox.style.display = _advOpen ? "block" : "none"; caret.textContent = _advOpen ? "▾" : "▸"; };
+      const springNum = (label, key, min, max, step, dflt) => advBox.appendChild(sRow(label, numInput(sp()[key] ?? dflt, { min, max, step, onChange: (v) => api.springTune({ [key]: v }) })));
+      springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
+      springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
+      springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
+      springNum("Hair breeze", "breeze", "0", "0.6", "0.02", 0.16);
+    }
+
+    // Colors — recolor each material by its STABLE INDEX. Names are unreliable (a model can have
+    // UNNAMED or duplicate-named materials), so we address by index and show the name/mesh only as
+    // a hint — this also surfaces parts the old name-only list silently dropped. Type an #rrggbb
+    // code or use the swatch; "Reset" restores every part's original loaded color.
+    const mats = api.materials ? api.materials() : [];
+    if (mats.length) {
       const cr = document.createElement("div"); cr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(cr);
       // Collapsible — a model like grace_howard has many materials; collapse by default
       // when there are more than a handful. The expand state persists across re-opens.
-      const open0 = _colorsOpen || mats.size <= 6;
+      const open0 = _colorsOpen || mats.length <= 6;
       const ch = document.createElement("div");
       ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
       const caret = document.createElement("span"); caret.textContent = open0 ? "▾" : "▸"; caret.style.fontSize = "9px";
-      const lbl = document.createElement("span"); lbl.textContent = `Colors — tint per part (${mats.size})`;
-      ch.append(caret, lbl); body.appendChild(ch);
+      const lbl = document.createElement("span"); lbl.textContent = `Colors — by part index (${mats.length})`; lbl.style.flex = "1";
+      const reset = document.createElement("button"); reset.textContent = "Reset"; reset.title = "restore every part's original loaded color";
+      reset.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:11px system-ui;padding:1px 8px;cursor:pointer;flex:0 0 auto;";
+      reset.onclick = (e) => { e.stopPropagation(); if (api.resetColors) api.resetColors(); buildSettings(); };
+      ch.append(caret, lbl, reset); body.appendChild(ch);
       const colorBox = document.createElement("div"); colorBox.style.display = open0 ? "block" : "none"; body.appendChild(colorBox);
-      ch.onclick = (e) => { e.stopPropagation(); _colorsOpen = colorBox.style.display === "none"; colorBox.style.display = _colorsOpen ? "block" : "none"; caret.textContent = _colorsOpen ? "▾" : "▸"; };
-      const saved = profileFor(curKey).colors || {};
-      const savedHue = profileFor(curKey).hue || {};
-      for (const [name, m] of mats) {
-        const c = document.createElement("input"); c.type = "color";
-        c.value = saved[name] || ("#" + (m.color ? m.color.getHexString(THREE.SRGBColorSpace) : "ffffff"));
-        c.oninput = (e) => { e.stopPropagation(); api.recolor(name, c.value); };
-        const h = numInput(savedHue[name] || 0, { min: "0", max: "360", step: "5", title: "hue rotate (°)", onChange: (v) => api.hueShift(name, v) });
-        const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:1;"; wrap.append(c, h);
-        colorBox.appendChild(sRow(name, wrap));
+      ch.onclick = (e) => { if (e.target === reset) return; e.stopPropagation(); _colorsOpen = colorBox.style.display === "none"; colorBox.style.display = _colorsOpen ? "block" : "none"; caret.textContent = _colorsOpen ? "▾" : "▸"; };
+      for (const mat of mats) {
+        const hex0 = mat.hex || "#ffffff";
+        const c = document.createElement("input"); c.type = "color"; c.value = hex0;
+        c.style.cssText = "width:30px;height:24px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:4px;background:transparent;cursor:pointer;flex:0 0 auto;";
+        const t = document.createElement("input"); t.type = "text"; t.value = hex0; t.spellcheck = false; t.maxLength = 7; t.placeholder = "#rrggbb";
+        t.style.cssText = "width:80px;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 5px;font:12px ui-monospace,Consolas,monospace;";
+        // accept "#rrggbb" or "rrggbb"; ignore partial/invalid input so typing doesn't flicker
+        const apply = (raw) => { const s = String(raw).trim(); if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return; const hex = s[0] === "#" ? s : "#" + s; c.value = hex; t.value = hex; api.recolor(mat.index, hex); };
+        c.oninput = (e) => { e.stopPropagation(); apply(c.value); };
+        t.oninput = (e) => { e.stopPropagation(); apply(t.value); };
+        const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:0 0 auto;"; wrap.append(c, t);
+        const label = `#${mat.index}` + (mat.name ? " · " + mat.name : "") + (mat.mesh ? "  (" + mat.mesh + ")" : "");
+        colorBox.appendChild(sRow(label, wrap));
+      }
+    }
+
+    // Parts (meshes) — show/hide each sub-object BY INDEX (clothing variants, hide-able body parts).
+    // Names are unreliable, so address by #index; toggling live tells you which is which.
+    // Every sub-object shows up (the user asked for ALL parts): tick = visible (remove/add a part),
+    // and the text field RENAMES it (names like "Object_107" or duplicates are useless — give it a
+    // legible name). Both saved per avatar. Addressed by #index (the only reliable handle).
+    const parts = api.meshes ? api.meshes() : [];
+    if (parts.length >= 1) {
+      body.appendChild(divider());
+      const ch = document.createElement("div"); ch.style.cssText = "opacity:.85;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;";
+      // DEFAULT OPEN — it used to auto-collapse on models with >8 parts, and the tiny dim header didn't
+      // read as clickable, so the user couldn't find the body-suit toggle at all ("part toggle is not
+      // accessible"). The list is the point of this section; the caret stays for collapsing it.
+      const open0 = _partsOpen !== false;
+      const caret = document.createElement("span"); caret.textContent = open0 ? "▾" : "▸"; caret.style.fontSize = "10px";
+      const lbl = document.createElement("span"); lbl.textContent = `Parts — show / hide / rename (${parts.length})`;
+      ch.append(caret, lbl); body.appendChild(ch);
+      const box = document.createElement("div"); box.style.display = open0 ? "block" : "none"; body.appendChild(box);
+      ch.onclick = (e) => { e.stopPropagation(); _partsOpen = box.style.display === "none"; box.style.display = _partsOpen ? "block" : "none"; caret.textContent = _partsOpen ? "▾" : "▸"; };
+      ch.onmouseenter = () => { ch.style.opacity = "1"; }; ch.onmouseleave = () => { ch.style.opacity = ".85"; };
+      for (const p of parts) {
+        const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:7px;padding:4px 0;";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = p.visible; cb.title = "show / hide this part";
+        cb.onchange = (e) => { e.stopPropagation(); api.setMeshVisible(p.index, cb.checked); };
+        const idx = document.createElement("span"); idx.textContent = "#" + p.index; idx.style.cssText = "opacity:.5;font:11px ui-monospace,Consolas,monospace;flex:0 0 auto;";
+        const nm = document.createElement("input"); nm.type = "text"; nm.value = p.label || ""; nm.placeholder = p.name || ("part " + p.index); nm.spellcheck = false;
+        nm.title = "rename this part" + (p.name ? " (file name: " + p.name + ")" : "");
+        nm.style.cssText = "flex:1;min-width:0;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
+        nm.onkeydown = (e) => e.stopPropagation();   // typing here must not trigger the global 1-9 / h / b hotkeys
+        nm.onchange = (e) => { e.stopPropagation(); if (api.setMeshLabel) api.setMeshLabel(p.index, nm.value); };
+        row.append(cb, idx, nm); box.appendChild(row);
+      }
+    }
+
+    // Shapes / morphs — the model's OWN shape keys (facial expressions, body toggles like "show X").
+    // Exporters usually strip the names, so address by index; slide 0..1. Saved per avatar. This is
+    // how a VRChat-style avatar's "extra settings" survive a GLB export (makiro ships 19).
+    const morphs = api.morphs ? api.morphs() : [];
+    if (morphs.length) {
+      body.appendChild(divider());
+      const open0 = _morphsOpen || morphs.length <= 6;
+      const ch = document.createElement("div"); ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
+      const caret = document.createElement("span"); caret.textContent = open0 ? "▾" : "▸"; caret.style.fontSize = "9px";
+      const lbl = document.createElement("span"); lbl.textContent = `Shapes / morphs (${morphs.length})`;
+      ch.append(caret, lbl); body.appendChild(ch);
+      const mbox = document.createElement("div"); mbox.style.display = open0 ? "block" : "none"; body.appendChild(mbox);
+      ch.onclick = (e) => { e.stopPropagation(); _morphsOpen = mbox.style.display === "none"; mbox.style.display = _morphsOpen ? "block" : "none"; caret.textContent = _morphsOpen ? "▾" : "▸"; };
+      for (const mph of morphs) {
+        const tag = "#" + mph.index + (mph.name ? " · " + mph.name : "");
+        if (mph.auto) {                               // this morph is auto-driven by lip-sync/blink → a slider here would just snap back; label it instead
+          const r = document.createElement("div"); r.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 0;opacity:.5;";
+          const l = document.createElement("span"); l.textContent = tag; l.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+          const b = document.createElement("span"); b.textContent = "auto · lip-sync"; b.style.cssText = "font-size:10px;border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:0 5px;flex:0 0 auto;";
+          r.append(l, b); mbox.appendChild(r);
+        } else {
+          mbox.appendChild(weightRow(tag, mph.value, (v) => api.setMorphValue(mph.index, v), 1));
+        }
       }
     }
 
@@ -181,10 +395,21 @@ export function createUI(api) {
     body.appendChild(sCheck("Spring physics", flags.springOn, (v) => (flags.springOn = v)));
     body.appendChild(sCheck("Idle motion", flags.idleOn, (v) => (flags.idleOn = v)));
     body.appendChild(sCheck("Look at cursor", flags.lookOn, (v) => (flags.lookOn = v)));
+    // Look with HEAD / EYES / BOTH — only offered when the model actually has eye bones.
+    if (api.hasEyes && api.hasEyes() && api.setLookMode) {
+      const lsel = document.createElement("select");
+      for (const [val, lab] of [["both", "Head + eyes"], ["head", "Head only"], ["eyes", "Eyes only"]]) {
+        const o = document.createElement("option"); o.value = val; o.textContent = lab;
+        if (val === (api.getLookMode ? api.getLookMode() : "both")) o.selected = true; lsel.appendChild(o);
+      }
+      lsel.onchange = (e) => { e.stopPropagation(); api.setLookMode(lsel.value); };
+      body.appendChild(sRow("Look with", lsel));
+    }
     body.appendChild(sCheck("Idle behavior (random emotes)", flags.idleBehaviorOn, (v) => (flags.idleBehaviorOn = v)));
     body.appendChild(sCheck("Face (blink / lip-sync)", flags.facialOn, (v) => (flags.facialOn = v)));
     body.appendChild(sCheck("Lock in place", flags.locked, (v) => (flags.locked = v)));
     body.appendChild(sCheck("Show skeleton (inspect bones)", api.getBonesShown(), (v) => api.showSkeleton(v)));
+    if (api.getShadowOn) body.appendChild(sCheck("Ground shadow (stands on a surface)", api.getShadowOn(), (v) => api.setShadowOn(v)));
     const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
     body.appendChild(sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v)));
 
@@ -230,19 +455,129 @@ export function createUI(api) {
   function showSettings() {
     buildSettings();
     settings.style.display = "flex";
-    const r = settings.getBoundingClientRect();
-    settings.style.left = Math.max(6, Math.round(innerWidth / 2 - r.width / 2)) + "px";
-    settings.style.top = Math.max(6, Math.round(innerHeight / 2 - r.height / 2)) + "px";
+    if (_settingsPos) { settings.style.left = _settingsPos.x + "px"; settings.style.top = _settingsPos.y + "px"; }
+    else { const r = settings.getBoundingClientRect(); settings.style.left = Math.max(6, Math.round(innerWidth / 2 - r.width / 2)) + "px"; settings.style.top = Math.max(6, Math.round(innerHeight / 2 - r.height / 2)) + "px"; }
     settingsShown = true; api.syncInteractive();
   }
-  function hideSettings() { if (!settingsShown) return; settings.style.display = "none"; settingsShown = false; api.syncInteractive(); }
+  function hideSettings() {
+    if (!settingsShown) return;
+    settings.style.display = "none"; settingsShown = false;
+    // Drag-to-spin is a SETTINGS-session tool: leaving it armed after the panel closes turns every later
+    // drag into an accidental rotate (user request 2026-06-09: "rotate toggles off when settings close").
+    if (api.setRotateMode && api.getRotateMode && api.getRotateMode()) api.setRotateMode(false);
+    api.syncInteractive();
+  }
+
+  // --- Model gallery: a grid of THUMBNAIL cards (pick / add / remove by PICTURE, not by a cryptic
+  // folder name — the trust-no-names principle applied to the UI). Built-ins can't be removed. ----
+  const gallery = document.createElement("div");
+  gallery.id = "avgallery";
+  gallery.style.cssText =
+    "position:fixed;z-index:60;display:none;flex-direction:column;width:420px;max-width:92vw;max-height:88vh;background:rgba(32,32,36,.99);border:1px solid rgba(255,255,255,.14);" +
+    "border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.6);font:13px/1.35 'Segoe UI',system-ui,sans-serif;color:#eee;user-select:none;";
+  document.body.appendChild(gallery);
+  let _confirmRemove = null;   // id awaiting an inline delete confirm (no native dialog → testable)
+  let _renameId = null;        // id whose card is in inline-rename mode (mutually exclusive with remove)
+  const letter = (label) => { const d = document.createElement("div"); d.textContent = ((label || "?").trim().charAt(0) || "?").toUpperCase(); d.style.cssText = "font-size:30px;font-weight:700;color:rgba(255,255,255,.5);"; return d; };
+  function cardFor(m) {
+    const card = document.createElement("div");
+    const current = api.getCurKey() === m.url;
+    card.dataset.id = m.id || "";
+    card.style.cssText = "position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 6px;border-radius:9px;cursor:pointer;border:2px solid " + (current ? "#6fc3ff" : "transparent") + ";background:rgba(255,255,255,.04);";
+    const thumb = document.createElement("div");
+    thumb.style.cssText = "width:100%;aspect-ratio:1/1;border-radius:7px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.28);";
+    if (m.thumb) { const img = document.createElement("img"); img.src = m.thumb + "?v=" + _galleryVer; img.style.cssText = "width:100%;height:100%;object-fit:contain;"; img.onerror = () => { img.remove(); thumb.appendChild(letter(m.label)); }; thumb.appendChild(img); }
+    else thumb.appendChild(letter(m.label));
+    const name = document.createElement("div"); name.textContent = m.label; name.title = m.label;
+    name.style.cssText = "font-size:11.5px;max-width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" + (current ? "color:#9fdcff;font-weight:600;" : "");
+    card.append(thumb, name);
+    card.onclick = (e) => { e.stopPropagation(); if (_confirmRemove) { _confirmRemove = null; buildGallery(); return; } if (_renameId) { _renameId = null; buildGallery(); return; } api.loadModel(m.url, m.label); hideGallery(); };
+    if (avatarIPC?.renameModel) {                             // ✎ rename → inline editor (manifest label only)
+      const ed = document.createElement("button"); ed.textContent = "✎"; ed.title = "rename " + m.label; ed.className = "ged";
+      ed.style.cssText = "position:absolute;top:3px;left:3px;width:20px;height:20px;line-height:1;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#bfe3ff;cursor:pointer;font-size:11px;padding:0;";
+      ed.onclick = (e) => { e.stopPropagation(); _confirmRemove = null; _renameId = m.id; buildGallery(); };
+      card.appendChild(ed);
+      if (_renameId === m.id) {
+        const ov = document.createElement("div");
+        ov.style.cssText = "position:absolute;inset:0;border-radius:9px;background:rgba(20,20,24,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;";
+        const inp = document.createElement("input"); inp.type = "text"; inp.value = m.label; inp.spellcheck = false; inp.className = "grename";
+        inp.style.cssText = "width:100%;background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:3px 6px;font:12px system-ui;text-align:center;";
+        const save = async () => { const v = inp.value.trim(); _renameId = null; if (v && v !== m.label && api.renameModel) { try { await api.renameModel(m.id, v); } catch {} } refreshModelList(); };   // refreshModelList rebuilds the gallery itself (_renameId now null)
+        inp.onclick = (e) => e.stopPropagation();
+        inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); save(); } else if (e.key === "Escape") { _renameId = null; buildGallery(); } };
+        const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;";
+        const ok = document.createElement("button"); ok.textContent = "Save"; ok.className = "gsave";
+        ok.style.cssText = "border:0;border-radius:5px;background:#2f6f9f;color:#fff;padding:3px 10px;cursor:pointer;font:11px system-ui;";
+        ok.onclick = (e) => { e.stopPropagation(); save(); };
+        const no = document.createElement("button"); no.textContent = "Cancel";
+        no.style.cssText = "border:1px solid rgba(255,255,255,.2);border-radius:5px;background:transparent;color:#eee;padding:3px 10px;cursor:pointer;font:11px system-ui;";
+        no.onclick = (e) => { e.stopPropagation(); _renameId = null; buildGallery(); };
+        row.append(ok, no); ov.append(inp, row); card.appendChild(ov);
+      }
+    }
+    if (avatarIPC?.removeModel) {                              // ANY model is removable (built-ins too — it's your install)
+      const x = document.createElement("button"); x.textContent = "✕"; x.title = "remove " + m.label;
+      x.className = "gx";
+      x.style.cssText = "position:absolute;top:3px;right:3px;width:20px;height:20px;line-height:1;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#ff9a9a;cursor:pointer;font-size:12px;padding:0;";
+      x.onclick = (e) => { e.stopPropagation(); _confirmRemove = m.id; buildGallery(); };
+      card.appendChild(x);
+      if (_confirmRemove === m.id) {
+        const ov = document.createElement("div");
+        ov.style.cssText = "position:absolute;inset:0;border-radius:9px;background:rgba(20,20,24,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:6px;text-align:center;";
+        const q = document.createElement("div"); q.textContent = "Remove “" + m.label + "”?"; q.style.cssText = "font-size:11.5px;";
+        const sub = document.createElement("div"); sub.textContent = "moves to _trash (recoverable)"; sub.style.cssText = "font-size:9.5px;opacity:.6;";
+        const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;";
+        const yes = document.createElement("button"); yes.textContent = "Remove"; yes.className = "gyes";
+        yes.style.cssText = "border:0;border-radius:5px;background:#a23b3b;color:#fff;padding:3px 10px;cursor:pointer;font:11px system-ui;";
+        yes.onclick = (e) => { e.stopPropagation(); _confirmRemove = null; removeModelById(m.id, m.label); };
+        const no = document.createElement("button"); no.textContent = "Cancel";
+        no.style.cssText = "border:1px solid rgba(255,255,255,.2);border-radius:5px;background:transparent;color:#eee;padding:3px 10px;cursor:pointer;font:11px system-ui;";
+        no.onclick = (e) => { e.stopPropagation(); _confirmRemove = null; buildGallery(); };
+        row.append(yes, no); ov.append(q, sub, row); card.appendChild(ov);
+      }
+    }
+    return card;
+  }
+  function buildGallery() {
+    gallery.innerHTML = "";
+    const head = document.createElement("div");
+    head.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;";
+    head.innerHTML = `<span style="font-weight:600">Choose a model · ${MODEL_LIST.length}</span>`;
+    const x = document.createElement("button"); x.textContent = "✕"; x.style.cssText = "border:0;background:transparent;color:#bbb;font-size:15px;cursor:pointer;padding:2px 4px;";
+    x.onclick = (e) => { e.stopPropagation(); hideGallery(); };
+    head.appendChild(x); gallery.appendChild(head);
+    dragByHeader(gallery, head, (px, py) => { _galleryPos = { x: px, y: py }; });
+    const grid = document.createElement("div");
+    grid.id = "avgrid";
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px;padding:13px 15px;overflow-y:auto;overflow-x:hidden;";
+    if (!MODEL_LIST.length) {   // empty library (e.g. every model deleted) → say so, don't just show a lone Add card
+      const empty = document.createElement("div");
+      empty.style.cssText = "grid-column:1/-1;text-align:center;opacity:.7;font-size:12px;line-height:1.5;padding:8px 4px;";
+      empty.textContent = "No models yet — drop a .glb / .vrm / .fbx onto the avatar, or use “Add model…”. (The placeholder avatar is showing meanwhile.)";
+      grid.appendChild(empty);
+    }
+    for (const m of MODEL_LIST) grid.appendChild(cardFor(m));
+    const add = document.createElement("div"); add.id = "avadd";
+    add.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 6px;border-radius:9px;cursor:pointer;border:2px dashed rgba(255,255,255,.22);min-height:120px;color:#bbb;";
+    add.innerHTML = `<div style="font-size:26px;line-height:1">＋</div><div style="font-size:11px">Add model…</div>`;
+    add.onclick = (e) => { e.stopPropagation(); hideGallery(); addModel(); };
+    grid.appendChild(add); gallery.appendChild(grid);
+  }
+  function showGallery() {
+    _confirmRemove = null; _renameId = null; buildGallery(); gallery.style.display = "flex";
+    if (_galleryPos) { gallery.style.left = _galleryPos.x + "px"; gallery.style.top = _galleryPos.y + "px"; }
+    else { const r = gallery.getBoundingClientRect(); gallery.style.left = Math.max(6, Math.round(innerWidth / 2 - r.width / 2)) + "px"; gallery.style.top = Math.max(6, Math.round(innerHeight / 2 - r.height / 2)) + "px"; }
+    galleryShown = true; api.syncInteractive();
+  }
+  function hideGallery() { if (!galleryShown) return; gallery.style.display = "none"; galleryShown = false; _confirmRemove = null; _renameId = null; api.syncInteractive(); }
 
   function rebuildMenu() {
     const curKey = api.getCurKey();
     const attachObjs = api.getAttachObjs();
     menu.innerHTML = "";
-    for (const m of MODEL_LIST) menu.appendChild(menuRow(m.label, { dot: curKey === m.url, onClick: () => { api.loadModel(m.url, m.label); hideMenu(); } }));
-    menu.appendChild(menuRow("Add model…", { onClick: () => addModel() }));
+    // One entry → the visual gallery (pick / add / remove there). The accel hint shows what's loaded.
+    const cur = MODEL_LIST.find((m) => m.url === curKey);
+    menu.appendChild(menuRow("Choose model…", { accel: cur ? cur.label : "", onClick: () => { hideMenu(); showGallery(); } }));
     menu.appendChild(submenu("Add to avatar", [
       { label: "Clothing…", onClick: () => addAttachment("clothes") },
       { label: "Prop…", onClick: () => addAttachment("prop") },
@@ -252,7 +587,8 @@ export function createUI(api) {
       .map((a) => ({ label: `${a.category}: ${baseName(a.url)}`, onClick: () => { api.detachAttachment(a.id); hideMenu(); } }))
       .concat([{ label: "— all —", onClick: () => { api.clearAttachments(); hideMenu(); } }])));
     menu.appendChild(menuSep());
-    menu.appendChild(submenu("Express", EMOTES.map((e) => ({ label: cap(e), onClick: () => api.express(e) }))));   // fire several; flyout stays open
+    menu.appendChild(submenu("Express", EMOTES.map((e) => ({ label: cap(e), onClick: () => api.express(e) }))));   // upper-body emotes; flyout stays open
+    if (api.gesture) menu.appendChild(submenu("Move", MOTIONS.map((m) => ({ label: m.label, onClick: () => api.gesture(m.name) }))));   // animated whole-body actions (jump/flip/lay/clap) — fire & watch
     // Resize = scroll wheel (or +/- keys); monitor = drag across an edge or Ctrl+Alt+M.
     menu.appendChild(menuSep());
     menu.appendChild(menuRow("Settings…", { onClick: () => { hideMenu(); showSettings(); } }));
@@ -269,9 +605,10 @@ export function createUI(api) {
   function hideMenu() { if (!menuShown) return; menu.style.display = "none"; menuShown = false; api.syncInteractive(); }
 
   return {
-    showMenu, hideMenu, showSettings, hideSettings, refreshModelList,
-    isOpen: () => menuShown || settingsShown,
+    showMenu, hideMenu, showSettings, hideSettings, showGallery, hideGallery, refreshModelList,
+    getModels: () => MODEL_LIST.slice(),   // the live, already-fetched model list (avatar.js startup + number-key hotkeys read this — no extra folder scan)
+    isOpen: () => menuShown || settingsShown || galleryShown,
     isSettingsOpen: () => settingsShown,
-    containsEvent: (target) => target instanceof Node && (menu.contains(target) || settings.contains(target)),
+    containsEvent: (target) => target instanceof Node && (menu.contains(target) || settings.contains(target) || gallery.contains(target)),
   };
 }

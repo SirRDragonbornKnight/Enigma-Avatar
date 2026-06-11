@@ -1,0 +1,90 @@
+// physics.js — the avatar's RIGID-BODY layer (rapier3d-compat: Rust→WASM, deterministic, npm-only
+// install — no admin). This is the §E architectural adoption the roadmap called for: spring.js
+// keeps the cheap soft-body jiggle (hair/tail/NSFW chains), THIS layer owns real dynamics.
+// FIRST SLICE: throwable props (the bundled baseball) with gravity, a floor at the bottom of her
+// current monitor, restitution bounces and rolling. Foundation for sit / throw-and-catch / cloth.
+//
+// Lazy by design: rapier's WASM (~2 MB) initializes only when the first physics prop spawns —
+// zero cost for users who never throw anything. v1 limitation (documented in TODO): physics props
+// live in the BRAIN window's scene only, so they render on the primary monitor.
+import * as THREE from "three";
+
+export function createPhysics({ scene, loadAsset }) {
+  let RAPIER = null, world = null, floorBody = null;
+  let initing = null;
+  const props = [];                 // [{ body, obj, radius }]
+  let floorY = -4.6;                // world-space floor line (screen bottom) — avatar.js updates it
+
+  async function ensureWorld() {
+    if (world) return;
+    if (!initing) initing = (async () => {
+      RAPIER = (await import("@dimforge/rapier3d-compat")).default ?? (await import("@dimforge/rapier3d-compat"));
+      await RAPIER.init({});                            // object form — the bare call is deprecated
+      world = new RAPIER.World({ x: 0, y: -14, z: 0 });   // slightly heavier than g — reads livelier at desktop-toy scale
+      // The floor: one wide static slab whose top sits at floorY; repositioned when she changes monitor.
+      floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, floorY - 0.5, 0));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.5, 50).setFriction(0.55).setRestitution(0.4), floorBody);
+    })();
+    await initing;
+  }
+
+  function setFloor(y) {
+    if (!isFinite(y)) return;
+    floorY = y;
+    if (floorBody) floorBody.setTranslation({ x: 0, y: floorY - 0.5, z: 0 }, true);
+  }
+
+  // Spawn a prop mesh as a dynamic ball and hurl it. from = {x,y} world, vel = {x,y} world/s.
+  async function throwProp(url, from, vel, sizeWorld = 0.34) {
+    await ensureWorld();
+    return new Promise((resolve) => {
+      loadAsset(url, (asset) => {
+        if (!asset.scene) return resolve(null);
+        const obj = asset.scene;
+        const bb = new THREE.Box3().setFromObject(obj);
+        const span = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) || 1;
+        obj.scale.setScalar(sizeWorld / span);            // normalize the prop to a sane world size
+        obj.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+        const c = bb.getCenter(new THREE.Vector3()).multiplyScalar(obj.scale.x);
+        obj.userData._centerOff = c;                      // keep the visual centered on the body
+        scene.add(obj);
+        const r = sizeWorld / 2;
+        const body = world.createRigidBody(
+          RAPIER.RigidBodyDesc.dynamic()
+            .setTranslation(from.x, Math.max(from.y, floorY + r + 0.01), 0)
+            .setLinvel(vel.x, vel.y, 0)
+            .setAngvel({ x: 0, y: 0, z: -vel.x * 1.6 }),  // spin with the throw → it ROLLS on landing
+        );
+        body.setEnabledTranslations(true, true, false, true);   // keep the toy in the 2D screen plane
+        world.createCollider(RAPIER.ColliderDesc.ball(r).setRestitution(0.62).setFriction(0.45).setDensity(1.2), body);
+        props.push({ body, obj, radius: r });
+        resolve(true);
+      }, () => resolve(null));
+    });
+  }
+
+  function clearProps() {
+    for (const p of props) { scene.remove(p.obj); p.obj.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); }); if (world) world.removeRigidBody(p.body); }
+    props.length = 0;
+  }
+
+  const _q = new THREE.Quaternion();
+  function step(dt) {
+    if (!world || !props.length) return false;
+    world.timestep = Math.min(0.05, Math.max(1 / 240, dt));
+    world.step();
+    let awake = false;
+    for (const p of props) {
+      const t = p.body.translation(), rq = p.body.rotation();
+      const off = p.obj.userData._centerOff;
+      _q.set(rq.x, rq.y, rq.z, rq.w);
+      p.obj.quaternion.copy(_q);
+      p.obj.position.set(t.x, t.y, t.z);
+      if (off) p.obj.position.sub(off.clone().applyQuaternion(_q));
+      if (!p.body.isSleeping()) awake = true;
+    }
+    return awake;                                         // keep the frame rate up only while something moves
+  }
+
+  return { throwProp, clearProps, step, setFloor, count: () => props.length };
+}

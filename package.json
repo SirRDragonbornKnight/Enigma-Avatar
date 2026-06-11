@@ -9,9 +9,11 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "electron": "^30.0.0"
+    "electron": "^30.0.0",
+    "jsdom": "^29.1.1"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@pixiv/three-vrm": "^3.5.3",
     "three": "^0.184.0"
   }

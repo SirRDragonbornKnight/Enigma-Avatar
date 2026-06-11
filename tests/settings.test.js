@@ -1,0 +1,347 @@
+// settings.test.js — exercises the actual Settings/menu DOM that ui.js builds, headless via
+// jsdom. These lock the wiring the user hit as "some settings just do not work": every toggle
+// must flip its flag, every material (incl. UNNAMED) must be recolorable BY INDEX, the hex field
+// must recolor, Reset must reset, and Add-model's Remove counterpart must delete the right model.
+import { test } from "node:test";
+import assert from "node:assert";
+import { installDOM, fire, makeApi } from "./dom.js";
+import { createUI } from "../ui.js";
+
+const S = () => document.getElementById("avsettings");
+const M = () => document.getElementById("avmenu");
+function checkboxByLabel(text) {
+  for (const lab of S().querySelectorAll("label")) if (lab.textContent.includes(text)) return lab.querySelector("input[type=checkbox]");
+  return null;
+}
+function pointer(el, type, x, y) {
+  const W = el.ownerDocument.defaultView;
+  const e = new W.Event(type, { bubbles: true });
+  e.clientX = x; e.clientY = y; e.pointerId = 1;
+  e.buttons = type === "pointerup" ? 0 : 1;   // primary button held during down + move (a real drag)
+  el.dispatchEvent(e);
+}
+
+test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
+  const dom = installDOM();
+  try {
+    const { api, flags } = makeApi();
+    createUI(api).showSettings();
+    const cases = [
+      ["Spring physics", "springOn"], ["Idle motion", "idleOn"], ["Look at cursor", "lookOn"],
+      ["Idle behavior", "idleBehaviorOn"], ["Face (blink", "facialOn"], ["Lock in place", "locked"],
+    ];
+    for (const [label, flag] of cases) {
+      const cb = checkboxByLabel(label);
+      assert.ok(cb, `checkbox "${label}" exists`);
+      const before = flags[flag];
+      cb.checked = !before; fire(cb, "change");
+      assert.strictEqual(flags[flag], !before, `"${label}" must flip flags.${flag}`);
+    }
+  } finally { dom.cleanup(); }
+});
+
+test("Show skeleton + Show info panel are wired", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const sk = checkboxByLabel("Show skeleton");
+    assert.ok(sk, "Show skeleton checkbox exists");
+    sk.checked = true; fire(sk, "change");
+    assert.ok(calls.some((c) => c[0] === "showSkeleton" && c[1] === true), "→ api.showSkeleton(true)");
+    const info = checkboxByLabel("Show info panel");
+    const uiEl = document.getElementById("ui");
+    info.checked = true; fire(info, "change");
+    assert.ok(!uiEl.classList.contains("hidden"), "info panel ON → #ui visible");
+    info.checked = false; fire(info, "change");
+    assert.ok(uiEl.classList.contains("hidden"), "info panel OFF → #ui hidden");
+  } finally { dom.cleanup(); }
+});
+
+test("color list has a row per material INDEX, including the UNNAMED one (old name-list bug)", () => {
+  const dom = installDOM();
+  try {
+    createUI(makeApi().api).showSettings();
+    const swatches = S().querySelectorAll("input[type=color]");
+    assert.strictEqual(swatches.length, 2, "named + UNNAMED both get a color row");
+    assert.ok(S().textContent.includes("#0"), "shown by index #0");
+    assert.ok(S().textContent.includes("#1"), "unnamed material shown by index #1 (not dropped)");
+  } finally { dom.cleanup(); }
+});
+
+test("typing an #rrggbb code recolors that part BY INDEX", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const texts = [...S().querySelectorAll("input[type=text]")];
+    assert.ok(texts.length >= 2, "each color row has a hex field");
+    texts[1].value = "#ff0000"; fire(texts[1], "input");                 // the UNNAMED material → index 1
+    assert.deepStrictEqual(calls.find((c) => c[0] === "recolor"), ["recolor", 1, "#ff0000"], "recolor fires with INDEX, not name");
+  } finally { dom.cleanup(); }
+});
+
+test("bare 'rrggbb' is normalized to '#rrggbb'; junk is ignored", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const t = S().querySelector("input[type=text]");
+    t.value = "00ff00"; fire(t, "input");
+    t.value = "zzz"; fire(t, "input");
+    const recolors = calls.filter((c) => c[0] === "recolor");
+    assert.strictEqual(recolors.length, 1, "only the valid hex recolors");
+    assert.deepStrictEqual(recolors[0], ["recolor", 0, "#00ff00"]);
+  } finally { dom.cleanup(); }
+});
+
+test("Reset button calls resetColors", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    let btn = null;
+    for (const b of S().querySelectorAll("button")) if (b.textContent === "Reset") btn = b;
+    assert.ok(btn, "Reset button exists");
+    btn.click();
+    assert.ok(calls.some((c) => c[0] === "resetColors"), "Reset → api.resetColors()");
+  } finally { dom.cleanup(); }
+});
+
+function numInRow(text) {
+  // match the LEAF label span (not an ancestor container), then the number input in its own row
+  for (const span of S().querySelectorAll("span")) {
+    if (span.textContent.includes(text) && span.parentElement) {
+      const n = span.parentElement.querySelector("input[type=number]");
+      if (n) return n;
+    }
+  }
+  return null;
+}
+
+test("hair physics fields call springTune", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const num = numInRow("Hair stiffness");
+    assert.ok(num, "Hair stiffness field exists");
+    num.value = "0.3"; fire(num, "input");
+    assert.ok(calls.some((c) => c[0] === "springTune"), "hair field → springTune");
+  } finally { dom.cleanup(); }
+});
+
+test("Rotate X/Y/Z fields call setRotAxis per axis (all 3 axes)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    let row = null;
+    for (const span of S().querySelectorAll("span")) if (span.textContent.includes("Rotate °") && span.parentElement) { row = span.parentElement; break; }
+    assert.ok(row, "Rotate row exists");
+    const nums = [...row.querySelectorAll("input[type=number]")];
+    assert.strictEqual(nums.length, 3, "three axis fields (X/Y/Z)");
+    nums[1].value = "180"; fire(nums[1], "input");          // Y = yaw
+    assert.ok(calls.some((c) => c[0] === "setRotAxis" && c[1] === "y" && c[2] === 180), "Y field → setRotAxis('y',180)");
+    nums[0].value = "30"; fire(nums[0], "input");           // X = pitch
+    assert.ok(calls.some((c) => c[0] === "setRotAxis" && c[1] === "x" && c[2] === 30), "X field → setRotAxis('x',30)");
+  } finally { dom.cleanup(); }
+});
+
+test("Rotate ↺ reset calls setRot(0,0,0)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    let btn = null; for (const b of S().querySelectorAll("button")) if (b.textContent === "↺") btn = b;
+    assert.ok(btn, "rotation reset (↺) button exists");
+    btn.click();
+    assert.ok(calls.some((c) => c[0] === "setRot" && c[1] && c[1].x === 0 && c[1].y === 0 && c[1].z === 0), "↺ → setRot({0,0,0})");
+  } finally { dom.cleanup(); }
+});
+
+// Part rows: an exact "#<index>" span, a show/hide checkbox, and a rename field — all in one row.
+function partRow(index) {
+  for (const span of S().querySelectorAll("span")) if (span.textContent.trim() === "#" + index && span.parentElement) return span.parentElement;
+  return null;
+}
+function rangeInRow(text) {
+  for (const span of S().querySelectorAll("span")) if (span.textContent.includes(text) && span.parentElement) { const n = span.parentElement.querySelector("input[type=range]"); if (n) return n; }
+  return null;
+}
+
+test("Parts list shows each mesh by index; toggling calls setMeshVisible (even an unnamed one)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const row = partRow(2);   // the UNNAMED, hidden mesh — addressed by index
+    assert.ok(row, "mesh #2 row present (addressed by index, even unnamed)");
+    const cb = row.querySelector("input[type=checkbox]");
+    assert.ok(cb, "mesh #2 has a show/hide checkbox");
+    cb.checked = true; fire(cb, "change");
+    assert.ok(calls.some((c) => c[0] === "setMeshVisible" && c[1] === 2 && c[2] === true), "toggle → setMeshVisible(2, true)");
+  } finally { dom.cleanup(); }
+});
+
+test("Part rename field calls setMeshLabel(index, name)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const tx = partRow(2).querySelector("input[type=text]");
+    assert.ok(tx, "mesh #2 has a rename field");
+    tx.value = "Booty shorts"; fire(tx, "change");
+    assert.ok(calls.some((c) => c[0] === "setMeshLabel" && c[1] === 2 && c[2] === "Booty shorts"), "rename → setMeshLabel(2, 'Booty shorts')");
+  } finally { dom.cleanup(); }
+});
+
+test("Jiggle region slider calls setRegionWeight (NSFW areas are first-class)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const s = rangeInRow("Breast");
+    assert.ok(s, "Breast jiggle slider exists");
+    s.value = "1.6"; fire(s, "input");
+    assert.ok(calls.some((c) => c[0] === "setRegionWeight" && c[1] === "breast" && Math.abs(c[2] - 1.6) < 1e-6), "→ setRegionWeight('breast', 1.6)");
+  } finally { dom.cleanup(); }
+});
+
+test("chain on/off checkbox: uncheck → weight 0; recheck → restores the previous weight", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const s = rangeInRow("Breast");
+    assert.ok(s, "Breast chain row exists");
+    const cb = s.parentElement.querySelector("input[type=checkbox]");
+    assert.ok(cb, "the chain row has an on/off checkbox");
+    assert.ok(cb.checked, "weight 1 → starts ON");
+    cb.checked = false; fire(cb, "change");
+    assert.ok(calls.some((c) => c[0] === "setRegionWeight" && c[1] === "breast" && c[2] === 0), "uncheck → setRegionWeight('breast', 0)");
+    cb.checked = true; fire(cb, "change");
+    assert.ok(calls.some((c) => c[0] === "setRegionWeight" && c[1] === "breast" && c[2] === 1), "recheck → restores the previous weight (1)");
+    s.value = "0"; fire(s, "input");
+    assert.ok(!cb.checked, "sliding to 0 also UNchecks the box (one source of truth)");
+  } finally { dom.cleanup(); }
+});
+
+test("Cloth has its OWN weight section (fabric is separate from the body jiggle)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    assert.ok(S().textContent.includes("Cloth / fabric"), "a Cloth / fabric section exists");
+    const s = rangeInRow("Cloth sway");
+    assert.ok(s, "cloth weight slider exists");
+    s.value = "0.4"; fire(s, "input");
+    assert.ok(calls.some((c) => c[0] === "setRegionWeight" && c[1] === "cloth" && Math.abs(c[2] - 0.4) < 1e-6), "→ setRegionWeight('cloth', 0.4)");
+  } finally { dom.cleanup(); }
+});
+
+test("Rotate-by-dragging toggle calls setRotateMode", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const cb = checkboxByLabel("Rotate by dragging");
+    assert.ok(cb, "Rotate-by-dragging toggle exists");
+    cb.checked = true; fire(cb, "change");
+    assert.ok(calls.some((c) => c[0] === "setRotateMode" && c[1] === true), "→ setRotateMode(true)");
+  } finally { dom.cleanup(); }
+});
+
+test("Look-with dropdown (head/eyes/both) calls setLookMode when the model has eyes", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    let sel = null;
+    for (const span of S().querySelectorAll("span")) if (span.textContent.includes("Look with") && span.parentElement) { sel = span.parentElement.querySelector("select"); break; }
+    assert.ok(sel, "Look-with dropdown present (model has eyes)");
+    sel.value = "eyes"; fire(sel, "change");
+    assert.ok(calls.some((c) => c[0] === "setLookMode" && c[1] === "eyes"), "→ setLookMode('eyes')");
+  } finally { dom.cleanup(); }
+});
+
+test("Morph slider drives a shape key BY INDEX (the avatar's own toggles)", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    createUI(api).showSettings();
+    const s = rangeInRow("#1 · smile");
+    assert.ok(s, "morph #1 slider exists");
+    s.value = "0.8"; fire(s, "input");
+    assert.ok(calls.some((c) => c[0] === "setMorphValue" && c[1] === 1 && Math.abs(c[2] - 0.8) < 1e-6), "→ setMorphValue(1, 0.8)");
+  } finally { dom.cleanup(); }
+});
+
+test("a lip-sync-driven (auto) morph is labeled, not a dead slider", () => {
+  const dom = installDOM();
+  try {
+    const { api } = makeApi();
+    createUI(api).showSettings();
+    assert.ok(S().textContent.includes("auto"), "auto morph carries an 'auto · lip-sync' tag");
+    assert.ok(!rangeInRow("jawOpen"), "auto morph (#2 jawOpen) has NO slider (it would just snap back)");
+    assert.ok(rangeInRow("#1 · smile"), "a normal morph still has its slider");
+  } finally { dom.cleanup(); }
+});
+
+test("menu has a single 'Choose model…' entry that opens the gallery (no inline list)", () => {
+  const dom = installDOM();
+  try {
+    const { api } = makeApi();
+    const ui = createUI(api);
+    ui.showMenu(10, 10);
+    assert.ok(M().textContent.includes("Choose model"), "menu opens the gallery, doesn't list models inline");
+  } finally { dom.cleanup(); }
+});
+
+test("closing Settings disarms drag-to-spin (setRotateMode(false) fires iff it was on)", () => {
+  const dom = installDOM();
+  try {
+    // rotate mode ON → closing must turn it off
+    const a = makeApi({ getRotateMode: () => true });
+    const uiA = createUI(a.api);
+    uiA.showSettings(); uiA.hideSettings();
+    assert.ok(a.calls.some((c) => c[0] === "setRotateMode" && c[1] === false), "armed spin is disarmed on close");
+    // rotate mode already OFF → closing must NOT churn a redundant call
+    const b = makeApi({ getRotateMode: () => false });
+    const uiB = createUI(b.api);
+    uiB.showSettings(); uiB.hideSettings();
+    assert.ok(!b.calls.some((c) => c[0] === "setRotateMode"), "no redundant disarm when it was never on");
+  } finally { dom.cleanup(); }
+});
+
+test("menu 'Move' submenu lists the whole-body motions and clicking one fires api.gesture", () => {
+  const dom = installDOM();
+  try {
+    const { api, calls } = makeApi();
+    const ui = createUI(api);
+    ui.showMenu(10, 10);
+    const txt = M().textContent;
+    for (const label of ["Move", "Jump", "Flip", "Lay down", "Get up", "Clap"]) {
+      assert.ok(txt.includes(label), `menu offers '${label}'`);
+    }
+    const jump = [...M().querySelectorAll("div")].find((d) => d.textContent === "Jump");
+    assert.ok(jump, "Jump row exists");
+    jump.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    assert.ok(calls.some((c) => c[0] === "gesture" && c[1] === "jump"), "clicking Jump fires api.gesture('jump')");
+  } finally { dom.cleanup(); }
+});
+
+test("Settings panel is draggable by its header", () => {
+  const dom = installDOM();
+  try {
+    createUI(makeApi().api).showSettings();
+    const panel = S();
+    const header = panel.firstChild;                    // the head div is the drag handle
+    panel.style.left = "500px"; panel.style.top = "400px";
+    pointer(header, "pointerdown", 200, 200);
+    pointer(header, "pointermove", 280, 260);           // drag by (+80,+60)
+    pointer(header, "pointerup", 280, 260);
+    assert.notStrictEqual(panel.style.left, "500px", "header drag moved the panel horizontally");
+    assert.notStrictEqual(panel.style.top, "400px", "header drag moved the panel vertically");
+  } finally { dom.cleanup(); }
+});

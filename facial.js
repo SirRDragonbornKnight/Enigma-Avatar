@@ -10,6 +10,7 @@
 // on loudness), not phoneme→viseme — that reads fine for a desktop companion and
 // works on any rig that has *some* open-mouth channel.
 import * as THREE from "three";
+import { detectMouthMorph } from "./geom_mouth.js";
 
 // An "open mouth" channel: a jaw/mouth-open blendshape, or the "aa" viseme.
 const OPEN_RE = /jaw.?open|mouth.?open|mouthopen|(^|[._-])aa($|[._-])|vrc\.v_aa|viseme.?aa/i;  // no bare \bopen\b — it grabs eye_open etc.
@@ -22,7 +23,7 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 let _seed = 1;
 const jitter = (lo, hi) => { _seed = (_seed * 1103515245 + 12345) & 0x7fffffff; return lo + (_seed / 0x7fffffff) * (hi - lo); };
 
-export function buildFacial(model, vrm = null) {
+export function buildFacial(model, vrm = null, opts = {}) {
   // ---------- 1) VRM expression manager ----------
   if (vrm && vrm.expressionManager) {
     const em = vrm.expressionManager;
@@ -53,9 +54,22 @@ export function buildFacial(model, vrm = null) {
     for (const m of meshes) for (const name in m.morphTargetDictionary) if (re.test(name)) hits.push({ mesh: m, idx: m.morphTargetDictionary[name], name });
     return hits;
   };
-  // Prefer a dedicated jaw/mouth-open morph; fall back to the "aa" viseme.
-  let openHits = morphHits(/jaw.?open|mouth.?open|mouthopen/i);
-  if (!openHits.length) openHits = morphHits(OPEN_RE);
+  // An explicit mouth-morph INDEX (name-free) wins — for models whose morph targets are
+  // unnamed or garbage-named, where the regex picker below finds nothing (e.g. 51dc: 76
+  // unnamed morphs). Set per-model via rig_overrides.json `face.mouthMorph`, found by
+  // probing `EnigmaAvatar.setMorph(i,1)` (or a geometric pick). The "trust no names" path.
+  let openHits;
+  const ov = opts.mouthMorph;
+  if (ov != null && Number.isInteger(ov) && ov >= 0) {       // explicit INDEX override — must be a real, in-range index
+    openHits = [];
+    model.traverse((o) => { if (o.isMesh && o.morphTargetInfluences && ov < o.morphTargetInfluences.length) openHits.push({ mesh: o, idx: ov, name: `#${ov}` }); });
+    if (!openHits.length) console.warn(`[avatar] face.mouthMorph #${ov} is out of range on every mesh — ignoring it, falling back (fix the override)`);
+  } else {
+    if (ov != null) console.warn(`[avatar] face.mouthMorph must be a non-negative integer, got ${JSON.stringify(ov)} — ignoring`);
+    // Prefer a dedicated jaw/mouth-open morph; fall back to the "aa" viseme.
+    openHits = morphHits(/jaw.?open|mouth.?open|mouthopen/i);
+    if (!openHits.length) openHits = morphHits(OPEN_RE);
+  }
   const blinkHits = morphHits(BLINK_RE);
 
   if (openHits.length) {
@@ -64,6 +78,7 @@ export function buildFacial(model, vrm = null) {
     let mouth = 0, mouthTgt = 0, blinkT = jitter(2, 5), blinking = 0;
     return {
       mode: "morph",
+      ownedMorphs: [...new Set([...openHits.map((h) => h.idx), ...blinkHits.map((h) => h.idx)])],   // mouth + blink morphs the layer auto-drives (a manual UI set won't stick)
       info: `morph targets — mouth:[${openHits.map((h) => h.name).join(",")}]${blinkHits.length ? " blink:[" + blinkHits.map((h) => h.name).join(",") + "]" : " (no blink morph)"}`,
       params: P, setParams: (p) => Object.assign(P, p),
       setMouth: (a) => { mouthTgt = clamp01(a); },
@@ -98,6 +113,7 @@ export function buildFacial(model, vrm = null) {
     return {
       mode: "bones",
       info: `jaw bone "${jaw.name}"${lids.length ? ` + ${lids.length} eyelid bone(s)` : " (no eyelid bones — no blink)"}`,
+      boneNames: () => [jaw.name, ...lids.map((b) => b.name)],   // bones THIS layer owns — the ambient idle must not touch them (they'd tremble when facial is toggled off)
       params: P, setParams: (p) => Object.assign(P, p),
       setMouth: (a) => { mouthTgt = clamp01(a); },
       blink() { blinking = 0.22; },
@@ -114,9 +130,33 @@ export function buildFacial(model, vrm = null) {
     };
   }
 
-  // ---------- 4) no face rig ----------
+  // ---------- 3.5) GEOMETRIC mouth morph (name-free, automatic) ----------
+  // No VRM, no NAMED mouth morph, no jaw bone — but the model may still have an unnamed
+  // mouth blendshape (51dc: 76 unnamed morphs). Find it by GEOMETRY (the morph that drops
+  // head-region verts downward). General: no per-model config, no names. A wrong pick is a
+  // 1-line rig_overrides face.mouthMorph override (which wins, above — section 2).
+  const geom = detectMouthMorph(model);
+  if (geom && geom.mesh && geom.index != null) {
+    const mesh = geom.mesh, idx = geom.index;     // drive ONLY the winning mesh — index i is a DIFFERENT shape on other meshes
+    const P = { open: 1.0 };
+    let mouth = 0, mouthTgt = 0;
+    return {
+      mode: "morph-geom",
+      ownedMorphs: [idx],                            // this morph is auto-driven by lip-sync (a manual UI set won't hold)
+      info: `morph #${idx} on 1 mesh (geometric jaw-drop, score ${geom.score.toFixed(2)} of ${geom.morphs} morphs) — override via rig_overrides face.mouthMorph`,
+      params: P, setParams: (p) => Object.assign(P, p),
+      setMouth: (a) => { mouthTgt = clamp01(a); },
+      blink() {},
+      update(dt) { mouth += (mouthTgt - mouth) * Math.min(1, dt * 18); mesh.morphTargetInfluences[idx] = mouth * P.open; },
+    };
+  }
+
+  // ---------- 4) no mouth channel — ACKNOWLEDGE it, don't fake one ----------
+  // No VRM expression, no named morph, no jaw bone, and the geometric pass found no
+  // confident jaw-drop. This model simply has no way to open its mouth — say so plainly;
+  // speech still plays, the mouth just stays still. (Never force a random morph.)
   return {
-    mode: "none", info: "no face rig (body-only)", params: {},
+    mode: "none", info: "no mouth channel — no jaw bone, no mouth morph, no VRM expression (speech plays without lip-sync)", params: {},
     setParams() {}, setMouth() {}, blink() {}, update() {},
   };
 }
