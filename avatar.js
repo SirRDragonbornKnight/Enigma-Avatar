@@ -469,18 +469,12 @@ function onModelLoaded(asset) {
     excludeNames: [...eyeBones.map((e) => e.bone.name), ...(facial?.boneNames?.() || [])],   // eye-look owns the eyes; facial owns the jaw/lids (ambient there = tremble when facial is off)
     impulse: (r, v, d) => (spring && springOn && spring.impulse ? spring.impulse(r, v, d) : false),   // fidgets ride the spring physics — and must NOT queue while springs are toggled OFF (the queue only drains in spring.update → re-enabling would fire a burst)
   });
-  // PER-MODEL IDLE (2026-06-11 pivot): the engine ships still — life comes from THIS model's own
-  // idle profile. Seed it once from what the model actually HAS (after bindExtras so spring
-  // regions are known); from then on prof.idle is hers alone (Settings → Idle / bus tune).
-  if (proc?.setParams) {
-    const prof = profileFor(curKey);
-    if (!prof.idle || prof.idle._seed == null) {
-      prof.idle = { ...seedIdleProfile(idleCapsNow()), ...(prof.idle || {}) };   // pre-pivot hand-tuning (if any) stays on top of the seed
-      saveProfileSoon();
-      console.log("[avatar] idle: seeded this model's own profile —", JSON.stringify(prof.idle));
-    }
-    proc.setParams(prof.idle);
-  }
+  // PER-MODEL IDLE (2026-06-11; user ruling refined same day: "i said to put no idle animation"):
+  // NO avatar idles by default — the engine ships dead and nothing is auto-seeded. prof.idle
+  // exists ONLY once the user gives THIS avatar behaviors (Settings → Idle sliders, the explicit
+  // seed-from-capabilities button, bus tune). Reactive channels (cursor-look, blink, springs,
+  // gestures) are not idle and stay live.
+  if (proc?.setParams && profileFor(curKey).idle) proc.setParams(profileFor(curKey).idle);
   // flush relayed mutations that were queued while THIS window's copy lagged the model switch
   if (_staleCmds.length) {
     const q = _staleCmds.filter((x) => x.key === curKey);
