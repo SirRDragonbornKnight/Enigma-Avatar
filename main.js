@@ -154,9 +154,10 @@ function makeWindow(display, isBrain, peerCount) {
     // reads as "she vanished." Keep the loop alive on every screen regardless of focus.
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, autoplayPolicy: "no-user-gesture-required", backgroundThrottling: false },
   });
-  // Default always-on-top level (NOT "screen-saver": too aggressive for a set of windows, and it
-  // fights the user's foreground work). Visible across virtual desktops / over fullscreen.
-  win.setAlwaysOnTop(true, "floating");
+  // "screen-saver" level (user 2026-06-11: "why is it not showing as the top window at all times" —
+  // "floating" sits BELOW other topmost apps, and Windows demotes/reorders topmost z on focus
+  // churn). A re-assert tick below bumps her back above late-created topmost windows.
+  win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, "index.html"));
   // PERSISTENT listener (not .once): a reload (tray "Reload avatar" / the render-process-gone
@@ -281,10 +282,22 @@ function bringToDisplay(displayId) {
   const b = d.bounds;
   endDrag();
   setGlobalPos(b.x + b.width / 2, b.y + b.height * 0.62);
-  for (const w of liveWindows()) { try { if (w.win.isMinimized()) w.win.restore(); w.win.setAlwaysOnTop(true, "floating"); } catch {} }
+  for (const w of liveWindows()) { try { if (w.win.isMinimized()) w.win.restore(); w.win.setAlwaysOnTop(true, "screen-saver"); } catch {} }
   refreshTrayMenu();
 }
 function recoverToPrimary() { bringToDisplay(primaryDisplay().id); }
+// TOPMOST RE-ASSERT — Windows orders topmost windows by recency, so any topmost window created
+// AFTER her (overlays, OSDs, some apps) sits above her, and focus churn can silently demote the
+// level ("why is it not showing as the top window at all times", 2026-06-11). A gentle tick keeps
+// every overlay window on top without ever stealing focus (moveTop doesn't focus).
+setInterval(() => {
+  for (const w of liveWindows()) {
+    try {
+      if (!w.win.isAlwaysOnTop()) w.win.setAlwaysOnTop(true, "screen-saver");
+      w.win.moveTop();
+    } catch {}
+  }
+}, 4000);
 function buildTrayMenu() {
   const prim = primaryDisplay().id;
   const list = displays()

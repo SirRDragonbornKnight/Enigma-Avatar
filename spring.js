@@ -27,7 +27,7 @@ export function buildSpringBones(model, opts = {}) {
   //   override    : the per-model rig_overrides entry; override.spring = { extra, never }
   //   regionWeight: { breast:1.5, cloth:0, ... } — per-region jiggle amount (0..~3)
   const { exclude = new Set(), override = null, regionWeight = {}, ...paramOpts } = opts;
-  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, breeze: 0.22, regionWeight: { ...regionWeight }, ...paramOpts };   // breeze now reaches ALL dangly chains (saved per-model spring blobs still override)
+  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, breeze: 0, regionWeight: { ...regionWeight }, ...paramOpts };   // breeze defaults OFF (user ruling 2026-06-11: no idle animation — ambient wind is SELF-GENERATED motion; springs still react to real body movement). Per-model opt-in: saved spring profile / Settings breeze slider.
   if (!P.regionWeight) P.regionWeight = {};
   const springExtra = new Set(override?.spring?.extra || []);
   const springNever = new Set(override?.spring?.never || []);

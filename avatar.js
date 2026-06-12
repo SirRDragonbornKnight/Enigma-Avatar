@@ -292,7 +292,7 @@ let eyeBones = [];                                             // [{bone, rest}]
 let lookMode = "both";                                        // "both" | "head" | "eyes" — what tracks the cursor
 try { const lm = localStorage.getItem("enigmaAvatar.lookMode"); if (lm) lookMode = lm; } catch {}
 const _eyeQy = new THREE.Quaternion(), _eyeQp = new THREE.Quaternion();   // reused per-frame: yaw (about face-up) + pitch (about ear-to-ear) eye rotations
-let _eyeIdleT = 0, _eyeIdleNext = 2, _eyeTgtX = 0, _eyeTgtY = 0, _eyeCurX = 0, _eyeCurY = 0;   // idle eye darts (saccades when not tracking the cursor)
+let _eyeCurX = 0, _eyeCurY = 0;   // smoothed eye-gaze state (cursor tracking only — the idle dart scheduler was removed: no idle animation, 2026-06-11)
 let _idleClock = 0, _idleNext = 9, _downX = -999, _downY = 0;   // idle-emote timer + click/pet detection
 const _clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
 const IDLE_EMOTES = ["nod", "happy", "alert", "wag"];
@@ -1033,13 +1033,12 @@ function updateLook(dt) {
   const k = Math.min(1, dt * 5);
   _lookX += (tx - _lookX) * k; _lookY += (ty - _lookY) * k; _lookW += (tw - _lookW) * k;
   proc.setLook(_lookX, -_lookY, lookMode === "eyes" ? 0 : _lookW);   // head-look — pitch INVERTED vs the eyes (positive head-pitch = DOWN on these rigs, per the emote signs), so mouse-up → head UP; eyes keep _lookY (already correct)
-  // eye-look: blend the cursor target (weight _lookW) with occasional idle DARTS (saccades), so the
-  // eyes feel alive even when she isn't tracking the cursor. Head-only mode rests the eyes.
+  // eye-look: the eyes track the cursor (weight _lookW) and return to CENTER otherwise. The random
+  // idle DARTS that used to fill the gaps are GONE (user ruling 2026-06-11: no idle animation —
+  // reactive tracking stays, self-generated motion doesn't). Head-only mode rests the eyes.
   if (lookMode === "head" || !eyeBones.length) { restEyes(); }
   else {
-    _eyeIdleT += dt;
-    if (_eyeIdleT >= _eyeIdleNext) { _eyeIdleT = 0; _eyeIdleNext = 1.3 + Math.random() * 3.4; const c = Math.random(); _eyeTgtX = c < 0.35 ? 0 : (Math.random() - 0.5) * 0.6; _eyeTgtY = c < 0.55 ? 0 : (Math.random() - 0.5) * 0.3; }
-    const wantX = _lookX * _lookW + _eyeTgtX * (1 - _lookW), wantY = _lookY * _lookW + _eyeTgtY * (1 - _lookW);
+    const wantX = _lookX * _lookW, wantY = _lookY * _lookW;
     const ke = Math.min(1, dt * 11);                            // saccade — fast but not a hard snap
     _eyeCurX += (wantX - _eyeCurX) * ke; _eyeCurY += (wantY - _eyeCurY) * ke;
     driveEyes(_eyeCurX, _eyeCurY, 1);
