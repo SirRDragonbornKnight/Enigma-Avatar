@@ -528,7 +528,21 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // GET UP: unfold the same curl back to a neutral stand (avatar.js un-tips the body in sync).
   function getupPose(p) { lyingCurl(1 - ez(p), 0); }
 
-  const GESTURES = { clap: clapPose, jump: jumpPose, flip: flipPose, laydown: laydownPose, getup: getupPose };
+  // SIT (floor sit, v1 — no chair asset needed): thighs come forward flat, heels tuck under, trunk
+  // upright with a relaxed lean, hands toward the lap. avatar.js drops the root in sync (the hip
+  // height change) and HOLDS until getup. p∈[0,1] ramps in; held at s=1.
+  function sitPose(p) {
+    const s = ez(Math.min(1, p));
+    pose("hips", 0.10 * s, 0, 0);
+    pose("spine", 0.06 * s, 0, 0); pose("chest", 0.04 * s, 0, 0);
+    pose("head", -0.06 * s, 0, 0);                       // chin level — sitting, not slumping
+    flex("left_leg", 1.5 * s, -0.16 * s); flex("right_leg", 1.5 * s, 0.16 * s);   // thighs forward + a comfortable splay
+    flex("left_shin", -1.45 * s); flex("right_shin", -1.45 * s);                  // heels tucked under
+    flex("left_arm", 0.55 * s, 0.05); flex("right_arm", 0.55 * s, 0.05);          // hands toward the lap
+    flex("left_forearm", 0.5 * s); flex("right_forearm", 0.5 * s);
+  }
+
+  const GESTURES = { clap: clapPose, jump: jumpPose, flip: flipPose, laydown: laydownPose, getup: getupPose, sit: sitPose };
 
   function update(dt, walk = false, opts = {}) {
     _additive = !!opts.additive;
@@ -674,6 +688,8 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       return out;
     },
     roleBones: () => { const o = {}; for (const r in bones) o[r] = (bones[r] && bones[r].name) || null; return o; },   // DIAGNOSTIC: which actual bone each humanoid role resolved to
+    restPose: () => { for (const role in bones) bones[role].quaternion.copy(rest[role]); model.updateWorldMatrix(true, true); },   // snap role bones to the (normalized) rest — clip retargeting must read CLEAN dst rests, not a mid-gesture pose
+    roles: () => ({ ...bones }),                       // role → live Bone object (the retarget engine consumes this)
     gripState: () => ({ grip: [+gripL.toFixed(2), +gripR.toFixed(2)], fingers: fingers.L.length + fingers.R.length, reach: +armReachLive().toFixed(3) }),   // DIAGNOSTIC: the reactive grip (idleState died with the idle machinery, 2026-06-12)
     flexAxes: () => { const o = {}; for (const r in flexAxis) { const v = flexAxis[r]; o[r] = v ? [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)] : null; } return o; },
     jointAngles: () => {   // DIAGNOSTIC: live joint angles from WORLD positions (180=straight, <180=bent) — unambiguous

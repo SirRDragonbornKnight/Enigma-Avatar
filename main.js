@@ -9,10 +9,11 @@
 // "brain" (runs the renderer animation, the Settings/menu UI, and the AI bus); the others
 // are "peers" that mirror the brain's broadcast pose and only support grab.
 //
-// Hotkeys (global):
-//   Ctrl+Alt+A    force full-interactive on/off (e.g. to reach the panel)
-//   Ctrl+Alt+ + / -   resize the avatar
-//   Ctrl+Alt+Q    quit
+// Hotkeys (global) — Ctrl+SHIFT+Alt deliberately (2026-06-12): plain Ctrl+Alt IS AltGr on EU
+// keyboard layouts, so e.g. typing "@" on QWERTZ used to QUIT her system-wide.
+//   Ctrl+Shift+Alt+A    force full-interactive on/off (e.g. to reach the panel)
+//   Ctrl+Shift+Alt+ + / -   resize the avatar
+//   Ctrl+Shift+Alt+Q    quit
 const { app, BrowserWindow, screen, globalShortcut, ipcMain, dialog, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -338,7 +339,7 @@ function buildTrayMenu() {
     { label: "Open Settings", click: () => { const w = windowForGlobalPos(); if (w) try { w.webContents.executeJavaScript("window.EnigmaAvatar && EnigmaAvatar.settings && EnigmaAvatar.settings()").catch(() => {}); } catch {} } },   // reach Settings on her current monitor even when she can't be clicked
     { label: "Reload avatar", click: () => { for (const w of liveWindows()) { try { w.win.reload(); } catch {} } } },   // ALL windows — peers must pick up reloaded code/model too (each re-receives init/pos/model on did-finish-load)
     { type: "separator" },
-    { label: "Quit Enigma Avatar", accelerator: "Ctrl+Alt+Q", click: () => { console.error("[main] quit via tray"); app.quit(); } },
+    { label: "Quit Enigma Avatar", accelerator: "Ctrl+Shift+Alt+Q", click: () => { console.error("[main] quit via tray"); app.quit(); } },
   ]);
 }
 function refreshTrayMenu() { try { if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu()); } catch {} }
@@ -481,6 +482,15 @@ function init() {
   ipcMain.handle("avatar:renameModel", (_e, id, label) => lib.renameModel(id, label));   // cosmetic label only (folder = id stays)
   ipcMain.handle("avatar:saveProfiles", (_e, json) => saveProfiles(json));
   ipcMain.handle("avatar:listModels", () => lib.discoverModels());
+  // Animation clip library — anims/*.glb|gltf|fbx, retargeted onto whatever rig is loaded (system
+  // work 2026-06-12). Drop Mixamo-style humanoid clips in; no per-model setup.
+  ipcMain.handle("avatar:listAnims", () => {
+    try {
+      const d = path.join(__dirname, "anims");
+      if (!fs.existsSync(d)) return [];
+      return fs.readdirSync(d).filter((f) => /\.(glb|gltf|fbx)$/i.test(f)).map((f) => ({ name: f.replace(/\.[^.]+$/, ""), url: "./anims/" + f }));
+    } catch { return []; }
+  });
   ipcMain.handle("avatar:importDropped", (_e, paths) => importDropped(paths));
   // Save a model thumbnail to models/<id>/.thumb.png, captured from whichever window is showing her.
   ipcMain.handle("avatar:saveThumb", async (_e, opts = {}) => {
@@ -529,17 +539,17 @@ function init() {
   // All hotkey→renderer calls go through the brain. A pre-load / mid-reload keypress must not raise an
   // unhandled rejection (the brain simply isn't there to act yet).
   const runJS = (code) => { const b = brainWin(); if (b) try { b.webContents.executeJavaScript(code)?.catch?.(() => {}); } catch {} };
-  globalShortcut.register("CommandOrControl+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(); });
-  globalShortcut.register("CommandOrControl+Alt+Q", () => { console.error("[main] quit via Ctrl+Alt+Q"); app.quit(); });
-  globalShortcut.register("CommandOrControl+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
-  globalShortcut.register("CommandOrControl+Alt+-", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));
+  globalShortcut.register("CommandOrControl+Shift+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+Q", () => { console.error("[main] quit via Ctrl+Alt+Q"); app.quit(); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
+  globalShortcut.register("CommandOrControl+Shift+Alt+-", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));
   // glide across the screen (works even while click-through — global). Routed through main (it owns position).
-  globalShortcut.register("CommandOrControl+Alt+Left", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x - 0.33 * d.width, gPos.y); });
-  globalShortcut.register("CommandOrControl+Alt+Right", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x + 0.33 * d.width, gPos.y); });
-  globalShortcut.register("CommandOrControl+Alt+Up", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y - 0.2 * d.height); });
-  globalShortcut.register("CommandOrControl+Alt+Down", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y + 0.2 * d.height); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+Left", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x - 0.33 * d.width, gPos.y); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+Right", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x + 0.33 * d.width, gPos.y); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+Up", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y - 0.2 * d.height); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+Down", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y + 0.2 * d.height); });
   // Hop her to the next monitor (left→right order).
-  globalShortcut.register("CommandOrControl+Alt+M", () => {
+  globalShortcut.register("CommandOrControl+Shift+Alt+M", () => {
     const list = displays().slice().sort((a, b) => a.bounds.x - b.bounds.x);
     if (list.length < 2) return;
     const here = displayForGlobalPos().id;
@@ -547,8 +557,8 @@ function init() {
     bringToDisplay(list[(at + 1) % list.length].id);
   });
   // Quick motion triggers (work even while click-through). Full set is in the right-click "Move" menu.
-  globalShortcut.register("CommandOrControl+Alt+J", () => runJS('EnigmaAvatar.gesture("jump")'));
-  globalShortcut.register("CommandOrControl+Alt+F", () => runJS('EnigmaAvatar.gesture("flip")'));
+  globalShortcut.register("CommandOrControl+Shift+Alt+J", () => runJS('EnigmaAvatar.gesture("jump")'));
+  globalShortcut.register("CommandOrControl+Shift+Alt+F", () => runJS('EnigmaAvatar.gesture("flip")'));
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindowSet(); });
 
   // Crash diagnostics + self-heal — a renderer/GPU *process* death leaves no JS trace; capture the

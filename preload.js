@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   renameModel: (id, label) => ipcRenderer.invoke("avatar:renameModel", id, label),
   // Live scan of models/ (the source of truth) → [{id,label,url,builtin,thumb}]. No manifest drift.
   listModels: () => ipcRenderer.invoke("avatar:listModels"),
+  // Animation clip library: anims/*.glb|gltf|fbx → [{name,url}] (drop Mixamo-style clips in; retargeted onto any rig).
+  listAnims: () => ipcRenderer.invoke("avatar:listAnims"),
   // Model repair (in-Settings editor): inspect a model's bone names → {nodes,mojibake,recoverable,names},
   // or rewrite them into a repaired COPY → {ok,id,url,label,renamed,repaired}. Original untouched.
   diagnoseModel: (id) => ipcRenderer.invoke("avatar:diagnoseModel", id),

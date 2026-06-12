@@ -360,6 +360,25 @@ export function createUI(api) {
       const box = document.createElement("div"); box.style.display = open0 ? "block" : "none"; body.appendChild(box);
       ch.onclick = (e) => { e.stopPropagation(); _partsOpen = box.style.display === "none"; box.style.display = _partsOpen ? "block" : "none"; caret.textContent = _partsOpen ? "▾" : "▸"; };
       ch.onmouseenter = () => { ch.style.opacity = "1"; }; ch.onmouseleave = () => { ch.style.opacity = ".85"; };
+      // OUTFITS (2026-06-12): one-click looks — a named snapshot of which parts are hidden. Tick the
+      // parts into a look below, type a name, Enter; "Wear" swaps the whole look at once. Saved per avatar.
+      if (api.outfits) {
+        const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:5px;align-items:center;margin:2px 0 6px;flex-wrap:wrap;";
+        const BTN2 = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:2px 7px;cursor:pointer;";
+        const sel = document.createElement("select"); sel.style.cssText = "background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:12px system-ui;padding:2px 4px;max-width:108px;";
+        const names = api.outfits();
+        if (!names.length) { const o = document.createElement("option"); o.textContent = "(no outfits)"; sel.appendChild(o); sel.disabled = true; }
+        else for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; sel.appendChild(o); }
+        const wear = document.createElement("button"); wear.textContent = "Wear"; wear.style.cssText = BTN2; wear.disabled = !names.length;
+        wear.onclick = (e) => { e.stopPropagation(); if (api.wearOutfit && sel.value) { api.wearOutfit(sel.value); buildSettings(); } };
+        const del = document.createElement("button"); del.textContent = "✕"; del.title = "delete this outfit"; del.style.cssText = BTN2; del.disabled = !names.length;
+        del.onclick = (e) => { e.stopPropagation(); if (api.deleteOutfit && sel.value) { api.deleteOutfit(sel.value); buildSettings(); } };
+        const nameIn = document.createElement("input"); nameIn.type = "text"; nameIn.placeholder = "save current as… ⏎"; nameIn.spellcheck = false;
+        nameIn.style.cssText = "background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;width:118px;";
+        nameIn.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter" && nameIn.value.trim() && api.saveOutfit) { api.saveOutfit(nameIn.value.trim()); buildSettings(); } };
+        bar.append(sel, wear, del, nameIn);
+        box.appendChild(bar);
+      }
       for (const p of parts) {
         const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:7px;padding:4px 0;";
         const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = p.visible; cb.title = "show / hide this part";

@@ -17,6 +17,7 @@ import { createPhysics } from "./physics.js";
 import { buildFacial } from "./facial.js";
 import { resolveRig, ROLES } from "./rig.js";
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./skinweights.js";   // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
+import { guessRoleMap, retargetClip } from "./retarget.js";   // play authored humanoid clips (Mixamo-style) on ANY resolved rig via the role map + rest-pose compensation
 import { buildDefaultAvatar } from "./default_avatar.js";
 import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./mathutil.js";
 
@@ -218,17 +219,19 @@ function whereAmI() { return { screen: [curDisp.width, curDisp.height], screenPo
 // an axis spin. Lay-down HOLDS (body curled on its side) until get-up; everything else auto-recovers.
 let _motion = null;
 let _lying = null;                                            // {x,y,z,deg} the tipped state get-up rises FROM (lay-down persists after its tween)
+let _sitting = null;                                          // {drop} the held root sink of a floor sit (persists after its tween; getup rises from it)
 const LAY_DEG = 78;                                          // lay-down tips onto her side ~78° — a recline, not a stiff 90° plank
 const _easeInOut = easeInOut;   // (shared pure impl in motionmath.js)
 function motion(name, dur) {
   const n = String(name || "").toLowerCase().replace(/[ _-]/g, "");
-  if ((n === "getup" || n === "standup") && !_lying) return null;   // getup while standing would SNAP into a full curl (getupPose starts at s=1) — refuse before any side effect
+  if ((n === "getup" || n === "standup") && !_lying && !_sitting) return null;   // getup while standing would SNAP into a full curl (getupPose starts at s=1) — refuse before any side effect
   // Interrupting an airborne jump/flip: its "restore pos.y on finish" never runs, so without this she'd
   // be STRANDED at the interrupted elevation (caught live: jump→laydown left pos.y at +0.84 — and
   // jump→jump re-captured an elevated baseY, ratcheting her up the screen permanently).
   if (_motion && (_motion.n === "jump" || _motion.n === "flip")) _motionY = 0;
   if (_motion && (_motion.n === "flip" || _motion.n === "getup")) applyRotation();   // those own rig.rotation mid-tween — restore it or she's stranded tumbled/half-untipped
   if (_lying && n !== "getup" && n !== "standup") { applyRotation(); _lying = null; }   // a new motion from a lying hold: stand her cleanly first (r0 below is the SAVED rot — without this the first frame snaps 78°)
+  if (_sitting && n !== "getup" && n !== "standup") { _motionY = 0; _sitting = null; }   // a new motion from a sitting hold: stand first (the held root drop must not leak into a jump baseline)
   const d = +dur > 0 ? +dur : 0;                                   // sanitize: a negative/garbage dur would make p negative forever (motion never completes → drag/spin soft-locked)
   const r0 = getRot();
   // jump/flip elevation scales with the model's VISIBLE height (modelDims.h × sizeScale, in pos units) so
@@ -238,12 +241,14 @@ function motion(name, dur) {
   if (n === "jump") _motion = { n: "jump", t: 0, dur: d || 0.9, h: vH * 0.55, r0 };
   else if (n === "flip") _motion = { n: "flip", t: 0, dur: d || 1.15, h: vH * 0.62, r0 };
   else if (n === "laydown" || n === "lay") { _motion = { n: "laydown", t: 0, dur: d || 1.3, r0 }; _lying = { x: r0.x, y: r0.y, z: r0.z, deg: LAY_DEG }; }
+  else if (n === "sit") { const drop = vH * 0.30; _motion = { n: "sit", t: 0, dur: d || 0.9, drop, r0 }; _sitting = { drop }; }   // floor sit: the root sinks ~a thigh length while the legs fold (held until getup)
   else if (n === "getup" || n === "standup") _motion = { n: "getup", t: 0, dur: d || 1.0, r0 };
   else return null;
   gliding = false; held = false;
   // SYNCED bone clip — same name/duration so the body articulates in lock-step with the root tween.
   if (proc?.setGesture) {
     if (_motion.n === "laydown") proc.setGesture("laydown", _motion.dur, { hold: true });   // curl, then HOLD until get-up
+    else if (_motion.n === "sit") proc.setGesture("sit", _motion.dur, { hold: true });       // fold into the sit, then HOLD until get-up
     else proc.setGesture(_motion.n, _motion.dur);
   }
   wake(_motion.dur + 0.8); setStatus("motion: " + _motion.n);
@@ -252,8 +257,8 @@ function motion(name, dur) {
 // Explicit cancel (model switch / manual rotate): drop the motion, the lying hold, AND the bone clip,
 // so she can't be left half-curled or tipped after the user takes over.
 function _cancelMotion() {
-  _motionY = 0;   // don't strand her mid-air (model switch / rotate during a jump)
-  _motion = null; _lying = null; if (proc?.setGesture) proc.setGesture("", 0);
+  _motionY = 0;   // don't strand her mid-air (model switch / rotate during a jump) or seated (sit hold)
+  _motion = null; _lying = null; _sitting = null; if (proc?.setGesture) proc.setGesture("", 0);
 }
 function updateMotion(dt) {
   if (!_motion) return false;
@@ -263,14 +268,19 @@ function updateMotion(dt) {
   if (_motion.n === "jump") _motionY = jumpElevation(p, _motion.h);   // squash-and-stretch curve (sink→spring→absorb), reads from the front; pure/tested in motionmath.js
   else if (_motion.n === "flip") { _motionY = arc * _motion.h; rig.rotation.set((r0.x + e * 360) * R, r0.y * R, r0.z * R); }   // tumble smoothly through 360°
   else if (_motion.n === "laydown") rig.rotation.set(r0.x * R, r0.y * R, (r0.z + e * LAY_DEG) * R);   // ease onto her side (then HOLDS — bones stay curled)
+  else if (_motion.n === "sit") _motionY = -e * _motion.drop;          // sink as the legs fold under (held after the tween via _sitting)
   else if (_motion.n === "getup") {                                    // un-tip FROM the recorded lying state back to upright (NOT r0, which is the saved upright rot)
-    const L = _lying, fromZ = L ? L.z + L.deg : r0.z, toZ = L ? L.z : r0.z;
-    rig.rotation.set((L ? L.x : r0.x) * R, (L ? L.y : r0.y) * R, (fromZ + (toZ - fromZ) * e) * R);
+    if (_sitting && !_lying) _motionY = -(1 - e) * _sitting.drop;      // …or rise back from the floor sit (no rotation involved)
+    else {
+      const L = _lying, fromZ = L ? L.z + L.deg : r0.z, toZ = L ? L.z : r0.z;
+      rig.rotation.set((L ? L.x : r0.x) * R, (L ? L.y : r0.y) * R, (fromZ + (toZ - fromZ) * e) * R);
+    }
   }
   if (p >= 1) {
     if (_motion.n === "jump" || _motion.n === "flip") _motionY = 0;
+    if (_motion.n === "sit") _motionY = -_motion.drop;                 // HOLD the seated height until getup
     if (_motion.n === "flip") applyRotation();                         // restore the saved rotation (laydown stays lying via _lying)
-    if (_motion.n === "getup") { applyRotation(); _lying = null; if (proc?.setGesture) proc.setGesture("", 0); }   // upright + idle resumes
+    if (_motion.n === "getup") { applyRotation(); _lying = null; _sitting = null; _motionY = 0; if (proc?.setGesture) proc.setGesture("", 0); }   // upright + the base pose resumes
     _motion = null;
   }
   return true;
@@ -887,6 +897,30 @@ function setMeshVisible(i, on) {
 }
 function applyMeshVisibility() { const hid = profileFor(curKey).hiddenMeshes; if (!hid || !hid.length) return; const arr = allMeshesInfo(); for (const i of hid) if (arr[i]) arr[i].mesh.visible = false; }
 
+// --- OUTFITS — named mesh-visibility presets per model ("can i put clothes on avatars", 2026-06-12):
+// one-click looks built from the parts a model SHIPS (dressed / undressed / armor-off …). A preset
+// is just the hidden-mesh index list under a name, saved in the profile; wearing one shows
+// EVERYTHING first then hides the preset's set (applyMeshVisibility only hides — a wear must also
+// restore parts the previous look had off).
+function outfitNames() { return Object.keys(profileFor(curKey).outfits || {}); }
+function saveOutfit(name) {
+  const s = String(name || "").trim(); if (!s) return null;
+  const p = profileFor(curKey); p.outfits = p.outfits || {};
+  p.outfits[s] = [...(p.hiddenMeshes || [])];
+  saveProfileSoon(); setStatus(`outfit saved: ${s}`); return outfitNames();
+}
+function wearOutfit(name) {
+  const p = profileFor(curKey), o = (p.outfits || {})[String(name || "").trim()];
+  if (!o) { setStatus(`no outfit "${name}"`); return false; }
+  const hid = new Set(o.map((i) => +i).filter((i) => Number.isInteger(i) && i >= 0));
+  const arr = allMeshesInfo();
+  for (let i = 0; i < arr.length; i++) arr[i].mesh.visible = !hid.has(i);
+  p.hiddenMeshes = [...hid].sort((a, b) => a - b);
+  saveProfileSoon(); hitMask = null; computeFootprint();   // silhouette changed
+  setStatus(`outfit: ${name}`); return true;
+}
+function deleteOutfit(name) { const p = profileFor(curKey); if (p.outfits) delete p.outfits[String(name || "").trim()]; saveProfileSoon(); return outfitNames(); }
+
 // --- rotation: turn the avatar on ALL THREE axes (pitch X / yaw Y / roll Z); persisted per model.
 // Stored as profile.rot = {x,y,z} in degrees. Migrates the legacy single-axis profile.yaw → rot.y.
 const _norm360 = norm360;   // alias — the pure impl lives in mathutil.js (unit-tested)
@@ -1033,6 +1067,44 @@ function pickBoneAt(cx, cy) {                            // nearest bone to a cl
   });
   return best ? best.name : null;
 }
+
+// --- AUTHORED ANIMATION CLIPS on ANY rig (system work, 2026-06-12) -----------------------------
+// Drop Mixamo-style humanoid clips (GLB/FBX) into mods/avatar/anims/ — playAnim loads one, maps
+// its skeleton by name (guessRoleMap), RETARGETS it through OUR resolved role map with rest-pose
+// compensation (retarget.js, unit-tested algebra), and plays it on whatever model is loaded.
+// Peers see it through the normal pose stream. This is how gross motion (dance/walk/sit-anim)
+// reaches random models without per-model work.
+let _animCache = {};                                    // url -> retarget-ready { clip, srcRoot, srcMap } (the SOURCE side never changes per model)
+async function playAnim(nameOrUrl, opts = {}) {
+  if (!proc?.roles || !model) { setStatus("no rig to animate"); return false; }
+  let url = String(nameOrUrl || "");
+  if (!/[./]/.test(url)) {                              // bare name → resolve from the anims library
+    const list = (await window.avatarIPC?.listAnims?.()) || [];
+    const hit = list.find((a) => a.name.toLowerCase() === url.toLowerCase()) || list.find((a) => a.name.toLowerCase().includes(url.toLowerCase()));
+    if (!hit) { setStatus(`no animation "${url}" in anims/`); return false; }
+    url = hit.url;
+  }
+  const src = _animCache[url] || await new Promise((res) => loadAsset(url, (asset) => {
+    const clip = (asset.animations || [])[0];
+    if (!clip) { setStatus("file has no animation clip"); return res(null); }
+    const srcRoot = asset.scene || asset;
+    const srcMap = guessRoleMap(srcRoot);
+    res({ clip, srcRoot, srcMap });
+  }, (e) => { setStatus("anim load failed: " + (e?.message || e)); res(null); }));
+  if (!src) return false;
+  _animCache[url] = src;
+  if (Object.keys(src.srcMap).length < 8) { setStatus("animation skeleton not recognized (need a Mixamo-style humanoid)"); return false; }
+  _cancelMotion();                                      // a clip owns the body — clear gestures/holds first
+  proc.restPose();                                      // retarget reads CLEAN dst rests (mid-gesture rests would bake the pose into every key)
+  const clip = retargetClip(src.clip, src.srcRoot, src.srcMap, proc.roles());
+  if (!mixer) mixer = new THREE.AnimationMixer(model);
+  mixer.stopAllAction();
+  const action = mixer.clipAction(clip);
+  playAction(action, { loop: opts.loop !== false, onDone: () => { current = null; } });   // default LOOP (walk/dance cycles); {loop:false} for one-shots
+  wake(3); setStatus("anim: " + (src.clip.name || url));
+  return true;
+}
+function stopAnim() { if (mixer) mixer.stopAllAction(); current = null; setStatus("anim stopped"); wake(1); return true; }
 
 // --- rotate mode: DRAG the body to rotate it (↔ horizontal = yaw, ↕ vertical = pitch) instead of
 // moving the window. Roll (Z) is set via the numeric field. Settings stays usable while you pose it.
@@ -1433,6 +1505,7 @@ const EnigmaAvatar = {
   load(url) { uiLoadModel(url, url); },                          // relayed — a devtools/global load must reach every window like any other
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
+  playAnim: (n, o) => playAnim(n, o || {}), stopAnim: () => stopAnim(),   // retargeted clip library (anims/) — works on any resolved rig
   state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, facial: facialOn, look: lookOn, locked, rotateMode, menu: ui.isOpen() } }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
@@ -1441,7 +1514,7 @@ const EnigmaAvatar = {
     if (n === "throwball" || n === "throw") { throwBall(); return "throwball"; }            // rigid-body toy (rapier) — she hurls the baseball
     if (n === "dropball" || n === "drop") { dropBall(); return "dropball"; }                // a ball drops onto her → bounces off (she's solid)
     if (n === "clearballs" || n === "clearball") { physics.clearProps(); setStatus("balls cleared"); return "clearballs"; }
-    if (["jump", "flip", "laydown", "lay", "getup", "standup"].includes(n)) {
+    if (["jump", "flip", "laydown", "lay", "sit", "getup", "standup"].includes(n)) {
       const r = motion(n, dur);
       return r ?? { error: `'${n}' refused — she isn't lying down` };   // the driver must SEE a refusal (getup while standing returned a silent null)
     }
@@ -1517,6 +1590,7 @@ function answerQuery(what) {
   if (what === "stance") return proc?.stance ? proc.stance() : null;   // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
   if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null;   // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
   if (what === "grip") return proc?.gripState ? proc.gripState() : null;   // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
+  if (what === "outfits") return { outfits: outfitNames(), hiddenMeshes: profileFor(curKey).hiddenMeshes || [] };   // the saved looks + the live hidden set
   if (what === "weights") {   // DIAGNOSTIC: skin-weight truth — how many bones really deform + the heaviest (everything else is control/helper soup)
     if (!_weightMass || !_weightMass.size) return { deforming: 0 };
     let total = 0; _weightMass.forEach((v) => { total += v; });
@@ -1572,6 +1646,8 @@ function handleCommand(c) {
   else if (c.action === "lookAt") EnigmaAvatar.lookAt(c.px, c.py);                       // force gaze at a screen point
   else if (c.action === "nameBone" && c.bone) return uiSetBoneLabel(String(c.bone), c.label ?? "");   // label a bone in plain words (saved per avatar; empty label clears) — the AI's handle for "the ahoge"
   else if (c.action === "highlightBone" && c.bone) return uiHighlightBone(String(c.bone), c.dur);     // flash a marker on a bone (point AT a part while talking about it)
+  else if (c.action === "outfit" && c.name) return c.delete ? uiDeleteOutfit(c.name) : (c.save ? uiSaveOutfit(c.name) : uiWearOutfit(c.name));   // outfit presets: wear by default; {save:true} snapshots the current look; {delete:true} removes
+  else if (c.action === "anim") return c.stop ? stopAnim() : playAnim(c.name ?? c.url, { loop: c.loop !== false });   // authored clip on the CURRENT rig (anims/ library or a url); {stop:true} ends it
   else if (c.action === "hue" && c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0);      // rotate a material's hue — relayed
   else if (c.action === "query") return answerQuery(c.what);   // AI self-report: live state / materials / facial (ground truth)
 }
@@ -1652,6 +1728,9 @@ const UI_CMDS = {
   resetColors:      { scope: "all", bound: true, fn: () => resetColors() },
   setMeshVisible:   { scope: "all", bound: true, fn: (i, on) => setMeshVisible(i, on) },
   setMeshLabel:     { scope: "all", bound: true, fn: (i, l) => setMeshLabel(i, l) },
+  saveOutfit:       { scope: "all", bound: true, fn: (n) => saveOutfit(n) },     // outfit presets: every window keeps its profile copy in sync; the brain persists
+  wearOutfit:       { scope: "all", bound: true, fn: (n) => wearOutfit(n) },
+  deleteOutfit:     { scope: "all", bound: true, fn: (n) => deleteOutfit(n) },
   setBoneLabel:     { scope: "all", bound: true, fn: (n, l) => setBoneLabel(n, l) },
   highlightBone:    { scope: "all", bound: true, fn: (n, d) => highlightBone(n, d) },   // the marker must show on whichever monitor she's standing on
   setMorphValue:    { scope: "all", bound: true, fn: (i, v) => setMorphValue(i, v) },
@@ -1705,6 +1784,7 @@ const uiShowSkeleton = relayed("showSkeleton"), uiRecolor = relayed("recolor"), 
 const uiResetColors = relayed("resetColors"), uiSetMeshVisible = relayed("setMeshVisible"), uiSetMorphValue = relayed("setMorphValue");
 const uiSetBoneLabel = relayed("setBoneLabel");   // name a bone — Settings input + the bus 'nameBone' action share this relay
 const uiHighlightBone = relayed("highlightBone");   // flash a marker on a bone — Settings rows, the pick mode + the bus share it
+const uiSaveOutfit = relayed("saveOutfit"), uiWearOutfit = relayed("wearOutfit"), uiDeleteOutfit = relayed("deleteOutfit");   // outfit presets (Settings → Parts + bus 'outfit')
 const uiSetRegionWeight = relayed("setRegionWeight"), uiSetRotateMode = relayed("setRotateMode"), uiSetLookMode = relayed("setLookMode");
 // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
 // the initiator, or a window created mid-session (display plugged in) would number its copies
@@ -1758,6 +1838,7 @@ ui = createUI({
   setMeshLabel: relayed("setMeshLabel"),                                    // rename a part (legible Settings list)
   bones: () => EnigmaAvatar.bones(), setBoneLabel: relayed("setBoneLabel"), // name bones (Settings → Bones)
   highlightBone: uiHighlightBone, pickBone: (cb) => armBonePick(cb),        // identify bones: row hover/click → marker on her; 🎯 pick = next click on her selects the nearest bone
+  outfits: () => outfitNames(), saveOutfit: uiSaveOutfit, wearOutfit: uiWearOutfit, deleteOutfit: uiDeleteOutfit,   // one-click looks (Settings → Parts)
   setRotAxis: uiSetRotAxis, setRot: uiSetRot, getRot: () => getRot(),      // 3-axis rotation for Settings
   setYaw: (deg) => uiSetRotAxis("y", deg), getYaw: () => getRot().y,       // back-compat (Y axis only)
   getRotateMode: () => rotateMode, setRotateMode: uiSetRotateMode,         // drag-to-spin (AI/bus only since 2026-06-11 — the user path is Alt+drag)
