@@ -76,13 +76,15 @@ function windowForGlobalPos() {
   return e && e.win && !e.win.isDestroyed() ? e.win : brainWin();
 }
 // Clamp a global DIP point into the union of all displays (so a drag can't strand her in the void
-// between non-aligned monitors, but CAN cross any shared edge).
+// between non-aligned monitors, but CAN cross any shared edge). Margins loosened 2026-06-12 ("i
+// want more room for the avatar"): her base can ride the side edges within 8px and stand FLUSH on
+// the bottom edge — the renderer's glide clamp handles the body-aware limits; this is just the
+// can't-lose-her backstop for a raw drag.
 function clampToUnion(x, y) {
   const ds = displays();
-  // nearest display to the raw point, then clamp inside it with a small margin so she stays grabbable
   const d = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
-  const b = d.bounds, m = 24;
-  return { x: Math.max(b.x + m, Math.min(b.x + b.width - m, x)), y: Math.max(b.y + m, Math.min(b.y + b.height - m, y)) };
+  const b = d.bounds, m = 8;
+  return { x: Math.max(b.x + m, Math.min(b.x + b.width - m, x)), y: Math.max(b.y + m, Math.min(b.y + b.height, y)) };
 }
 
 function broadcast(channel, payload) { for (const w of liveWindows()) { try { w.win.webContents.send(channel, payload); } catch {} } }

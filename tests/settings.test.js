@@ -398,6 +398,9 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       { name: "Shibahu_Tail1_0199", label: null, role: null },
     ] });
     m.api.setBoneLabel = (n, l) => m.calls.push(["setBoneLabel", n, l]);
+    m.api.highlightBone = (n, d) => m.calls.push(["highlightBone", n, d]);
+    let pickCb = null;
+    m.api.pickBone = (cb) => { pickCb = cb; m.calls.push(["pickBone"]); };
     createUI(m.api).showSettings();
     const filt = [...document.querySelectorAll("input")].find((i) => /filter bones/i.test(i.placeholder || ""));
     assert.ok(filt, "bone filter input exists");
@@ -406,5 +409,17 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
     assert.equal(rows.length, 1, "filter narrows to the tail bone");
     rows[0].value = "tail base"; fire(rows[0], "change");
     assert.ok(m.calls.some((c) => c[0] === "setBoneLabel" && c[1] === "Shibahu_Tail1_0199" && c[2] === "tail base"), "-> setBoneLabel(raw name, label)");
+    // IDENTIFY (2026-06-12): hovering a row's raw name highlights that bone on her body…
+    const raw = [...document.querySelectorAll("span")].find((s) => /Shibahu_Tail1_0199/.test(s.textContent || ""));
+    assert.ok(raw, "raw bone name span exists");
+    fire(raw, "mouseenter");
+    assert.ok(m.calls.some((c) => c[0] === "highlightBone" && c[1] === "Shibahu_Tail1_0199"), "hover -> highlightBone(raw name)");
+    // …and the 🎯 pick button arms a click-on-her pick whose result lands in the filter.
+    const pk = [...document.querySelectorAll("button")].find((b) => /Pick — click a spot/i.test(b.textContent || ""));
+    assert.ok(pk, "pick button exists");
+    pk.click();
+    assert.ok(pickCb, "pick armed a callback");
+    pickCb("DEF-spine006_016");
+    assert.equal(filt.value, "DEF-spine006_016", "picked bone name lands in the filter");
   } finally { dom.cleanup(); }
 });

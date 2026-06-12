@@ -391,6 +391,20 @@ export function createUI(api) {
       const filt = document.createElement("input"); filt.type = "text"; filt.placeholder = "filter bones (name / label / role)…"; filt.spellcheck = false;
       filt.style.cssText = "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
       filt.onkeydown = (e) => e.stopPropagation();       // typing must not trigger global hotkeys
+      // IDENTIFY bones (user 2026-06-12): 🎯 pick = the next click ON HER selects the nearest bone
+      // into the filter; hovering/clicking a row's raw name flashes a pink marker on that bone.
+      if (api.pickBone) {
+        const pk = document.createElement("button");
+        const IDLE_TXT = "🎯 Pick — click a spot on her body";
+        pk.textContent = IDLE_TXT;
+        pk.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:2px 0 4px;display:block;";
+        pk.onclick = (e) => {
+          e.stopPropagation();
+          pk.textContent = "…now click her (Esc cancels)";
+          api.pickBone((name) => { filt.value = name; render(); pk.textContent = IDLE_TXT; });
+        };
+        bbox.appendChild(pk);
+      }
       const list = document.createElement("div");
       const CAP = 30;
       const render = () => {
@@ -405,8 +419,12 @@ export function createUI(api) {
           nm.onkeydown = (e) => e.stopPropagation();
           nm.onchange = (e) => { e.stopPropagation(); if (api.setBoneLabel) api.setBoneLabel(b.name, nm.value); b.label = nm.value.trim() || null; };
           const raw = document.createElement("span"); raw.textContent = b.name + (b.role ? "  ·  " + b.role : "");
-          raw.style.cssText = "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-          raw.title = b.name;
+          raw.style.cssText = "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;";
+          raw.title = b.name + " — hover/click: show this bone on her";
+          if (api.highlightBone) {                       // identify: light the bone up on her body
+            raw.onmouseenter = () => api.highlightBone(b.name, 1.2);
+            raw.onclick = (e) => { e.stopPropagation(); api.highlightBone(b.name, 3); };
+          }
           row.append(nm, raw); list.appendChild(row);
         }
         if (hits.length > CAP) {

@@ -167,9 +167,23 @@ function localPxToGlobal(cx, cy) { const [x, y] = localPxToDip(cx, cy, myOrigin,
 // Is she standing on THIS window's display? Captures/thumbnails route to HER window in main —
 // a crop rect computed in a DIFFERENT window's pixel space would cut garbage out of that capture.
 function onMyDisplay() { return _gReady && Math.round(curDisp.x) === Math.round(myOrigin.x) && Math.round(curDisp.y) === Math.round(myOrigin.y); }
-function _clampToDisp(p) {                      // glide/nudge stay on her current screen (only a DRAG crosses bezels)
-  const d = curDisp, mX = d.width * 0.04 + 1, mY = d.height * 0.04 + 1;
-  return { x: Math.max(d.x + mX, Math.min(d.x + d.width - mX, p.x)), y: Math.max(d.y + mY, Math.min(d.y + d.height - mY, p.y)) };
+function _bodyPx() {                            // her CURRENT on-screen size in px (≈ DIP): [half-width, height]
+  const h = (modelDims.h || BASE_H) * sizeScale, w = (modelDims.w || 1.5) * sizeScale;
+  const a = toScreen(0, 0), b = toScreen(w, h);
+  return [Math.abs(b[0] - a[0]) / 2, Math.abs(a[1] - b[1])];
+}
+function _clampToDisp(p) {                      // glide/nudge stay on her current screen (only a DRAG crosses bezels).
+  // BODY-AWARE walls (user 2026-06-12: "the walls… need to be connected to the avatar… i want more
+  // room"): the limits scale with HER body, not the screen. Feet can stand flush on the BOTTOM edge
+  // (the old flat 4% margin hovered her ~55px above the taskbar — half the "weird shadow" read);
+  // the SIDES let her lean past the edge as long as a grabbable slice stays on-screen; the TOP
+  // keeps enough of her visible to reach.
+  const d = curDisp, [hw, bh] = _bodyPx();
+  const keep = Math.max(24, hw * 0.4);          // the slice of her that must remain on-screen (re-grab handle)
+  return {
+    x: Math.max(d.x - hw + keep, Math.min(d.x + d.width + hw - keep, p.x)),
+    y: Math.max(d.y + Math.min(bh * 0.35, d.height * 0.3), Math.min(d.y + d.height - 2, p.y)),
+  };
 }
 function setGlide(gx, gy) { if (!isFinite(gx) || !isFinite(gy)) return; gGlide = _clampToDisp({ x: gx, y: gy }); gliding = true; }
 // --- AI movement: where is she + named anchors, resolved against her CURRENT display ---------
@@ -438,6 +452,27 @@ function onModelLoaded(asset) {
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
   proc = buildProceduralRig(model, BONE_LIMITS, resolved);
+  // RE-ANCHOR + RE-MEASURE after the bind normalization (user 2026-06-12: "her bottom hit box is at
+  // her legs so there is just a weird shadow there"). The feet anchor + modelDims were taken from
+  // the BIND box — standing a squat-bound rig up extends the mesh BELOW that box, so the shadow,
+  // grab footprint and physics capsule all sat at her shins. Measure again now that the rest pose
+  // is final (rotation neutralized for the measurement; runs BEFORE the spring build so the tips
+  // capture from the corrected positions — a shift after capture would read as a load-time wiggle).
+  {
+    const rq = rig.quaternion.clone();
+    rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
+    _box.setFromObject(model);
+    if (isFinite(_box.min.y) && isFinite(_box.max.y) && _box.max.y > _box.min.y) {
+      const s = rig.scale.x || 1;
+      const c = _box.getCenter(new THREE.Vector3());
+      model.position.x -= (c.x - rig.position.x) / s;
+      model.position.z -= c.z / s;
+      model.position.y -= (_box.min.y - rig.position.y) / s;   // feet back on the rig origin = the shadow/footprint line
+      modelDims = { w: (_box.max.x - _box.min.x) / s, h: (_box.max.y - _box.min.y) / s };
+    }
+    rig.quaternion.copy(rq); rig.updateWorldMatrix(true, true);
+    fitToScreen();                                   // the TRUE height can exceed the bind height (catgirl: squat → standing) — re-cap so she still fits her screen
+  }
   console.log("[avatar] roles:", resolved.matched.length, JSON.stringify(resolved.report.bySource), resolved.matched.length ? "→ " + resolved.matched.join(", ") : "(none)");
   setStatus(`loaded ✓ ${resolved.matched.length ? "procedural idle on " + resolved.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
@@ -895,6 +930,51 @@ function setBoneLabel(name, label) {
   const s = String(label || "").trim();
   if (s) p.boneLabels[name] = s; else delete p.boneLabels[name];
   saveProfileSoon(); return s;
+}
+// --- BONE IDENTIFICATION (user 2026-06-12: "i will need a way of identifying them") -------------
+// highlightBone: a hot-pink marker rides the named bone for a moment (relayed → shows on whichever
+// monitor she's on). armBonePick: the REVERSE lookup — the next click on her body picks the nearest
+// bone (screen-space) and hands its name back to the Settings list. Together: see-a-part → click it
+// → name it, or hover a row → see which part lights up.
+let _hlMark = null, _hlTimer = 0;
+function highlightBone(name, dur = 1.6) {
+  if (!model || !name) return false;
+  let b = null; model.traverse((o) => { if (o.isBone && o.name === String(name)) b = o; });
+  if (!b) { setStatus(`no bone "${name}"`); return false; }
+  if (!_hlMark) {
+    _hlMark = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xff2bd6, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85 })
+    );
+    _hlMark.renderOrder = 1001; _hlMark.frustumCulled = false;
+  }
+  _hlMark.removeFromParent();
+  b.add(_hlMark);                                        // riding the bone = it follows every pose, on every window's copy
+  const ws = new THREE.Vector3(); b.getWorldScale(ws);
+  const want = Math.max(0.03, (modelDims.h || 2) * sizeScale * 0.02);   // ~2% of her on-screen height
+  _hlMark.scale.setScalar(want / Math.max(1e-6, Math.abs(ws.x) || 1));
+  _hlMark.position.set(0, 0, 0);
+  clearTimeout(_hlTimer); _hlTimer = setTimeout(() => { try { _hlMark?.removeFromParent(); } catch {} }, Math.max(250, (+dur || 1.6) * 1000));
+  wake((+dur || 1.6) + 0.4);
+  return true;
+}
+let _bonePick = null;                                    // one-shot callback armed by Settings ("click her to pick")
+function armBonePick(cb) {
+  _bonePick = typeof cb === "function" ? cb : null;
+  setStatus(_bonePick ? "bone pick: click a spot on her (Esc cancels)" : "bone pick cancelled");
+  return !!_bonePick;
+}
+function pickBoneAt(cx, cy) {                            // nearest bone to a click, in screen px (the click already hit her silhouette)
+  if (!model) return null;
+  const v = new THREE.Vector3(); let best = null, bestD = Infinity;
+  model.traverse((o) => {
+    if (!o.isBone) return;
+    o.getWorldPosition(v); v.project(camera);
+    const px = (v.x + 1) / 2 * innerWidth, py = (1 - v.y) / 2 * innerHeight;
+    const d = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+    if (d < bestD) { bestD = d; best = o; }
+  });
+  return best ? best.name : null;
 }
 
 // --- rotate mode: DRAG the body to rotate it (↔ horizontal = yaw, ↕ vertical = pitch) instead of
@@ -1428,6 +1508,7 @@ function handleCommand(c) {
   else if (c.action === "lookMode") return uiSetLookMode(c.mode ?? c.value);             // cursor-look: head / eyes / both
   else if (c.action === "lookAt") EnigmaAvatar.lookAt(c.px, c.py);                       // force gaze at a screen point
   else if (c.action === "nameBone" && c.bone) return uiSetBoneLabel(String(c.bone), c.label ?? "");   // label a bone in plain words (saved per avatar; empty label clears) — the AI's handle for "the ahoge"
+  else if (c.action === "highlightBone" && c.bone) return uiHighlightBone(String(c.bone), c.dur);     // flash a marker on a bone (point AT a part while talking about it)
   else if (c.action === "hue" && c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0);      // rotate a material's hue — relayed
   else if (c.action === "query") return answerQuery(c.what);   // AI self-report: live state / materials / facial (ground truth)
 }
@@ -1509,6 +1590,7 @@ const UI_CMDS = {
   setMeshVisible:   { scope: "all", bound: true, fn: (i, on) => setMeshVisible(i, on) },
   setMeshLabel:     { scope: "all", bound: true, fn: (i, l) => setMeshLabel(i, l) },
   setBoneLabel:     { scope: "all", bound: true, fn: (n, l) => setBoneLabel(n, l) },
+  highlightBone:    { scope: "all", bound: true, fn: (n, d) => highlightBone(n, d) },   // the marker must show on whichever monitor she's standing on
   setMorphValue:    { scope: "all", bound: true, fn: (i, v) => setMorphValue(i, v) },
   setRot:           { scope: "all", bound: true, fn: (r) => setRot(r) },
   setRotAxis:       { scope: "all", bound: true, fn: (a, d) => setRotAxis(a, d) },
@@ -1559,6 +1641,7 @@ const uiResizeBy = relayed("resizeBy"), uiApplySize = relayed("applySize"), uiRo
 const uiShowSkeleton = relayed("showSkeleton"), uiRecolor = relayed("recolor"), uiHueShift = relayed("hueShift");
 const uiResetColors = relayed("resetColors"), uiSetMeshVisible = relayed("setMeshVisible"), uiSetMorphValue = relayed("setMorphValue");
 const uiSetBoneLabel = relayed("setBoneLabel");   // name a bone — Settings input + the bus 'nameBone' action share this relay
+const uiHighlightBone = relayed("highlightBone");   // flash a marker on a bone — Settings rows, the pick mode + the bus share it
 const uiSetRegionWeight = relayed("setRegionWeight"), uiSetRotateMode = relayed("setRotateMode"), uiSetLookMode = relayed("setLookMode");
 // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
 // the initiator, or a window created mid-session (display plugged in) would number its copies
@@ -1611,6 +1694,7 @@ ui = createUI({
   meshes: () => EnigmaAvatar.meshes(), setMeshVisible: uiSetMeshVisible,   // sub-objects (show/hide) for Settings
   setMeshLabel: relayed("setMeshLabel"),                                    // rename a part (legible Settings list)
   bones: () => EnigmaAvatar.bones(), setBoneLabel: relayed("setBoneLabel"), // name bones (Settings → Bones)
+  highlightBone: uiHighlightBone, pickBone: (cb) => armBonePick(cb),        // identify bones: row hover/click → marker on her; 🎯 pick = next click on her selects the nearest bone
   setRotAxis: uiSetRotAxis, setRot: uiSetRot, getRot: () => getRot(),      // 3-axis rotation for Settings
   setYaw: (deg) => uiSetRotAxis("y", deg), getYaw: () => getRot().y,       // back-compat (Y axis only)
   getRotateMode: () => rotateMode, setRotateMode: uiSetRotateMode,         // drag-to-spin (AI/bus only since 2026-06-11 — the user path is Alt+drag)
@@ -1630,7 +1714,7 @@ addEventListener("contextmenu", (e) => {           // works in EVERY window — 
   cursor.x = e.clientX; cursor.y = e.clientY; computeOver();
   if (cursor.over) { e.preventDefault(); ui.hideSettings(); ui.showMenu(e.clientX, e.clientY); }
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape") { ui.hideMenu(); ui.hideSettings(); ui.hideGallery(); } });
+addEventListener("keydown", (e) => { if (e.key === "Escape") { if (_bonePick) { armBonePick(null); return; } ui.hideMenu(); ui.hideSettings(); ui.hideGallery(); } });
 
 // --- input (drag to reposition; NO hand cursor; NO fall) --------------------
 addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); });   // windows are stationary now; this only fires on (re)creation
@@ -1656,6 +1740,12 @@ addEventListener("pointerdown", (e) => {
   cursor.x = e.clientX; cursor.y = e.clientY; computeOver();
   ui.hideMenu();                                                // the right-click menu always dismisses on an outside click
   if (cursor.over) {
+    if (_bonePick) {                                            // pick mode (Settings → Bones → 🎯): this click selects a bone, not a drag
+      const n = pickBoneAt(cursor.x, cursor.y); const cb = _bonePick; _bonePick = null;
+      if (n) { uiHighlightBone(n, 3); setStatus("picked bone: " + n); try { cb(n); } catch {} }
+      _downX = -999;
+      return;
+    }
     ui.hideGallery();
     if (!locked) {
       if (e.altKey || rotateMode) {   // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.
