@@ -63,4 +63,33 @@ test("squat-bound legs are normalized to standing at build; straight rigs untouc
   buildProceduralRig(sq, {});
   const after = ang(sq, NAMES);
   assert.ok(after > 165, `legs stood up at build (knee ${folded.toFixed(0)} -> ${after.toFixed(0)} deg)`);
+  // …and the thigh must end pointing DOWN — "knee straight" alone would pass a leg aimed forward (audit)
+  let th = null, sh = null;
+  sq.traverse((o) => { if (!o.isBone) return; if (o.name === "LeftThigh") th = o; if (o.name === "LeftShin") sh = o; });
+  const a2 = new THREE.Vector3(), b2 = new THREE.Vector3();
+  th.getWorldPosition(a2); sh.getWorldPosition(b2);
+  const d = b2.sub(a2).normalize();
+  assert.ok(d.y < -0.9, `thigh aims world-down on an unrotated rig (dir.y ${d.y.toFixed(2)})`);
+});
+
+test("bind normalization is IMMUNE to the user's saved rotation (rig-local frame; audit P1)", () => {
+  // applyRotation runs BEFORE buildProceduralRig: a saved ~40deg pitch (one Alt-drag away) made an
+  // upright, correctly-authored model read as "slouch-bound" and fold at the hips on every reload.
+  const model = fullBiped();
+  const rig = new THREE.Group(); rig.rotation.x = 0.7; rig.add(model);
+  rig.updateWorldMatrix(true, true);
+  const proc = buildProceduralRig(model, {});
+  assert.equal(Object.keys(proc.restAdjust).length, 0, "no trunk/leg normalization fires on an upright bind seen through a user rotation");
+});
+
+test("lying-bound rigs are left alone (a lying bind is a style, not a squat defect)", () => {
+  const model = fullBiped();
+  model.rotation.x = Math.PI / 2;                 // the bind itself lies on its back (its OWN space, no user rig group)
+  model.traverse((o) => {
+    if (!o.isBone) return;
+    if (/^(Left|Right)Shin$/.test(o.name)) o.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 1.9));   // knees folded — would trip the squat gate
+  });
+  model.updateWorldMatrix(true, true);
+  const proc = buildProceduralRig(model, {});
+  assert.equal(Object.keys(proc.restAdjust).length, 0, "no normalization on a lying bind (legs would have folded 90deg off the body)");
 });

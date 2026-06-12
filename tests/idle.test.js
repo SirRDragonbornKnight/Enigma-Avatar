@@ -157,3 +157,45 @@ test("PER-MODEL PIVOT — the engine default (no profile) is perfectly still aft
     assert.ok(maxDrift < 1e-4, `no profile -> still (max drift ${(maxDrift * 180 / Math.PI).toFixed(5)} deg over 5s)`);
   });
 });
+
+test("PIVOT - LIVE -> DEAD mid-session returns to TRUE neutral stillness (all bones, no held stance)", () => {
+  withRandom(13, () => {
+    const model = fullBiped();
+    const rig = buildProceduralRig(model, {});
+    rig.setParams(LIVE);
+    for (let i = 0; i < 60 * 60; i++) rig.update(DT, false);     // 60s alive: weight shifts + arm poses happen
+    rig.setParams({ breathe: 0, look: 0, elbowFlex: 0, swayAmp: 0, wrist: 0, shiftEvery: 0, poseEvery: 0, ambient: 0, armLife: 0, fidgetEvery: 0 });
+    for (let i = 0; i < 60 * 20; i++) rig.update(DT, false);     // 20s: release the pose/stance + settle
+    // 1) no held contrapposto: the hip ROLL must be back at neutral (audit: froze at ~7 deg forever)
+    const hips = roleQuat(rig, model, "hips");
+    const roll = Math.abs(new THREE.Euler().setFromQuaternion(hips, "XYZ").z);
+    assert.ok(roll < 0.01, `hip roll released to neutral (${(roll * 180 / Math.PI).toFixed(2)} deg)`);
+    // 2) EVERY bone still (the old test sampled only 4 bones - motion could hide in fingers/legs)
+    const all = []; model.traverse((o) => { if (o.isBone) all.push({ b: o, q: o.quaternion.clone() }); });
+    let maxDrift = 0;
+    for (let i = 0; i < 60 * 5; i++) {
+      rig.update(DT, false);
+      for (const s of all) maxDrift = Math.max(maxDrift, s.q.angleTo(s.b.quaternion));
+    }
+    assert.ok(maxDrift < 1e-4, `all ${all.length} bones still after tuning to DEAD (max drift ${(maxDrift * 180 / Math.PI).toFixed(5)} deg)`);
+  });
+});
+
+test("PIVOT - poseEvery 0 -> N re-arms the arm-pose scheduler (audit: Infinity bricked it until reload)", () => {
+  withRandom(3, () => {
+    const model = fullBiped();
+    const rig = buildProceduralRig(model, {});
+    rig.setParams(LIVE);
+    for (let i = 0; i < 60 * 10; i++) rig.update(DT, false);
+    rig.setParams({ poseEvery: 0 });
+    for (let i = 0; i < 60 * 10; i++) rig.update(DT, false);     // off-branch parks armNext=Infinity
+    rig.setParams({ poseEvery: 4 });
+    let entered = false;
+    for (let i = 0; i < 60 * 120 && !entered; i++) {             // 2 sim-minutes is many 4s windows
+      rig.update(DT, false);
+      const m = rig.idleState().armMode;
+      if (m !== "hang" && m !== "release") entered = true;
+    }
+    assert.ok(entered, "an arm pose re-enters after re-enabling poseEvery");
+  });
+});

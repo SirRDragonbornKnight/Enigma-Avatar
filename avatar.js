@@ -402,7 +402,9 @@ function onModelLoaded(asset) {
       let src = null, dst = null;
       model.traverse((o) => { if (o.name === from) src = o; else if (o.name === to) dst = o; });
       if (!src || !dst) { console.warn(`[avatar] reparent: "${from}" → "${to}" not found — skipped`); continue; }
-      for (const c of [...src.children]) dst.attach(c);
+      let cyc = false; for (let p = dst; p; p = p.parent) if (p === src) { cyc = true; break; }   // dst inside src's subtree → attach would create a parent CYCLE → updateWorldMatrix recurses forever (audit)
+      if (cyc) { console.warn(`[avatar] reparent: "${to}" is a descendant of "${from}" — cycle refused`); continue; }
+      for (const c of [...src.children]) { if (c === dst) continue; dst.attach(c); }
       console.log(`[avatar] reparented children of ${from} → ${to} (parallel-skeleton surgery)`);
     }
     model.updateWorldMatrix(true, true);
@@ -700,7 +702,11 @@ function facialTune(p) {
 // ships still. idleTune edits it live (same shape as springTune); the seed comes from what the
 // model actually HAS, so a wolf, a robot and a statue start with different (or no) behavior.
 function idleTune(p) {
-  const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...numericOnly(p) };
+  const clean = numericOnly(p);
+  // the ONE non-numeric idle field: numericOnly coerces [] → 0 and drops filled arrays (audit) —
+  // carry a valid string array through so a tune can set/clear which appendages may fidget.
+  if (Array.isArray(p?.fidgetRegions)) clean.fidgetRegions = p.fidgetRegions.filter((r) => typeof r === "string");
+  const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...clean };
   if (proc) proc.setParams(prof.idle); saveProfileSoon(); return proc ? proc.params : prof.idle;
 }
 function idleCapsNow() {                              // what THIS model has, for its idle seed
@@ -1304,7 +1310,7 @@ const EnigmaAvatar = {
   load(url) { uiLoadModel(url, url); },                          // relayed — a devtools/global load must reach every window like any other
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
-  tune: (p) => { if (proc) proc.setParams(p); const prof = profileFor(curKey); prof.idle = { ...(prof.idle || {}), ...numericOnly(p) }; saveProfileSoon(); return proc ? proc.params : null; },   // idle feel, SAVED per model (each avatar its own)
+  tune: (p) => idleTune(p),   // idle feel, SAVED per model — idleTune sanitizes (numericOnly) BEFORE setParams: a stringly bus value ({breathe:"deep"}) NaN-poisoned core bone quats with no self-heal (audit 2026-06-11)
   state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, rotateMode, menu: ui.isOpen() }, idleProfile: profileFor(curKey).idle || null }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
@@ -1416,7 +1422,7 @@ function handleCommand(c) {
   else if (c.action === "tuneAttachment" && c.id) { const { action, reqId, ...o } = c; return uiTuneAttachment(c.id, o); }
   else if (c.action === "springTune") { const { action, reqId, ...p } = c; uiSpringTune(p); }   // live hair tuning (saved)
   else if (c.action === "facialTune") { const { action, reqId, ...p } = c; uiFacialTune(p); }
-  else if (c.action === "tune") { const { action, ...p } = c; EnigmaAvatar.tune(p); }   // procedural idle feel (drift/armSwing/sway/twist…)
+  else if (c.action === "tune") { const { action, reqId, ...p } = c; EnigmaAvatar.tune(p); }   // procedural idle feel (drift/armSwing/sway/twist…)
   else if (c.action === "showBones") return uiShowSkeleton(c.on ?? c.value ?? !bonesShown);   // skeleton overlay on/off (toggle resolved HERE so every window flips in lockstep)
   else if (c.action === "snap" || c.action === "screenshot") EnigmaAvatar.snap(c);       // capture avatar → PNG for inspection
   else if (c.action === "setDisplay" || c.action === "monitor") window.avatarIPC?.monitor?.(c.index ?? c.value ?? "next");   // bring her to a monitor (index, or "next"/"prev") — main owns the layout

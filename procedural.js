@@ -39,84 +39,59 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // down (true A-pose bind) are left untouched, so nothing that worked regresses.
   model.updateWorldMatrix(true, true);
   const _aw = new THREE.Vector3(), _cw = new THREE.Vector3(), _dir = new THREE.Vector3(), _tgt = new THREE.Vector3(), _pq = new THREE.Quaternion(), _wq = new THREE.Quaternion();
+  // BIND-NORMALIZATION FRAME (audit P1, 2026-06-11): every gate and target below is RIG-LOCAL,
+  // not world. The user's saved per-model rotation is applied BEFORE this runs (applyRotation
+  // precedes buildProceduralRig), so world-absolute math read a user-pitched upright model as
+  // "slouch-bound" on the next load and folded her against her OWN rotation. In rig space the
+  // saved rotation cancels. (FSIGN's toe probe below stays world-absolute on purpose — it wants
+  // the DISPLAYED orientation.) Unparented models (tests) get the identity frame: world == rig.
+  const _rigQ = new THREE.Quaternion(), _rigQI = new THREE.Quaternion();
+  if (model.parent) model.parent.getWorldQuaternion(_rigQ);
+  _rigQI.copy(_rigQ).invert();
+  const _dl = new THREE.Vector3();
+  const rigDir = (v) => _dl.copy(v).applyQuaternion(_rigQI);                       // world dir → rig dir (shared scratch)
+  const worldRot = (wqL) => _rigQ.clone().multiply(wqL).multiply(_rigQI);          // rig-space rotation → world rotation
   // Every WORLD rotation the bind normalization applies, per bone — so avatar.js can counter-rotate
   // gravity-authored DANGLY chains (hair/tail) back to their authored world hang. Rigid accessories
   // (ears, hats) correctly inherit the rotation; dangly rests must NOT (they're authored vs gravity).
   const restAdjust = {};
   const noteAdjust = (name, wq) => { restAdjust[name] = restAdjust[name] ? wq.clone().multiply(restAdjust[name]) : wq.clone(); };
-  const aimArm = (armRole, childRole) => {
-    const a = bones[armRole], c = bones[childRole]; if (!a || !c || !a.parent) return;
-    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
-    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
-    _dir.normalize();
-    if (_dir.y < -0.7) return;                          // already hanging steeply down → leave it (wide ~30° arms like 51dc still get normalized)
-    const outSign = _dir.x >= 0 ? 1 : -1;
-    _tgt.set(outSign * 0.34, -0.94, 0).normalize();     // ~70° below horizontal, slightly out
-    _wq.setFromUnitVectors(_dir, _tgt);                 // world rotation that aims the arm down
-    a.parent.getWorldQuaternion(_pq);                   // express it in the bone's LOCAL space: inv(P) * wq * P
-    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
-    rest[armRole] = adjust.multiply(rest[armRole]);
-    a.quaternion.copy(rest[armRole]);                   // apply immediately so frame 0 isn't a T-pose
-    noteAdjust(a.name, _wq);
-  };
-  aimArm("left_arm", "left_forearm");
-  aimArm("right_arm", "right_forearm");
-  // …and the FOREARMS. A T-pose needs only the upper-arm aim (children inherit it), but a rig that
-  // binds with a BENT ELBOW (Mal0's SCP-1471 "waving" pose: forearm flexed ~97° in the GLB) keeps that
-  // bend baked into rest[] — her hand then "rests" at chest height and every rest-relative idle/hang
-  // holds the arm half-raised. Aim the forearm down the same way; an already-hanging forearm
-  // (dir.y < −0.7, incl. any T/A-pose after the upper-arm aim) is skipped, so straight rigs are untouched.
-  model.updateWorldMatrix(true, true);                  // the upper-arm aims moved the forearms — refresh before measuring them
-  aimArm("left_forearm", "left_hand");
-  aimArm("right_forearm", "right_hand");
 
-  // Natural LEG rest — the SAME disease, other limb (Mal0 bound waving; anime_catgirl BINDS in a
-  // ~76° SQUAT: femur horizontal, knees folded — Sketchfab bakes whatever pose the rip was captured
-  // in). Every rest-relative layer (stance, gestures, IK anchors, axis/FSIGN derivation, model
-  // height) was building on that crouch. Stand the leg up at build: thigh straight down, shin
-  // straight down, foot leveled — gated on the BIND knee being clearly folded (<150°), so normal
-  // standing/A-pose rigs are never touched. (Runs BEFORE the flex-axis/FSIGN derivation on purpose.)
-  const aimTo = (role, childRole, tgtDir) => {          // aimArm's core with a caller-chosen target, no skip heuristic
-    const a = bones[role], c = bones[childRole]; if (!a || !c || !a.parent) return;
-    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
-    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
-    _dir.normalize();
-    _wq.setFromUnitVectors(_dir, _tgt.copy(tgtDir).normalize());
-    a.parent.getWorldQuaternion(_pq);
-    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
-    rest[role] = adjust.multiply(rest[role]);
-    a.quaternion.copy(rest[role]);
-    noteAdjust(a.name, _wq);
-  };
-  // TRUNK rest — a squat-bound rig CURLS forward too (her hips→head line leaned well off
-  // vertical, head down, hair over her face). Two passes, both gated so upright binds are
-  // never touched: (1) level the whole trunk rigidly at the HIPS (the legs are re-aimed just
-  // below, so this can't tilt them); (2) any remaining forward curl is unwound through
-  // chest→neck→head, each taking a fraction of what's left (a distributed un-slouch reads
-  // natural; dumping it all on one joint reads broken).
+  // TRUNK lean (rig space) — also the LYING-BIND gate for every aim below: a lying/crawling bind
+  // is a STYLE, not a defect (audit: aiming limbs "down" through a horizontal body folds them 90°
+  // off the body axis). No trunk info → assume upright (simple rigs, statues).
   const _headRef = bones.head || bones.neck || bones.chest;
-  const _trunkLean = () => {                            // current hips→head direction (unit), or null
+  const _trunkLean = () => {                            // current hips→head direction in RIG space, or null
     const lo = bones.hips || bones.spine; if (!lo || !_headRef || lo === _headRef) return null;
     lo.getWorldPosition(_aw); _headRef.getWorldPosition(_cw);
     _dir.copy(_cw).sub(_aw);
-    return _dir.lengthSq() > 1e-8 ? _dir.normalize() : null;
+    return _dir.lengthSq() > 1e-8 ? rigDir(_dir.normalize()).clone() : null;
   };
-  const _up = new THREE.Vector3(0, 1, 0);
-  const _levelAt = (b, restKey, dirNow, frac) => {      // rotate `b`'s rest by frac of (dirNow → up), in ITS parent space
-    _wq.setFromUnitVectors(dirNow, _up);
-    if (frac < 1) _wq.slerp(new THREE.Quaternion(), 1 - frac);
+  const _lean0 = _trunkLean();
+  const _bindUpright = !_lean0 || _lean0.y > 0.5;
+
+  // TRUNK rest FIRST (audit: arms were aimed before the trunk leveled — the leveling then un-aimed
+  // them by the slouch angle, ~15° forward on the catgirl; trunk → arms → legs is the only order
+  // where each pass builds on a settled parent). Hips take a PARTIAL fraction so the leaf-ward
+  // unwind below actually executes (frac 1 made the position line vertical → the loop was dead
+  // code and the head-down orientation curl shipped unfixed).
+  const _upR = new THREE.Vector3(0, 1, 0);              // rig-space up
+  const _levelAt = (b, restKey, dirRigNow, frac) => {   // rotate `b`'s rest by frac of (dirRigNow → rig-up)
+    const wqL = new THREE.Quaternion().setFromUnitVectors(dirRigNow, _upR);
+    if (frac < 1) wqL.slerp(new THREE.Quaternion(), 1 - frac);
+    const wq = worldRot(wqL);
     b.parent.getWorldQuaternion(_pq);
-    const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+    const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
     rest[restKey] = adjust.multiply(rest[restKey]);
     b.quaternion.copy(rest[restKey]);
-    noteAdjust(b.name, _wq);
+    noteAdjust(b.name, wq);
     model.updateWorldMatrix(true, true);
   };
-  let _lean = _trunkLean();
+  let _lean = _lean0;
   if (_lean && bones.hips?.parent && _lean.y > 0.3 && _lean.y < 0.978) {   // upright-ish but >~12° off vertical → a baked slouch, not a style
     const was = Math.acos(Math.min(1, _lean.y)) * 180 / Math.PI;
-    _levelAt(bones.hips, "hips", _lean, 1);
-    for (const [role, frac] of [["chest", 0.5], ["neck", 0.5], ["head", 1]]) {   // unwind the REMAINING internal curl leaf-ward
+    _levelAt(bones.hips, "hips", _lean, 0.65);
+    for (const [role, frac] of [["chest", 0.5], ["neck", 0.5], ["head", 1]]) {   // unwind the REMAINING curl leaf-ward
       const b = bones[role]; if (!b || !b.parent || b === bones.hips) continue;
       _lean = _trunkLean();
       if (!_lean || _lean.y >= 0.995) break;
@@ -125,35 +100,78 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     console.log(`[avatar] trunk rest leveled: hips→head was ${was.toFixed(0)}° off vertical (slouch-bound rig)`);
   }
 
-  const _down = new THREE.Vector3(0, -1, 0);
-  for (const side of ["left", "right"]) {
+  // Natural ARM rest — after the trunk; skipped entirely on lying binds.
+  const aimArm = (armRole, childRole) => {
+    const a = bones[armRole], c = bones[childRole]; if (!a || !c || !a.parent) return;
+    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
+    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
+    const dR = rigDir(_dir.normalize());                // rig-space arm direction
+    if (dR.y < -0.7) return;                            // already hanging steeply down → leave it (wide ~30° arms like 51dc still get normalized)
+    const outSign = dR.x >= 0 ? 1 : -1;
+    _tgt.set(outSign * 0.34, -0.94, 0).normalize();     // ~70° below horizontal, slightly out (rig space)
+    const wq = worldRot(_wq.setFromUnitVectors(dR, _tgt));
+    a.parent.getWorldQuaternion(_pq);                   // express it in the bone's LOCAL space: inv(P) * wq * P
+    const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
+    rest[armRole] = adjust.multiply(rest[armRole]);
+    a.quaternion.copy(rest[armRole]);                   // apply immediately so frame 0 isn't a T-pose
+    // NO noteAdjust here (audit 2026-06-11): arm aims fire on MOST T-pose rigs — counter-rotating
+    // sprung sleeve/ribbon chains against them regressed previously-good models AND mixed arm+trunk
+    // ancestry breaks the composition order. Gravity preservation is for TRUNK/HEAD/LEG normalization
+    // (the squat-bind case) only; under-arm chains keep inheriting the arm drop as they always did.
+  };
+  if (_bindUpright) {
+    aimArm("left_arm", "left_forearm");
+    aimArm("right_arm", "right_forearm");
+    // …and the FOREARMS — a rig that binds with a BENT ELBOW (Mal0's "waving" pose: forearm flexed
+    // ~97° in the GLB) keeps that bend baked into rest[] otherwise; already-hanging forearms skip.
+    model.updateWorldMatrix(true, true);                // the upper-arm aims moved the forearms — refresh before measuring them
+    aimArm("left_forearm", "left_hand");
+    aimArm("right_forearm", "right_hand");
+  }
+
+  // Natural LEG rest — the SAME disease, other limb (anime_catgirl BINDS in a ~76° SQUAT: femur
+  // horizontal, knees folded). Thigh aimed straight down (rig space), shin straight, foot leveled —
+  // gated on the BIND knee being clearly folded (<150°) AND the bind being upright (lying = style).
+  const aimTo = (role, childRole, tgtRig) => {          // aimArm's core with a caller-chosen RIG-space target, no skip heuristic
+    const a = bones[role], c = bones[childRole]; if (!a || !c || !a.parent) return;
+    a.getWorldPosition(_aw); c.getWorldPosition(_cw);
+    _dir.copy(_cw).sub(_aw); if (_dir.lengthSq() < 1e-8) return;
+    const wq = worldRot(_wq.setFromUnitVectors(rigDir(_dir.normalize()), _tgt.copy(tgtRig).normalize()));
+    a.parent.getWorldQuaternion(_pq);
+    const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
+    rest[role] = adjust.multiply(rest[role]);
+    a.quaternion.copy(rest[role]);
+    noteAdjust(a.name, wq);
+  };
+  const _downR = new THREE.Vector3(0, -1, 0);           // rig-space down
+  if (_bindUpright) for (const side of ["left", "right"]) {
     const th = bones[side + "_leg"], sh = bones[side + "_shin"], ft = bones[side + "_foot"];
     if (!th || !sh || !ft) continue;
     const tp = new THREE.Vector3(), sp = new THREE.Vector3(), fp = new THREE.Vector3();
     th.getWorldPosition(tp); sh.getWorldPosition(sp); ft.getWorldPosition(fp);
     const v1 = tp.sub(sp), v2 = fp.sub(sp);
     if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) continue;
-    const kneeDeg = v1.angleTo(v2) * 180 / Math.PI;     // 180 = straight
+    const kneeDeg = v1.angleTo(v2) * 180 / Math.PI;     // 180 = straight (angle is frame-invariant)
     if (kneeDeg > 150) continue;                        // standing bind → never touch
-    aimTo(side + "_leg", side + "_shin", _down);
+    aimTo(side + "_leg", side + "_shin", _downR);
     model.updateWorldMatrix(true, true);
-    aimTo(side + "_shin", side + "_foot", _down);
+    aimTo(side + "_shin", side + "_foot", _downR);
     model.updateWorldMatrix(true, true);
     const toe = ft.children && ft.children[0];          // level the foot (its bind pitch belonged to the squat)
     if (toe) {
       ft.getWorldPosition(_aw); toe.getWorldPosition(_cw);
       _dir.copy(_cw).sub(_aw);
       if (_dir.lengthSq() > 1e-8) {
-        _dir.normalize();
-        if (Math.abs(_dir.y) > 0.45) {                  // clearly pitched → flatten, keeping its own heading
-          _tgt.copy(_dir); _tgt.y = 0;
+        const fR = rigDir(_dir.normalize());            // rig-space toe direction
+        if (Math.abs(fR.y) > 0.45) {                    // clearly pitched → flatten in rig space, keeping its own heading
+          _tgt.copy(fR); _tgt.y = 0;
           if (_tgt.lengthSq() < 1e-6) _tgt.set(0, 0, 1);
-          _wq.setFromUnitVectors(_dir, _tgt.normalize());
+          const wq = worldRot(_wq.setFromUnitVectors(fR, _tgt.normalize()));
           ft.parent.getWorldQuaternion(_pq);
-          const adjust = _pq.clone().invert().multiply(_wq).multiply(_pq);
+          const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
           rest[side + "_foot"] = adjust.multiply(rest[side + "_foot"]);
           ft.quaternion.copy(rest[side + "_foot"]);
-          noteAdjust(ft.name, _wq);
+          noteAdjust(ft.name, wq);
           model.updateWorldMatrix(true, true);
         }
       }
@@ -457,7 +475,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (!(params.fidgetEvery > 0) || !extras.impulse) return;   // per-model: a profile with no fidgets never kicks
     fidgetT += dt;
     if (fidgetT < fidgetNext) return;
-    fidgetT = 0; fidgetNext = jitter(params.fidgetEvery);
+    fidgetT = 0; fidgetNext = jitter(Math.max(2, params.fidgetEvery));   // floor 2s: a 0.1 setting would impulse-kick appendages ~10×/s (audit)
     const side = Math.random() < 0.5 ? -1 : 1;
     let tries = [                                      // safe appendages only (never NSFW regions); first one this model HAS wins
       ["tail", { x: side * (0.9 + Math.random() * 0.7), y: 0.25, z: 0 }, 0.45],
@@ -662,8 +680,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // WEIGHT SHIFT — a new randomized contrapposto every shiftEvery±50% s (restless → more often).
     // Targets are DC offsets the damped springs CHASE (velocity preserved → re-shift mid-shift can't pop).
     wT += dt;
+    if (!(params.shiftEvery > 0) && wPose) wPose = null;   // shifts tuned OFF mid-stance → release the held contrapposto (audit: she froze at ±7° hip roll forever); the springs ease back to neutral pop-free
     if (params.shiftEvery > 0 && wT >= wNext) {        // 0 = this model never shifts weight (wPose stays the neutral stance)
-      wT = 0; wNext = jitter(params.shiftEvery) / Math.max(0.6, energy);
+      wT = 0; wNext = jitter(Math.max(2, params.shiftEvery)) / Math.max(0.6, energy);   // floor 2s: the slider's bottom notch (0.1) would re-target ~25×/s = perpetual squirm (audit)
       wSide = wSide === 0 ? (Math.random() < 0.5 ? -1 : 1) : (Math.random() < 0.25 ? 0 : -wSide);   // mostly alternate, sometimes square
       const m = 0.75 + Math.random() * 0.55, s = wSide;                                             // never the exact same stance twice
       wPose = s === 0
@@ -716,6 +735,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // pop-free by construction — and the held target itself WANDERS a little (moving hold).
     armT += dt;
     if (params.poseEvery > 0) {
+      if (!isFinite(armNext)) { armT = 0; armNext = jitter(params.poseEvery); }   // re-enable after a 0: the Infinity parked by the off-branch never re-schedules by itself (audit: poses were permanently dead until reload)
       if (armT >= armNext) {
         armT = 0;
         if (armMode === "hang") {
