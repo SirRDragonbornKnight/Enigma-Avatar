@@ -402,3 +402,23 @@ test("Settings panel is draggable by its header", () => {
     assert.notStrictEqual(panel.style.top, "400px", "header drag moved the panel vertically");
   } finally { dom.cleanup(); }
 });
+
+test("Bones section: filter narrows the list and the label input fires setBoneLabel", () => {
+  const dom = installDOM();
+  try {
+    const m = makeApi({ bones: () => [
+      { name: "HairBoneL006_0524", label: null, role: null },
+      { name: "DEF-spine006_016", label: "head", role: "head" },
+      { name: "Shibahu_Tail1_0199", label: null, role: null },
+    ] });
+    m.api.setBoneLabel = (n, l) => m.calls.push(["setBoneLabel", n, l]);
+    createUI(m.api).showSettings();
+    const filt = [...document.querySelectorAll("input")].find((i) => /filter bones/i.test(i.placeholder || ""));
+    assert.ok(filt, "bone filter input exists");
+    filt.value = "tail"; fire(filt, "input");
+    const rows = [...document.querySelectorAll("input")].filter((i) => /name it/i.test(i.placeholder || ""));
+    assert.equal(rows.length, 1, "filter narrows to the tail bone");
+    rows[0].value = "tail base"; fire(rows[0], "change");
+    assert.ok(m.calls.some((c) => c[0] === "setBoneLabel" && c[1] === "Shibahu_Tail1_0199" && c[2] === "tail base"), "-> setBoneLabel(raw name, label)");
+  } finally { dom.cleanup(); }
+});

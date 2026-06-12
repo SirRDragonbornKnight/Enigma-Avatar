@@ -886,6 +886,15 @@ function setMeshLabel(i, label) {
   if (s) p.meshLabels[i] = s; else delete p.meshLabels[i];
   saveProfileSoon(); return s;
 }
+// Per-BONE friendly LABEL (rig names are soup: "HairBoneL006_0524") — the user names a bone once
+// ("ahoge", "left ear tip") and it shows wherever bones surface (Settings, query bones, repair),
+// so they can point at parts of the rig in plain words. Stored per avatar, keyed by BONE NAME.
+function setBoneLabel(name, label) {
+  const p = profileFor(curKey); p.boneLabels = p.boneLabels || {};
+  const s = String(label || "").trim();
+  if (s) p.boneLabels[name] = s; else delete p.boneLabels[name];
+  saveProfileSoon(); return s;
+}
 
 // --- rotate mode: DRAG the body to rotate it (↔ horizontal = yaw, ↕ vertical = pitch) instead of
 // moving the window. Roll (Z) is set via the numeric field. Settings stays usable while you pose it.
@@ -1344,6 +1353,13 @@ const EnigmaAvatar = {
   meshes: () => { const lab = profileFor(curKey).meshLabels || {}; return allMeshesInfo().map(({ mesh, name }, index) => ({ index, name: name || null, label: lab[index] || null, visible: mesh.visible })); },   // sub-objects BY INDEX (+ user label)
   setMeshVisible: (i, on) => setMeshVisible(i, on),                      // show/hide a mesh by index; saved per avatar
   setMeshLabel: (i, label) => setMeshLabel(i, label),                    // give a part a legible name (saved per avatar)
+  bones: () => {                                                          // every bone: raw name + user label + resolved role (for Settings naming / AI addressing)
+    const lab = profileFor(curKey).boneLabels || {};
+    const roleOf = {}; for (const r in roleBones) if (roleBones[r]) roleOf[roleBones[r].name] = r;
+    const out = []; model?.traverse((o) => { if (o.isBone) out.push({ name: o.name, label: lab[o.name] || null, role: roleOf[o.name] || null }); });
+    return out;
+  },
+  setBoneLabel: (n, l) => setBoneLabel(n, l),                            // name a bone (saved per avatar)
   rotate: (r) => (r && typeof r === "object" ? setRot(r) : setYaw(r)),   // {x,y,z}° (all axes) or a bare yaw number; saved
   setRotAxis: (axis, deg) => setRotAxis(axis, deg), rotation: () => getRot(),   // per-axis turn (pitch X / yaw Y / roll Z)
   springRegions: () => springRegions(),                                  // [{region,count,weight,nsfw}] — soft-body areas present
@@ -1359,6 +1375,7 @@ function answerQuery(what) {
   if (what === "materials") return EnigmaAvatar.materials();                  // [{index,name}] — the recolor handle
   if (what === "meshes") return EnigmaAvatar.meshes();                        // [{index,name,visible}] — show/hide handle
   if (what === "regions") return EnigmaAvatar.springRegions();               // [{region,count,weight,nsfw}] — soft-body jiggle areas
+  if (what === "bones") return EnigmaAvatar.bones();                         // [{name,label,role}] — every bone + the user's friendly label
   if (what === "morphs") return EnigmaAvatar.morphs();                        // [{index,name,value}] — the model's own shape keys
   if (what === "rotation") {                                                  // LIVE rig rotation (a lying hold / motion differs from the saved profile — the driver must see the truth)
     const R = 180 / Math.PI;
@@ -1499,6 +1516,7 @@ const UI_CMDS = {
   resetColors:      { scope: "all", bound: true, fn: () => resetColors() },
   setMeshVisible:   { scope: "all", bound: true, fn: (i, on) => setMeshVisible(i, on) },
   setMeshLabel:     { scope: "all", bound: true, fn: (i, l) => setMeshLabel(i, l) },
+  setBoneLabel:     { scope: "all", bound: true, fn: (n, l) => setBoneLabel(n, l) },
   setMorphValue:    { scope: "all", bound: true, fn: (i, v) => setMorphValue(i, v) },
   setRot:           { scope: "all", bound: true, fn: (r) => setRot(r) },
   setRotAxis:       { scope: "all", bound: true, fn: (a, d) => setRotAxis(a, d) },
@@ -1602,6 +1620,7 @@ ui = createUI({
   materials: () => EnigmaAvatar.materials(),       // parts BY INDEX (+name/mesh hints, +current hex) for the Settings color list
   meshes: () => EnigmaAvatar.meshes(), setMeshVisible: uiSetMeshVisible,   // sub-objects (show/hide) for Settings
   setMeshLabel: relayed("setMeshLabel"),                                    // rename a part (legible Settings list)
+  bones: () => EnigmaAvatar.bones(), setBoneLabel: relayed("setBoneLabel"), // name bones (Settings → Bones)
   setRotAxis: uiSetRotAxis, setRot: uiSetRot, getRot: () => getRot(),      // 3-axis rotation for Settings
   setYaw: (deg) => uiSetRotAxis("y", deg), getYaw: () => getRot().y,       // back-compat (Y axis only)
   getRotateMode: () => rotateMode, setRotateMode: uiSetRotateMode,         // drag-to-spin (AI/bus only since 2026-06-11 — the user path is Alt+drag)

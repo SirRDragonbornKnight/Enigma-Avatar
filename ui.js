@@ -156,7 +156,7 @@ export function createUI(api) {
     r.oninput = (e) => { e.stopPropagation(); const v = parseFloat(r.value); if (!Number.isNaN(v)) opts.onChange(v); };
     return r;
   };
-  let _colorsOpen = false, _partsOpen = true, _advOpen = false, _morphsOpen = false, _repairOpen = false;   // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
+  let _colorsOpen = false, _partsOpen = true, _advOpen = false, _morphsOpen = false, _repairOpen = false, _bonesOpen = false;   // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
   // Friendly names for the jiggle regions the spring reports (trust-no-names: these label a
   // structural region tag, not a bone name). Cloth is split into its own Settings box.
   const REGION_LABEL = { breast: "Breast", butt: "Butt", genital: "Genital", belly: "Belly / tummy", hair: "Hair", tail: "Tail", ear: "Ears", wing: "Wings", cloth: "Cloth / fabric", accessory: "Accessory", jiggle: "Jiggle bones", other: "Other dangly" };
@@ -394,6 +394,50 @@ export function createUI(api) {
         nm.onchange = (e) => { e.stopPropagation(); if (api.setMeshLabel) api.setMeshLabel(p.index, nm.value); };
         row.append(cb, idx, nm); box.appendChild(row);
       }
+    }
+
+    // Bones — NAME the rig (saved per avatar). Rig names are soup ("HairBoneL006_0524"); a label
+    // here shows wherever bones surface (query bones, repair) and lets the user point at a bone
+    // in plain words ("the ahoge"). Big rigs: filter + capped list (a Rigify export has 593).
+    const bones = api.bones ? api.bones() : [];
+    if (bones.length) {
+      body.appendChild(divider());
+      const open0 = _bonesOpen === true;                 // default CLOSED — huge lists; deliberate section
+      const ch = document.createElement("div"); ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;";
+      const caret = document.createElement("span"); caret.textContent = open0 ? "▾" : "▸"; caret.style.fontSize = "9px";
+      const lbl = document.createElement("span"); lbl.textContent = `Bones — name them (${bones.length})`;
+      ch.append(caret, lbl); body.appendChild(ch);
+      const bbox = document.createElement("div"); bbox.style.display = open0 ? "block" : "none"; body.appendChild(bbox);
+      ch.onclick = (e) => { e.stopPropagation(); _bonesOpen = bbox.style.display === "none"; bbox.style.display = _bonesOpen ? "block" : "none"; caret.textContent = _bonesOpen ? "▾" : "▸"; };
+      ch.onmouseenter = () => { ch.style.opacity = "1"; }; ch.onmouseleave = () => { ch.style.opacity = ".7"; };
+      const filt = document.createElement("input"); filt.type = "text"; filt.placeholder = "filter bones (name / label / role)…"; filt.spellcheck = false;
+      filt.style.cssText = "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
+      filt.onkeydown = (e) => e.stopPropagation();       // typing must not trigger global hotkeys
+      const list = document.createElement("div");
+      const CAP = 30;
+      const render = () => {
+        list.innerHTML = "";
+        const q = filt.value.trim().toLowerCase();
+        const hits = bones.filter((b) => !q || b.name.toLowerCase().includes(q) || (b.label || "").toLowerCase().includes(q) || (b.role || "").toLowerCase().includes(q));
+        for (const b of hits.slice(0, CAP)) {
+          const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:7px;padding:3px 0;";
+          const nm = document.createElement("input"); nm.type = "text"; nm.value = b.label || ""; nm.placeholder = "name it…"; nm.spellcheck = false;
+          nm.title = "your name for this bone (raw: " + b.name + ")";
+          nm.style.cssText = "width:108px;flex:0 0 auto;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
+          nm.onkeydown = (e) => e.stopPropagation();
+          nm.onchange = (e) => { e.stopPropagation(); if (api.setBoneLabel) api.setBoneLabel(b.name, nm.value); b.label = nm.value.trim() || null; };
+          const raw = document.createElement("span"); raw.textContent = b.name + (b.role ? "  ·  " + b.role : "");
+          raw.style.cssText = "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+          raw.title = b.name;
+          row.append(nm, raw); list.appendChild(row);
+        }
+        if (hits.length > CAP) {
+          const more = document.createElement("div"); more.textContent = `…${hits.length - CAP} more — type to filter`; more.style.cssText = "opacity:.45;font-size:11px;padding:2px 0;";
+          list.appendChild(more);
+        }
+      };
+      filt.oninput = (e) => { e.stopPropagation(); render(); };
+      bbox.append(filt, list); render();
     }
 
     // Shapes / morphs — the model's OWN shape keys (facial expressions, body toggles like "show X").
