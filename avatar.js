@@ -394,15 +394,22 @@ function onModelLoaded(asset) {
   // and ear chains ride a CONTROL head bone while the face deforms on the DEF chain ("the hair is
   // following [the cursor] like her head should", 2026-06-11). Move the stranded children onto the
   // bone that actually deforms (attach() preserves world transforms); roles then target that chain.
+  // Surgery outcomes are forwarded to the MAIN log (→ %TEMP%\enigma_avatar.log) — a renderer
+  // console.warn reaches no file, so a skipped move (typo'd override name, model re-export
+  // changing names) was previously INVISIBLE (audit #6). The summary line below doubles as
+  // end-to-end proof the override map matched the live scene graph.
+  const _sLog = (m) => { console.warn(m); try { window.avatarIPC?.log?.(m); } catch {} };
+  let _sOk = 0, _sSkip = 0;
   const _surgery = rigOverrides[curKey]?.reparentChildrenOf;
   if (_surgery) {
     for (const [from, to] of Object.entries(_surgery)) {
       let src = null, dst = null;
       model.traverse((o) => { if (o.name === from) src = o; else if (o.name === to) dst = o; });
-      if (!src || !dst) { console.warn(`[avatar] reparent: "${from}" → "${to}" not found — skipped`); continue; }
+      if (!src || !dst) { _sLog(`[avatar] reparent: "${from}" → "${to}" not found — skipped`); _sSkip++; continue; }
       let cyc = false; for (let p = dst; p; p = p.parent) if (p === src) { cyc = true; break; }   // dst inside src's subtree → attach would create a parent CYCLE → updateWorldMatrix recurses forever (audit)
-      if (cyc) { console.warn(`[avatar] reparent: "${to}" is a descendant of "${from}" — cycle refused`); continue; }
+      if (cyc) { _sLog(`[avatar] reparent: "${to}" is a descendant of "${from}" — cycle refused`); _sSkip++; continue; }
       for (const c of [...src.children]) { if (c === dst) continue; dst.attach(c); }
+      _sOk++;
       console.log(`[avatar] reparented children of ${from} → ${to} (parallel-skeleton surgery)`);
     }
     model.updateWorldMatrix(true, true);
@@ -419,14 +426,16 @@ function onModelLoaded(asset) {
     for (const [from, to] of Object.entries(_surgery2)) {
       let src = null, dst = null;
       model.traverse((o) => { if (o.name === from) src = o; else if (o.name === to) dst = o; });
-      if (!src || !dst) { console.warn(`[avatar] reparent node: "${from}" → "${to}" not found — skipped`); continue; }
+      if (!src || !dst) { _sLog(`[avatar] reparent node: "${from}" → "${to}" not found — skipped`); _sSkip++; continue; }
       let cyc = false; for (let p = dst; p; p = p.parent) if (p === src) { cyc = true; break; }   // dst inside src's subtree → parent cycle → refuse
-      if (cyc) { console.warn(`[avatar] reparent node: "${to}" is inside "${from}" — cycle refused`); continue; }
+      if (cyc) { _sLog(`[avatar] reparent node: "${to}" is inside "${from}" — cycle refused`); _sSkip++; continue; }
       dst.attach(src);
+      _sOk++;
       console.log(`[avatar] reparented ${from} → under ${to} (parallel-limb surgery)`);
     }
     model.updateWorldMatrix(true, true);
   }
+  if (_sOk || _sSkip) { const m = `[avatar] surgery: ${_sOk} move(s) applied, ${_sSkip} skipped (${curKey})`; console.log(m); try { window.avatarIPC?.log?.(m); } catch {} }
   const resolved = resolveRig(model, vrm, { override: rigOverrides[curKey] });
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute

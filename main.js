@@ -374,6 +374,10 @@ function init() {
   // Ignored while a DRAG owns the position — a glide step racing the 8ms cursor-follow is a visible blip.
   ipcMain.on("avatar:setGlobalPos", (_e, p) => { if (_drag) return; if (p && isFinite(p.gx) && isFinite(p.gy)) setGlobalPos(p.gx, p.gy); });
   // Grab lifecycle (any window) — main then follows the OS cursor across every monitor.
+  // A dragStart while a drag is live OVERWRITES it (latest grab wins) — deliberate (audit #6):
+  // after a capture-loss drop the old window's `held` can linger until its next pointerup, and
+  // gating new grabs on that stale state would make her ungrabbable. The replaced drag's window
+  // can still end the new one only via a real pointerup ("up" is honored from any window).
   ipcMain.on("avatar:dragStart", (e, p) => { if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY); });
   // Heartbeat from the GRAB window's pointermove stream — proof its capture is still alive. Feeds
   // the dead-man watchdog in the follow timer (see startDrag).

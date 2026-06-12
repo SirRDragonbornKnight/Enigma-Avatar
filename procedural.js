@@ -164,11 +164,16 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     const kneeW = v1.normalize().add(v2.normalize()).multiplyScalar(-1);                 // kneecap dir (world); |·|≥0.5 for any knee <150°
     const kneeL = kneeW.normalize().clone().applyQuaternion(th.getWorldQuaternion(new THREE.Quaternion()).invert());   // → thigh-local, so it survives the aims
     const toe = ft.children && ft.children[0];
-    let faceR = null;                                   // the bind's toe heading — rig-space, horizontal
+    let faceR = null, faceY = 0;                        // the bind's toe heading (rig-space, horizontal) + its modest bind pitch
     if (toe) {
       ft.getWorldPosition(_aw); toe.getWorldPosition(_cw);
-      const f = rigDir(_dir.copy(_cw).sub(_aw)).clone(); f.y = 0;
-      if (f.lengthSq() > 1e-6) faceR = f.normalize();
+      const f = rigDir(_dir.copy(_cw).sub(_aw)).clone();
+      if (f.lengthSq() > 1e-8) {
+        f.normalize();
+        if (Math.abs(f.y) <= 0.45) faceY = f.y;         // a MODEST bind pitch is the foot's own design (heels) — keep it; an extreme one belongs to the squat → level (audit #6: the old 27° rule, preserved through the heading fix)
+        f.y = 0;
+        if (f.lengthSq() > 1e-6) faceR = f.normalize();
+      }
     }
     aimTo(side + "_leg", side + "_shin", _downR);
     model.updateWorldMatrix(true, true);
@@ -201,6 +206,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         _tgt.copy(faceR || fR); _tgt.y = 0;             // target: the bind heading; fallback = its current heading flattened
         if (_tgt.lengthSq() < 1e-6) _tgt.set(0, 0, 1);
         _tgt.normalize();
+        if (faceR && faceY) { _tgt.multiplyScalar(Math.sqrt(1 - faceY * faceY)); _tgt.y = faceY; }   // …re-tilted by the foot's own modest bind pitch (heel-safe; stays unit length)
         if (fR.angleTo(_tgt) > 0.10) {                  // pitched or rolled off the bind heading by >~6° → re-aim
           const wq = worldRot(_wq.setFromUnitVectors(fR, _tgt));
           ft.parent.getWorldQuaternion(_pq);
