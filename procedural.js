@@ -144,6 +144,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     noteAdjust(a.name, wq);
   };
   const _downR = new THREE.Vector3(0, -1, 0);           // rig-space down
+  const _stance = {};                                   // per-side leg-normalization refs (kneecap in thigh-local + bind toe heading) → the stance() diagnostic
   if (_bindUpright) for (const side of ["left", "right"]) {
     const th = bones[side + "_leg"], sh = bones[side + "_shin"], ft = bones[side + "_foot"];
     if (!th || !sh || !ft) continue;
@@ -153,20 +154,55 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) continue;
     const kneeDeg = v1.angleTo(v2) * 180 / Math.PI;     // 180 = straight (angle is frame-invariant)
     if (kneeDeg > 150) continue;                        // standing bind → never touch
+    // BIND-POSE references, captured BEFORE any aim (the authored squat carries the intent): where
+    // the KNEECAP faces (the fold opens away from it — well-defined while the knee is folded) and
+    // where the TOES point (a squatter's feet stay planted facing forward). The straight-down aim
+    // below is a MINIMAL rotation — it parks the leg's twist about the vertical wherever the fold
+    // plane happened to be, which is "the bone issue": kneecaps rolled inward (knock-knee read)
+    // and the feet inheriting that rolled heading (pigeon-toes). So: stand the leg up, then TWIST
+    // it so the kneecap faces the bind's own toe heading, and re-aim the toes to the same heading.
+    const kneeW = v1.normalize().add(v2.normalize()).multiplyScalar(-1);                 // kneecap dir (world); |·|≥0.5 for any knee <150°
+    const kneeL = kneeW.normalize().clone().applyQuaternion(th.getWorldQuaternion(new THREE.Quaternion()).invert());   // → thigh-local, so it survives the aims
+    const toe = ft.children && ft.children[0];
+    let faceR = null;                                   // the bind's toe heading — rig-space, horizontal
+    if (toe) {
+      ft.getWorldPosition(_aw); toe.getWorldPosition(_cw);
+      const f = rigDir(_dir.copy(_cw).sub(_aw)).clone(); f.y = 0;
+      if (f.lengthSq() > 1e-6) faceR = f.normalize();
+    }
     aimTo(side + "_leg", side + "_shin", _downR);
     model.updateWorldMatrix(true, true);
+    let twistDeg = 0;
+    if (faceR) {                                        // TWIST the leg about rig-up: kneecap → the bind's toe heading
+      const kNow = rigDir(kneeL.clone().applyQuaternion(th.getWorldQuaternion(_pq))).clone(); kNow.y = 0;   // clone — kneeL stays the pristine thigh-local reference (stance() re-derives from it)
+      if (kNow.lengthSq() > 1e-4) {
+        kNow.normalize();
+        const ang = Math.atan2(kNow.clone().cross(faceR).y, kNow.dot(faceR));   // signed, about rig-up
+        if (Math.abs(ang) > 0.06) {                     // >~3.5° of roll — worth correcting
+          const wq = worldRot(_wq.setFromAxisAngle(_upR, ang));
+          th.parent.getWorldQuaternion(_pq);
+          const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
+          rest[side + "_leg"] = adjust.multiply(rest[side + "_leg"]);
+          th.quaternion.copy(rest[side + "_leg"]);
+          noteAdjust(th.name, wq);
+          model.updateWorldMatrix(true, true);
+          twistDeg = +(ang * 180 / Math.PI).toFixed(1);
+          console.log(`[avatar] leg twist corrected (${side}): kneecap was rolled ${twistDeg}° off the bind's toe heading`);
+        }
+      }
+    }
     aimTo(side + "_shin", side + "_foot", _downR);
     model.updateWorldMatrix(true, true);
-    const toe = ft.children && ft.children[0];          // level the foot (its bind pitch belonged to the squat)
-    if (toe) {
+    if (toe) {                                          // FOOT: aim the toes back to the bind's own heading, flat (not "whatever the aims left")
       ft.getWorldPosition(_aw); toe.getWorldPosition(_cw);
       _dir.copy(_cw).sub(_aw);
       if (_dir.lengthSq() > 1e-8) {
-        const fR = rigDir(_dir.normalize());            // rig-space toe direction
-        if (Math.abs(fR.y) > 0.45) {                    // clearly pitched → flatten in rig space, keeping its own heading
-          _tgt.copy(fR); _tgt.y = 0;
-          if (_tgt.lengthSq() < 1e-6) _tgt.set(0, 0, 1);
-          const wq = worldRot(_wq.setFromUnitVectors(fR, _tgt.normalize()));
+        const fR = rigDir(_dir.normalize()).clone();    // rig-space toe direction now
+        _tgt.copy(faceR || fR); _tgt.y = 0;             // target: the bind heading; fallback = its current heading flattened
+        if (_tgt.lengthSq() < 1e-6) _tgt.set(0, 0, 1);
+        _tgt.normalize();
+        if (fR.angleTo(_tgt) > 0.10) {                  // pitched or rolled off the bind heading by >~6° → re-aim
+          const wq = worldRot(_wq.setFromUnitVectors(fR, _tgt));
           ft.parent.getWorldQuaternion(_pq);
           const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
           rest[side + "_foot"] = adjust.multiply(rest[side + "_foot"]);
@@ -176,6 +212,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         }
       }
     }
+    _stance[side] = { bindKnee: +kneeDeg.toFixed(1), kneeL: kneeL.clone(), faceR: faceR ? faceR.clone() : null, twistDeg };
     console.log(`[avatar] leg rest normalized (${side}): bind knee ${kneeDeg.toFixed(0)}° → standing (squat-bound rig)`);
   }
 
@@ -916,6 +953,34 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         ? +bones.left_hand.getWorldPosition(new THREE.Vector3()).distanceTo(bones.right_hand.getWorldPosition(new THREE.Vector3())).toFixed(3)
         : null;                                       // hand↔hand world distance — proves a clap MEETS (rest ≈ shoulder width; beat ≈ palm thickness)
       return { leftKnee: ang("left_leg", "left_shin", "left_foot"), leftElbow: ang("left_arm", "left_forearm", "left_hand"), handGap: gap, armReach: +armReach.toFixed(3), fsign: FSIGN, fwd: [+_forward.x.toFixed(2), +_forward.y.toFixed(2), +_forward.z.toFixed(2)], ambient: ambient ? ambient.length : 0, roles: Object.keys(bones).length, gesture, gesturing: !!gesture, gestureHold };
+    },
+    stance: () => {   // DIAGNOSTIC: leg stance truth — knee angles, toe headings, and (squat-normalized rigs) how far the kneecap/toes drifted off the bind's heading. Rig-frame refs are from BUILD time (post-load checks; a later live Alt-drag skews them harmlessly).
+      const out = { bindUpright: _bindUpright, sides: {} };
+      for (const side of ["left", "right"]) {
+        const th = bones[side + "_leg"], sh = bones[side + "_shin"], ft = bones[side + "_foot"];
+        if (!th || !sh || !ft) continue;
+        const t = th.getWorldPosition(new THREE.Vector3()), s = sh.getWorldPosition(new THREE.Vector3()), f = ft.getWorldPosition(new THREE.Vector3());
+        const v3 = (p) => [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)];
+        const e = { knee: +(t.clone().sub(s).angleTo(f.clone().sub(s)) * 180 / Math.PI).toFixed(1), hip: v3(t), kneePos: v3(s), foot: v3(f) };
+        const toe = ft.children && ft.children[0];
+        let toeR = null;
+        if (toe) {
+          toeR = rigDir(toe.getWorldPosition(new THREE.Vector3()).sub(f)).clone(); toeR.y = 0;
+          if (toeR.lengthSq() > 1e-6) { toeR.normalize(); e.toeHeading = [+toeR.x.toFixed(2), +toeR.z.toFixed(2)]; } else toeR = null;
+        }
+        const st = _stance[side];
+        if (st) {
+          e.bindKnee = st.bindKnee; e.twistDeg = st.twistDeg;
+          const kw = rigDir(st.kneeL.clone().applyQuaternion(th.getWorldQuaternion(new THREE.Quaternion()))).clone(); kw.y = 0;
+          if (kw.lengthSq() > 1e-4 && st.faceR) {
+            kw.normalize();
+            e.kneecapOffToes = +(kw.angleTo(st.faceR) * 180 / Math.PI).toFixed(1);          // ≈0 = kneecap faces where her bind's toes pointed
+            if (toeR) e.toesOffBind = +(toeR.angleTo(st.faceR) * 180 / Math.PI).toFixed(1); // ≈0 = toes kept their authored heading
+          }
+        }
+        out.sides[side] = e;
+      }
+      return out;
     },
   };
 }

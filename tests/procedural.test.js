@@ -72,6 +72,54 @@ test("squat-bound legs are normalized to standing at build; straight rigs untouc
   assert.ok(d.y < -0.9, `thigh aims world-down on an unrotated rig (dir.y ${d.y.toFixed(2)})`);
 });
 
+test("squat normalization fixes the leg TWIST: kneecaps track the toes, toes keep the bind heading (knock-knee)", () => {
+  // The straight-down aim is a MINIMAL rotation: it parks the leg's twist wherever the bind's fold
+  // plane was. Fold the squat about a ROLLED hinge (kneecaps point ~30° off forward) while the feet
+  // stay planted facing +Z — the knock-knee / pigeon-toe bind class ("the bone issue"). After the
+  // build, the kneecaps must face where the bind's toes pointed, and the toes must still point there.
+  const byName = (m, n) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === n) b = o; }); return b; };
+  const rot = (x, y, z, ang) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(x, y, z).normalize(), ang);
+  const sq = fullBiped();
+  sq.traverse((o) => {
+    if (!o.isBone) return;
+    if (/^(Left|Right)Thigh$/.test(o.name)) o.quaternion.multiply(rot(1, 0, 0.6, -1.2));   // rolled fold axis → kneecap rolls off +Z
+    if (/^(Left|Right)Shin$/.test(o.name)) o.quaternion.multiply(rot(1, 0, 0, 1.9));
+  });
+  sq.updateWorldMatrix(true, true);
+  for (const side of ["Left", "Right"]) {              // re-plant the feet: toes flat, facing +Z (squatters' feet stay planted)
+    const ft = byName(sq, side + "Foot"), toe = ft.children[0];
+    const cur = toe.getWorldPosition(new THREE.Vector3()).sub(ft.getWorldPosition(new THREE.Vector3())).normalize();
+    const fixW = new THREE.Quaternion().setFromUnitVectors(cur, new THREE.Vector3(0, 0, 1));
+    const pq = ft.parent.getWorldQuaternion(new THREE.Quaternion());
+    ft.quaternion.premultiply(pq.clone().invert().multiply(fixW).multiply(pq));
+    sq.updateWorldMatrix(true, true);
+  }
+  const kneeLocal = {};                                // bind kneecap dir (thigh-local) — recomputed independently of the engine
+  for (const side of ["Left", "Right"]) {
+    const t = byName(sq, side + "Thigh").getWorldPosition(new THREE.Vector3());
+    const s = byName(sq, side + "Shin").getWorldPosition(new THREE.Vector3());
+    const f = byName(sq, side + "Foot").getWorldPosition(new THREE.Vector3());
+    const k = t.sub(s).normalize().add(f.sub(s).normalize()).multiplyScalar(-1).normalize();
+    kneeLocal[side] = k.applyQuaternion(byName(sq, side + "Thigh").getWorldQuaternion(new THREE.Quaternion()).invert());
+  }
+  buildProceduralRig(sq, {});
+  sq.updateWorldMatrix(true, true);
+  const FWD = new THREE.Vector3(0, 0, 1);
+  for (const side of ["Left", "Right"]) {
+    const th = byName(sq, side + "Thigh"), shB = byName(sq, side + "Shin"), ft = byName(sq, side + "Foot"), toe = ft.children[0];
+    const t = th.getWorldPosition(new THREE.Vector3()), s = shB.getWorldPosition(new THREE.Vector3()), f = ft.getWorldPosition(new THREE.Vector3());
+    const knee = t.clone().sub(s).angleTo(f.clone().sub(s)) * 180 / Math.PI;
+    assert.ok(knee > 165, `${side}: leg stands up (knee ${knee.toFixed(0)} deg)`);
+    const kneecap = kneeLocal[side].clone().applyQuaternion(th.getWorldQuaternion(new THREE.Quaternion()));
+    kneecap.y = 0; kneecap.normalize();
+    const toeDir = toe.getWorldPosition(new THREE.Vector3()).sub(f); toeDir.y = 0; toeDir.normalize();
+    const offToes = kneecap.angleTo(toeDir) * 180 / Math.PI;
+    assert.ok(offToes < 10, `${side}: kneecap faces the toes (off by ${offToes.toFixed(0)} deg)`);
+    const offFwd = toeDir.angleTo(FWD) * 180 / Math.PI;
+    assert.ok(offFwd < 10, `${side}: toes keep the bind's +Z heading (off by ${offFwd.toFixed(0)} deg)`);
+  }
+});
+
 test("bind normalization is IMMUNE to the user's saved rotation (rig-local frame; audit P1)", () => {
   // applyRotation runs BEFORE buildProceduralRig: a saved ~40deg pitch (one Alt-drag away) made an
   // upright, correctly-authored model read as "slouch-bound" and fold at the hips on every reload.

@@ -33,8 +33,15 @@ let forceInteractive = false;
 let gPos = { x: 0, y: 0 };
 // Drag is owned by main: while a grab is active we follow the OS cursor (which works across
 // every monitor, unlike a per-window pointermove that dies at the window edge).
-let _drag = null;                 // { grabX, grabY, winId } | null  (grab offset in DIP)
-let _dragDisplayId = null;        // the display the cursor is over DURING a drag — re-arbitrate interactivity when she crosses a bezel so the release is caught
+// SINGLE-OWNER drag (rewrite 2026-06-11, "stuck between monitors" round 3): the GRAB window keeps
+// OS mouse capture for the WHOLE drag — interactivity is frozen on it, never handed across the
+// bezel (flipping a captured window to click-through mid-drag is what killed the capture, and the
+// release then reached either no window or the wrong one, racing a display-id filter). The grab
+// window therefore sees every pointermove/pointerup on EVERY monitor. Belt + braces: a real
+// pointerup from ANY window ends the drag (definitive: the button is up), and a dead-man watchdog
+// drops her if the cursor keeps moving while the grab window has gone silent (capture lost to
+// Win+L/UAC with the pointercancel swallowed) — so "glued to the cursor forever" can't happen.
+let _drag = null;                 // { winId, grabX, grabY, beatAt, beatCur } | null  (grab offset in DIP)
 let _dragTimer = null;
 let _overByWin = new Map();       // winId -> bool (this window's silhouette hit-test result)
 let currentModelUrl = null;       // last model the brain loaded → peers mirror it
@@ -101,14 +108,16 @@ function setGlobalPos(x, y, clamp) {
 // --- click-through arbiter --------------------------------------------------
 // At most ONE window is interactive at a time: the one the cursor is physically inside, and only
 // when its silhouette hit-test (or forceInteractive) says so. Everything else passes clicks through
-// to the desktop. While a drag is active, the grabbing window stays interactive (it must keep OS
-// mouse capture to receive the release) regardless of which monitor the cursor has wandered onto.
+// to the desktop. While a drag is active the arbiter is FROZEN on the grab window: it must keep its
+// OS mouse capture for the whole drag (capture delivers pointermove/pointerup system-wide, across
+// every monitor), and flipping it to click-through is exactly what used to break the capture and
+// strand her at the bezel. Nothing re-arbitrates until the drag ends.
 function applyInteractive() {
   let cursorDisplayId = null;
   try { cursorDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id; } catch {}
   for (const w of liveWindows()) {
     let interactive;
-    if (_drag) interactive = w.displayId === cursorDisplayId;            // dragging → the window UNDER THE CURSOR is live, so the release is caught on whatever monitor she's been dragged onto (a cross-bezel release used to reach no window → stuck to the cursor)
+    if (_drag) interactive = w.win.webContents.id === _drag.winId;       // dragging → the GRAB window only, full-window, until release
     else {
       const over = _overByWin.get(w.win.webContents.id) || false;
       interactive = (forceInteractive || over) && (w.displayId === cursorDisplayId);
@@ -119,8 +128,9 @@ function applyInteractive() {
 
 // --- drag (main-owned, follows the OS cursor across every monitor) ----------
 function startDrag(winId, grabX, grabY) {
-  _drag = { winId, grabX, grabY };
-  _dragDisplayId = null;
+  let cur = { x: 0, y: 0 };
+  try { cur = screen.getCursorScreenPoint(); } catch {}
+  _drag = { winId, grabX, grabY, beatAt: Date.now(), beatCur: cur };
   applyInteractive();
   if (_dragTimer) clearInterval(_dragTimer);
   _dragTimer = setInterval(() => {
@@ -128,8 +138,16 @@ function startDrag(winId, grabX, grabY) {
     try {
       const c = screen.getCursorScreenPoint();
       setGlobalPos(c.x - _drag.grabX, c.y - _drag.grabY);
-      const did = screen.getDisplayNearestPoint(c).id;
-      if (did !== _dragDisplayId) { _dragDisplayId = did; applyInteractive(); }   // crossed to a new monitor → hand interactivity to THAT window so its pointerup ends the drag
+      // Dead-man watchdog: while capture is alive the grab window heartbeats on every pointermove.
+      // If the cursor has wandered far from where it was at the last heartbeat AND the heartbeats
+      // have stopped, the capture is gone (Win+L/UAC/etc. with the pointercancel swallowed) — no
+      // release event is ever coming. Drop her in place instead of gluing her to the cursor.
+      // A motionless held cursor never trips this (distance stays 0, however long the hold).
+      const dx = c.x - _drag.beatCur.x, dy = c.y - _drag.beatCur.y;
+      if (dx * dx + dy * dy > 48 * 48 && Date.now() - _drag.beatAt > 1200) {
+        console.error("[main] drag watchdog: grab window went silent while the cursor kept moving — capture lost, dropping her here");
+        endDrag();
+      }
     } catch {}
   }, 8);   // ~120 Hz cursor-follow; cheap, only while a grab is held
 }
@@ -357,18 +375,20 @@ function init() {
   ipcMain.on("avatar:setGlobalPos", (_e, p) => { if (_drag) return; if (p && isFinite(p.gx) && isFinite(p.gy)) setGlobalPos(p.gx, p.gy); });
   // Grab lifecycle (any window) — main then follows the OS cursor across every monitor.
   ipcMain.on("avatar:dragStart", (e, p) => { if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY); });
-  ipcMain.on("avatar:dragEnd", (e) => {
-    // While main owns a drag, the bezel-crossing interactivity handoff sends the OLD window a
-    // pointercancel — its safety dragEnd was KILLING the drag mid-cross, stranding her straddling
-    // the seam ("can get stuck between monitors", 2026-06-11). Only the window the CURSOR is on
-    // can deliver a real release; ignore end-requests from any other window during a drag.
-    if (_drag) {
-      try {
-        const cur = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
-        const w = liveWindows().find((x) => x.win.webContents.id === e.sender.id);
-        if (w && w.displayId !== cur) return;
-      } catch {}
-    }
+  // Heartbeat from the GRAB window's pointermove stream — proof its capture is still alive. Feeds
+  // the dead-man watchdog in the follow timer (see startDrag).
+  ipcMain.on("avatar:dragBeat", (e) => {
+    if (!_drag || e.sender.id !== _drag.winId) return;
+    _drag.beatAt = Date.now();
+    try { _drag.beatCur = screen.getCursorScreenPoint(); } catch {}
+  });
+  ipcMain.on("avatar:dragEnd", (e, p) => {
+    // Release policy (single-owner drag): a real POINTERUP from ANY window ends the drag — it is
+    // definitive evidence the button is up, wherever it surfaced. A CANCEL (pointercancel/blur
+    // safety nets) is honored only from the GRAB window: with the arbiter frozen nothing should
+    // yank the grab window's capture, so a cancel arriving from any OTHER window is the old
+    // spurious bezel-handoff class and must not kill a live drag.
+    if (_drag && p && p.why === "cancel" && e.sender.id !== _drag.winId) return;
     endDrag();
   });
   // Nudge by a fraction of her CURRENT display (arrow keys / AI) — resolved against the live layout.

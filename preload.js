@@ -49,9 +49,13 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // Push a new global position to main (brain, when gliding/nudging/goTo) → main re-broadcasts.
   setGlobalPos: (gx, gy) => ipcRenderer.send("avatar:setGlobalPos", { gx, gy }),
   // Grab lifecycle: any window reports a grab (with the grab offset in GLOBAL DIP); main then drives
-  // the global position from the OS cursor (works across every monitor) until dragEnd.
+  // the global position from the OS cursor (works across every monitor) until dragEnd. The grab
+  // window stays interactive (frozen arbiter) so its OS capture delivers the release anywhere;
+  // dragBeat is its pointermove heartbeat (feeds main's capture-loss watchdog). dragEnd carries
+  // WHY: "up" (real release — honored from any window) vs "cancel" (safety net — grab window only).
   dragStart: (grabX, grabY) => ipcRenderer.send("avatar:dragStart", { grabX, grabY }),
-  dragEnd: () => ipcRenderer.send("avatar:dragEnd"),
+  dragBeat: () => ipcRenderer.send("avatar:dragBeat"),
+  dragEnd: (why) => ipcRenderer.send("avatar:dragEnd", { why: why === "cancel" ? "cancel" : "up" }),
   // Brain → main → peers: the live skeleton pose (one Float32Array buffer per frame). Transferred.
   sendPose: (buffer) => ipcRenderer.send("avatar:pose", buffer),
   onPose: (cb) => ipcRenderer.on("avatar:pose", (_e, buf) => cb(buf)),

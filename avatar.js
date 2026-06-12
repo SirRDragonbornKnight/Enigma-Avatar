@@ -407,6 +407,26 @@ function onModelLoaded(asset) {
     }
     model.updateWorldMatrix(true, true);
   }
+  // HIERARCHY SURGERY pt 2 (rig_overrides "reparent"): per-NODE moves. Rigify exports also ship
+  // whole PARALLEL LIMB chains — the mesh-deforming DEF-thigh/DEF-upper_arm chains root on the
+  // SPINE/SHOULDER as SIBLINGS of the ORG limbs the roles drive, their follow-constraints baked
+  // away. Standing the ORG leg up then renders a BLEND of a standing leg (ORG weights) and the
+  // squat-bound DEF leg = the scissored/knock-knee smear ("the bone issue", 2026-06-11). Moving
+  // each DEF segment under its ORG twin (attach() preserves world) makes the whole visual limb
+  // ride the driven chain — normalization, gestures, IK and finger curls included.
+  const _surgery2 = rigOverrides[curKey]?.reparent;
+  if (_surgery2) {
+    for (const [from, to] of Object.entries(_surgery2)) {
+      let src = null, dst = null;
+      model.traverse((o) => { if (o.name === from) src = o; else if (o.name === to) dst = o; });
+      if (!src || !dst) { console.warn(`[avatar] reparent node: "${from}" → "${to}" not found — skipped`); continue; }
+      let cyc = false; for (let p = dst; p; p = p.parent) if (p === src) { cyc = true; break; }   // dst inside src's subtree → parent cycle → refuse
+      if (cyc) { console.warn(`[avatar] reparent node: "${to}" is inside "${from}" — cycle refused`); continue; }
+      dst.attach(src);
+      console.log(`[avatar] reparented ${from} → under ${to} (parallel-limb surgery)`);
+    }
+    model.updateWorldMatrix(true, true);
+  }
   const resolved = resolveRig(model, vrm, { override: rigOverrides[curKey] });
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
@@ -1381,6 +1401,7 @@ function answerQuery(what) {
   if (what === "where") return EnigmaAvatar.where();                         // screen-px position + screen size + cursor (AI movement)
   if (what === "roles") return proc ? { bones: proc.roleBones(), flex: proc.flexAxes() } : null;   // DIAGNOSTIC: role → actual bone name + flex axes
   if (what === "joints") return proc ? { ...proc.jointAngles(), mixerPlaying: !!(mixer && current) } : null;   // DIAGNOSTIC: live knee/elbow angles + whether the embedded clip is overriding
+  if (what === "stance") return proc?.stance ? proc.stance() : null;   // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
   if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null;   // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
   if (what === "idle") return proc?.idleState ? proc.idleState() : null;   // DIAGNOSTIC: idle-v4 internals (arm mode / weight side / anchors vs hand targets, world coords)
   if (what === "eyegaze") return eyeBones.map((e) => {   // DIAGNOSTIC: each eye's world gaze vector — fwd.x flips L↔R only if HORIZONTAL eye-look works
@@ -1431,6 +1452,7 @@ function handleCommand(c) {
   else if (c.action === "rotateMode") return uiSetRotateMode(c.on ?? c.value ?? !rotateMode);   // drag-to-spin on/off (toggle resolved here → windows stay in lockstep)
   else if (c.action === "lookMode") return uiSetLookMode(c.mode ?? c.value);             // cursor-look: head / eyes / both
   else if (c.action === "lookAt") EnigmaAvatar.lookAt(c.px, c.py);                       // force gaze at a screen point
+  else if (c.action === "nameBone" && c.bone) return uiSetBoneLabel(String(c.bone), c.label ?? "");   // label a bone in plain words (saved per avatar; empty label clears) — the AI's handle for "the ahoge"
   else if (c.action === "hue" && c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0);      // rotate a material's hue — relayed
   else if (c.action === "query") return answerQuery(c.what);   // AI self-report: live state / materials / facial (ground truth)
 }
@@ -1563,6 +1585,7 @@ const uiLoadModel = relayed("loadModel"), uiSetRot = relayed("setRot"), uiSetRot
 const uiResizeBy = relayed("resizeBy"), uiApplySize = relayed("applySize"), uiRotLive = relayed("_rotLive");
 const uiShowSkeleton = relayed("showSkeleton"), uiRecolor = relayed("recolor"), uiHueShift = relayed("hueShift");
 const uiResetColors = relayed("resetColors"), uiSetMeshVisible = relayed("setMeshVisible"), uiSetMorphValue = relayed("setMorphValue");
+const uiSetBoneLabel = relayed("setBoneLabel");   // name a bone — Settings input + the bus 'nameBone' action share this relay
 const uiSetRegionWeight = relayed("setRegionWeight"), uiSetRotateMode = relayed("setRotateMode"), uiSetLookMode = relayed("setLookMode");
 const uiIdleTune = relayed("idleTune"), uiReseedIdle = relayed("reseedIdle");   // per-model idle (Settings → Idle)
 // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
@@ -1642,7 +1665,7 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") { ui.hideMenu(); ui
 // --- input (drag to reposition; NO hand cursor; NO fall) --------------------
 addEventListener("resize", () => { renderer.setSize(innerWidth, innerHeight); frameCamera(); });   // windows are stationary now; this only fires on (re)creation
 addEventListener("wheel", (e) => { if (cursor.over) uiResizeBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: true });   // works on any monitor — size applies on the brain, streams back via the pose scale
-let _curSent = 0;
+let _curSent = 0, _beatSent = 0;
 addEventListener("pointermove", (e) => {
   cursor.x = e.clientX; cursor.y = e.clientY; cursor.seen = true; _cursorIdle = 0; computeOver();   // reset the look timer — WITHOUT this the cursor-look gate (_cursorIdle<2.5) never opens, so she never tracks the cursor
   if (!_isBrain && window.avatarIPC?.cursorMoved) {              // relay to the brain (~30Hz) so she watches the cursor on THIS monitor too
@@ -1653,7 +1676,10 @@ addEventListener("pointermove", (e) => {
     if (!(e.buttons & 1)) { spinning = false; uiSetRot(_spinTo(e)); return; }   // missed a pointerup (released off-window) → commit + stop, don't keep rotating un-held
     spinLive(e);
   }
-  // a GRAB drag is owned by main (it follows the OS cursor across every monitor) — nothing to do here
+  if (held) {                                                   // GRAB drag: position is main-owned (OS cursor follow); we just heartbeat so main
+    const now = performance.now();                              // knows our capture is alive (its watchdog drops her if moves continue beat-less)
+    if (now - _beatSent > 40) { _beatSent = now; window.avatarIPC?.dragBeat?.(); }
+  }
 });
 addEventListener("pointerdown", (e) => {
   if (ui.containsEvent(e.target)) return;                        // clicking a popup's own controls
@@ -1685,8 +1711,9 @@ addEventListener("pointerup", (e) => {
   held = false; fpClock = 1; _downX = -999; wake(2);
 });
 // Win+L / UAC / pointer-capture loss mid-drag: pointerup never arrives — release the main-owned
-// drag explicitly, or she stays glued to the cursor after unlock.
-const _abortInput = () => { if (held) { window.avatarIPC?.dragEnd?.(); held = false; fpClock = 1; } if (spinning) spinning = false; _downX = -999; };
+// drag explicitly, or she stays glued to the cursor after unlock. Sent as a CANCEL: main honors
+// it only from the grab window (a cancel from any other window is spurious bezel noise).
+const _abortInput = () => { if (held) { window.avatarIPC?.dragEnd?.("cancel"); held = false; fpClock = 1; } if (spinning) spinning = false; _downX = -999; };
 addEventListener("pointercancel", _abortInput);
 addEventListener("blur", _abortInput);
 // Arrow nudge from ANY window: the brain glides locally (eased); a peer can't run the glide step,
