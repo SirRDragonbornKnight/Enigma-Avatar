@@ -368,7 +368,7 @@ function disposeModel() {
   rig.remove(model);
   if (vrm) VRMUtils.deepDispose?.(vrm.scene);
   model.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
-  model = null; mixer = null; vrm = null; proc = null; spring = null; actions = {}; current = null; clipIdle = null;
+  model = null; mixer = null; vrm = null; proc = null; spring = null; actions = {}; current = null; clipIdle = null; _meshList = null;
 }
 
 function onModelLoaded(asset) {
@@ -386,6 +386,7 @@ function onModelLoaded(asset) {
   model.position.x -= c.x; model.position.z -= c.z; model.position.y -= _box.min.y;  // feet at rig origin
   model.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   rig.add(model);
+  _meshList = []; model.traverse((o) => { if (o.isMesh) _meshList.push({ mesh: o, name: o.name || null }); });   // INDEX AUTHORITY: pristine file order, captured before any surgery/adoption can reshuffle traversal
   modelDims = { w: _box.max.x - _box.min.x, h: _box.max.y - _box.min.y };
   // pose-broadcast layout (brain serializes → peers mirror): ordered bones + morph meshes. Both windows
   // load the SAME model → identical traversal order, so the flat buffer is self-describing by length.
@@ -495,9 +496,11 @@ function onModelLoaded(asset) {
   // is final (rotation neutralized for the measurement; runs BEFORE the spring build so the tips
   // capture from the corrected positions — a shift after capture would read as a load-time wiggle).
   {
+    applyMeshVisibility();                           // hide saved-off parts FIRST — parked variant meshes must not inflate the measurement
     const rq = rig.quaternion.clone();
     rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
-    _box.setFromObject(model);
+    _box.makeEmpty();                                // VISIBLE meshes only + SKINNING-AWARE (the geometry box lies on skin-assembled models)
+    expandVisiblePosed(_box);
     if (isFinite(_box.min.y) && isFinite(_box.max.y) && _box.max.y > _box.min.y) {
       const s = rig.scale.x || 1;
       const c = _box.getCenter(new THREE.Vector3());
@@ -890,7 +893,13 @@ function resetColors() {
 // --- meshes (sub-objects: clothing variants, hide-able body parts) ----------
 // A model bundles multiple meshes (e.g. 2 shirts / shorts / a nude body). Address them by INDEX in
 // traversal order — names are unreliable — and toggle visibility to pick a variant. Hidden set saved.
+// Mesh list in PRISTINE FILE ORDER, cached at load BEFORE any hierarchy surgery/adoption.
+// hiddenMeshes/meshLabels/colors are keyed by INDEX — live traversal order CHANGES when bones are
+// reparented (battery 2026-06-12: aveline's hidden floor planes came back because the skin-weight
+// adoption shifted traversal and her saved [0..4] started hiding five robot parts instead).
+let _meshList = null;
 function allMeshesInfo() {
+  if (_meshList) return _meshList.filter((e) => e.mesh && e.mesh.parent !== null);   // drop disposed strays, keep order
   const out = [];
   model?.traverse((o) => { if (o.isMesh) out.push({ mesh: o, name: o.name || null }); });
   return out;
@@ -901,11 +910,48 @@ function setMeshVisible(i, on) {
   const p = profileFor(curKey); const hid = new Set(p.hiddenMeshes || []);
   if (on) hid.delete(i); else hid.add(i);
   p.hiddenMeshes = [...hid].sort((a, b) => a - b); saveProfileSoon();
-  hitMask = null; computeFootprint();                 // silhouette changed → re-scan the grab footprint
+  hitMask = null; computeFootprint(); refreshDims();  // silhouette changed → re-scan the grab footprint + the dims (shadow/walls/capsule)
   setStatus(`mesh #${i}${it.name ? " (" + it.name + ")" : ""} → ${on ? "shown" : "hidden"}`);
   return 1;
 }
 function applyMeshVisibility() { const hid = profileFor(curKey).hiddenMeshes; if (!hid || !hid.length) return; const arr = allMeshesInfo(); for (const i of hid) if (arr[i]) arr[i].mesh.visible = false; }
+// Bounds over VISIBLE meshes, SKINNING-AWARE: expandByObject reads the UNSKINNED geometry box,
+// which lies for models whose parts are authored side-by-side and assembled by skinning (aveline:
+// a 15-unit-wide geometry box on a 1-unit-wide robot → giant shadow + crushed scale). SkinnedMesh
+// .computeBoundingBox() poses every vertex through its bones — the truth.
+function expandVisiblePosed(box) {
+  const boxes = [];
+  model.traverse((o) => {
+    if (!o.isMesh || !o.visible) return;
+    const b = new THREE.Box3();
+    if (o.isSkinnedMesh && o.computeBoundingBox) {
+      o.computeBoundingBox();                            // skinning-aware (three r151+)
+      if (o.boundingBox && !o.boundingBox.isEmpty()) b.copy(o.boundingBox).applyMatrix4(o.matrixWorld);
+    }
+    if (b.isEmpty()) b.expandByObject(o);
+    if (!b.isEmpty()) boxes.push(b);
+  });
+  // GROUND/BACKDROP SHEETS ship inside avatar files (aveline: a 34-unit-wide, zero-height plane) —
+  // a paper-flat horizontal outlier must not define HER size (it poisoned the shadow width, the
+  // walls, the capsule and fitToScreen's width cap). Excluded from the MEASUREMENT only; it still
+  // renders — hide it via Parts if unwanted.
+  const solid = boxes.filter((b) => (b.max.y - b.min.y) > 0.02 * Math.max(b.max.x - b.min.x, b.max.z - b.min.z));
+  for (const b of (solid.length ? solid : boxes)) box.union(b);
+}
+// Re-measure her on-screen dims from VISIBLE meshes (rotation neutralized) — show/hide and outfit
+// swaps change the real silhouette, and dims feed the shadow width, walls, capsule and grab box.
+function refreshDims() {
+  if (!model) return;
+  const rq = rig.quaternion.clone();
+  rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
+  _box.makeEmpty();
+  expandVisiblePosed(_box);
+  if (isFinite(_box.min.y) && _box.max.y > _box.min.y) {
+    const s = rig.scale.x || 1;
+    modelDims = { w: (_box.max.x - _box.min.x) / s, h: (_box.max.y - _box.min.y) / s };
+  }
+  rig.quaternion.copy(rq); rig.updateWorldMatrix(true, true);
+}
 
 // --- OUTFITS — named mesh-visibility presets per model ("can i put clothes on avatars", 2026-06-12):
 // one-click looks built from the parts a model SHIPS (dressed / undressed / armor-off …). A preset
@@ -926,7 +972,7 @@ function wearOutfit(name) {
   const arr = allMeshesInfo();
   for (let i = 0; i < arr.length; i++) arr[i].mesh.visible = !hid.has(i);
   p.hiddenMeshes = [...hid].sort((a, b) => a - b);
-  saveProfileSoon(); hitMask = null; computeFootprint();   // silhouette changed
+  saveProfileSoon(); hitMask = null; computeFootprint(); refreshDims();   // silhouette changed
   setStatus(`outfit: ${name}`); return true;
 }
 function deleteOutfit(name) { const p = profileFor(curKey); if (p.outfits) delete p.outfits[String(name || "").trim()]; saveProfileSoon(); return outfitNames(); }
@@ -1516,7 +1562,7 @@ const EnigmaAvatar = {
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
   playAnim: (n, o) => playAnim(n, o || {}), stopAnim: () => stopAnim(),   // retargeted clip library (anims/) — works on any resolved rig
-  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, facial: facialOn, look: lookOn, locked, rotateMode, menu: ui.isOpen() } }),
+  state: () => ({ held, size: +sizeScale.toFixed(2), dims: [+(modelDims.w || 0).toFixed(2), +(modelDims.h || 0).toFixed(2)], pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, facial: facialOn, look: lookOn, locked, rotateMode, menu: ui.isOpen() } }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
   gesture: (name, dur) => {                                              // animated action — idle suspended
@@ -1601,6 +1647,18 @@ function answerQuery(what) {
   if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null;   // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
   if (what === "grip") return proc?.gripState ? proc.gripState() : null;   // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
   if (what === "outfits") return { outfits: outfitNames(), hiddenMeshes: profileFor(curKey).hiddenMeshes || [] };   // the saved looks + the live hidden set
+  if (what === "bounds") {   // DIAGNOSTIC: per-VISIBLE-mesh world bounds (posed) — find what inflates the dims
+    const out = [];
+    const b = new THREE.Box3(), t = new THREE.Box3();
+    allMeshesInfo().forEach(({ mesh, name }, index) => {
+      if (!mesh.visible) return;
+      b.makeEmpty();
+      if (mesh.isSkinnedMesh && mesh.computeBoundingBox) { mesh.computeBoundingBox(); if (mesh.boundingBox && !mesh.boundingBox.isEmpty()) b.union(t.copy(mesh.boundingBox).applyMatrix4(mesh.matrixWorld)); }
+      if (b.isEmpty()) b.expandByObject(mesh);
+      out.push({ index, name, w: +(b.max.x - b.min.x).toFixed(2), h: +(b.max.y - b.min.y).toFixed(2), x: [+b.min.x.toFixed(2), +b.max.x.toFixed(2)] });
+    });
+    return out.sort((a, c) => c.w - a.w).slice(0, 8);
+  }
   if (what === "weights") {   // DIAGNOSTIC: skin-weight truth — how many bones really deform + the heaviest (everything else is control/helper soup)
     if (!_weightMass || !_weightMass.size) return { deforming: 0 };
     let total = 0; _weightMass.forEach((v) => { total += v; });

@@ -149,6 +149,10 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) continue;
     const kneeDeg = v1.angleTo(v2) * 180 / Math.PI;     // 180 = straight (angle is frame-invariant)
     if (kneeDeg > 150) continue;                        // standing bind → never touch
+    if (kneeDeg < 35) {                                 // FULLY-FOLDED bind (aveline: 8.8°/20.4°) = a packaging/design pose, NOT a capture squat — the fold direction/kneecap math is ill-conditioned there and "standing it up" wrecked a folded robot (battery 2026-06-12: legs flung sideways, 15-unit-wide box). Leave it as authored.
+      console.log(`[avatar] leg bind ${side} is fully folded (${kneeDeg.toFixed(0)}°) — packaging pose, left as authored (squat normalization covers ~35–150°)`);
+      continue;
+    }
     // BIND-POSE references, captured BEFORE any aim (the authored squat carries the intent): where
     // the KNEECAP faces (the fold opens away from it — well-defined while the knee is folded) and
     // where the TOES point (a squatter's feet stay planted facing forward). The straight-down aim

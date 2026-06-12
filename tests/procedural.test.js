@@ -148,6 +148,24 @@ test("bind normalization is IMMUNE to the user's saved rotation (rig-local frame
   assert.equal(Object.keys(proc.restAdjust).length, 0, "no trunk/leg normalization fires on an upright bind seen through a user rotation");
 });
 
+test("FULLY-FOLDED binds (<35° knee) are left alone — a packaging pose is not a squat (aveline)", () => {
+  const m = fullBiped();
+  m.traverse((o) => {
+    if (!o.isBone) return;
+    if (/^(Left|Right)Shin$/.test(o.name)) o.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 2.8));   // shin folded ~160° back against the thigh → knee ~20°
+  });
+  m.updateWorldMatrix(true, true);
+  const byName = (n) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === n) b = o; }); return b; };
+  const ang = () => {
+    const t = byName("LeftThigh").getWorldPosition(new THREE.Vector3()), s = byName("LeftShin").getWorldPosition(new THREE.Vector3()), f = byName("LeftFoot").getWorldPosition(new THREE.Vector3());
+    return t.sub(s).angleTo(f.sub(s)) * 180 / Math.PI;
+  };
+  const before = ang();
+  assert.ok(before < 35, `fixture folds fully (knee ${before.toFixed(0)} deg)`);
+  buildProceduralRig(m, {});
+  assert.ok(Math.abs(ang() - before) < 3, "fully-folded legs stay exactly as authored");
+});
+
 test("lying-bound rigs are left alone (a lying bind is a style, not a squat defect)", () => {
   const model = fullBiped();
   model.rotation.x = Math.PI / 2;                 // the bind itself lies on its back (its OWN space, no user rig group)
