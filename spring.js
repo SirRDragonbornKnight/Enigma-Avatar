@@ -25,11 +25,11 @@ export function buildSpringBones(model, opts = {}) {
   //   exclude     : Set<THREE.Bone> already claimed by a humanoid role — never spring these
   //   override    : the per-model rig_overrides entry; override.spring = { extra, never }
   //   regionWeight: { breast:1.5, cloth:0, ... } — per-region jiggle amount (0..~3)
-  const { exclude = new Set(), override = null, regionWeight = {}, ...paramOpts } = opts;
+  const { exclude = new Set(), override = null, regionWeight = {}, neverExtra = null, ...paramOpts } = opts;
   const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, regionWeight: { ...regionWeight }, ...paramOpts };
   if (!P.regionWeight) P.regionWeight = {};
   const springExtra = new Set(override?.spring?.extra || []);
-  const springNever = new Set(override?.spring?.never || []);
+  const springNever = new Set([...(override?.spring?.never || []), ...(neverExtra || [])]);   // neverExtra = runtime exclusions (skin-weight twin dedup) on top of the per-model override
   const items = [];
   const seen = new Set();
   model.updateWorldMatrix(true, true);

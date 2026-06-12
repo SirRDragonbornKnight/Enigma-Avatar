@@ -16,6 +16,7 @@ import { buildSpringBones } from "./spring.js";
 import { createPhysics } from "./physics.js";
 import { buildFacial } from "./facial.js";
 import { resolveRig, ROLES } from "./rig.js";
+import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./skinweights.js";   // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
 import { buildDefaultAvatar } from "./default_avatar.js";
 import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./mathutil.js";
 
@@ -106,6 +107,7 @@ function setShadowOn(v) {
 }
 
 let proc = null, spring = null, facial = null, BONE_LIMITS = {};
+let _weightMass = null, _springNeverExtra = [];   // skin-weight pass state (per loaded model): bone→mass + the sprung twin chains excluded by dedup
 // --- RIGID-BODY physics (rapier, lazy WASM) — real dynamics for free props (throw the ball!).
 // Soft jiggle stays on spring.js; this layer is the §E foundation for sit/throw/cloth.
 const physics = createPhysics({ scene, loadAsset });
@@ -450,6 +452,30 @@ function onModelLoaded(asset) {
   if (_sOk || _sSkip) { const m = `[avatar] surgery: ${_sOk} move(s) applied, ${_sSkip} skipped (${curKey})`; console.log(m); try { window.avatarIPC?.log?.(m); } catch {} }
   const resolved = resolveRig(model, vrm, { override: rigOverrides[curKey] });
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
+  // SKIN-WEIGHT AUTO-ADOPTION (2026-06-12, the system pass): generalize the parallel-limb surgery.
+  // Any DEFORMING bone that is a coincident twin of a resolved role bone but lives OUTSIDE its
+  // subtree (a Rigify DEF chain rooted on the spine/shoulder, follow-constraints baked away) gets
+  // attached under it — world-preserving — so the visual limb rides the driven chain on ANY such
+  // export, with no hand-written override map. Idempotent: twins a map already moved are inside
+  // the subtree and skipped.
+  _weightMass = null; _springNeverExtra = [];
+  try {
+    _weightMass = computeWeightMass(model);
+    if (_weightMass.size) {
+      const twins = findRoleTwins(roleBones, _weightMass, modelDims.h || 2);
+      let n = 0;
+      for (const { bone, twin } of twins) {
+        let cyc = false; for (let p = bone; p; p = p.parent) if (p === twin) { cyc = true; break; }
+        if (cyc) continue;
+        bone.attach(twin); n++;
+      }
+      if (n) {
+        model.updateWorldMatrix(true, true);
+        const m = `[avatar] skin-weight pass: auto-adopted ${n} stranded deforming twin bone(s) under their role bones`;
+        console.log(m); try { window.avatarIPC?.log?.(m); } catch {}
+      }
+    }
+  } catch (e) { console.warn("[avatar] skin-weight pass failed (continuing without):", e); }
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
   proc = buildProceduralRig(model, BONE_LIMITS, resolved);
   // RE-ANCHOR + RE-MEASURE after the bind normalization (user 2026-06-12: "her bottom hit box is at
@@ -482,6 +508,37 @@ function onModelLoaded(asset) {
     // Pass the role-matched bones as `exclude` so a humanoid's limbs are never sprung
     // (only true dangly bits), plus any per-model spring override (extra/never).
     spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {} });   // per-region jiggle weights restored from profile
+    // SPRING TWIN DEDUP (skin-weight pass): Rigify exports spring the SAME tail/ear as 2–3
+    // parallel chains (ORG + control + DEF) → desynced physics fights blending on one mesh
+    // (mushy tail). Keep the chain the mesh actually listens to (highest subtree weight mass),
+    // attach the twins under it so they RIDE it, and rebuild the springs with them excluded.
+    if (spring?.count && _weightMass && _weightMass.size) {
+      try {
+        const sprungSet0 = new Set(spring.names), roots = [];
+        model.traverse((o) => { if (o.isBone && sprungSet0.has(o.name) && !(o.parent && sprungSet0.has(o.parent.name))) roots.push(o); });
+        const groups = groupCoincidentRoots(roots, modelDims.h || 2);
+        if (groups.length) {
+          const never = [];
+          for (const g of groups) {
+            g.sort((a, b) => subtreeMass(b, _weightMass) - subtreeMass(a, _weightMass));   // winner = the deforming chain
+            const win = g[0];
+            for (const lose of g.slice(1)) {
+              let cyc = false; for (let p = win; p; p = p.parent) if (p === lose) { cyc = true; break; }
+              if (cyc) continue;
+              win.attach(lose);
+              lose.traverse((o) => { if (o.isBone) never.push(o.name); });
+            }
+          }
+          if (never.length) {
+            model.updateWorldMatrix(true, true);
+            _springNeverExtra = never;
+            spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {}, neverExtra: _springNeverExtra });
+            const m = `[avatar] spring twin dedup: ${groups.length} coincident chain group(s) — twins now ride the deforming chain (${never.length} bone(s) un-sprung)`;
+            console.log(m); try { window.avatarIPC?.log?.(m); } catch {}
+          }
+        }
+      } catch (e) { console.warn("[avatar] spring twin dedup failed (continuing without):", e); }
+    }
     // BIND-NORMALIZATION × DANGLY CHAINS: standing a squat-bound rig up rotates the head/trunk.
     // Rigid accessories (ears, hats) must FOLLOW that rotation — but hair/tail are authored
     // relative to GRAVITY, so their world hang must be PRESERVED ("hair to attach to her head",
@@ -508,7 +565,7 @@ function onModelLoaded(asset) {
       });
       if (fixed) {
         model.updateWorldMatrix(true, true);
-        spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {} });
+        spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {}, neverExtra: _springNeverExtra });   // keep the twin-dedup exclusions through the rebuild
         console.log(`[avatar] gravity-preserved ${fixed} dangly chain root(s) against the bind normalization`);
       }
     }
@@ -1460,6 +1517,12 @@ function answerQuery(what) {
   if (what === "stance") return proc?.stance ? proc.stance() : null;   // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
   if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null;   // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
   if (what === "grip") return proc?.gripState ? proc.gripState() : null;   // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
+  if (what === "weights") {   // DIAGNOSTIC: skin-weight truth — how many bones really deform + the heaviest (everything else is control/helper soup)
+    if (!_weightMass || !_weightMass.size) return { deforming: 0 };
+    let total = 0; _weightMass.forEach((v) => { total += v; });
+    const top = [..._weightMass.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([b, m]) => ({ bone: b.name, mass: +m.toFixed(1) }));
+    return { deforming: _weightMass.size, totalMass: +total.toFixed(1), unsprungTwinBones: _springNeverExtra.length, top };
+  }
   if (what === "eyegaze") return eyeBones.map((e) => {   // DIAGNOSTIC: each eye's world gaze vector — fwd.x flips L↔R only if HORIZONTAL eye-look works
     const fwdLocal = e.right.clone().cross(e.up).normalize();
     const wq = new THREE.Quaternion(); e.bone.getWorldQuaternion(wq);
