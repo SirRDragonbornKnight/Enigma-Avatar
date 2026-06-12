@@ -582,7 +582,16 @@ function onModelLoaded(asset) {
     if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);   // per-avatar tuned physics (global hair feel)
     if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
   }
-  facial = buildFacial(model, vrm, { ...(rigOverrides[curKey]?.face || {}) });   // facial layer (index-override → morph-by-name → jaw bone → none); per-model face override (mouthMorph + lid blink axis/close/lower) flows straight in
+  {   // facial v2: per-channel ladders (mouth + blink independent); the geometric tiers need the
+      // resolved HEAD + the body frame to anchor their eye/mouth bands on any rig.
+    const _fa = proc?.jointAngles ? proc.jointAngles().fwd : null;
+    facial = buildFacial(model, vrm, {
+      ...(rigOverrides[curKey]?.face || {}),
+      headBone: roleBones.head || null,
+      bodyUp: new THREE.Vector3(0, 1, 0),                  // rig-up post-normalization
+      forward: _fa ? new THREE.Vector3(_fa[0], _fa[1], _fa[2]) : new THREE.Vector3(0, 0, 1),
+    });
+  }
   if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial);     // per-avatar jaw/face tuning
   console.log("[avatar] mouth:", facial.mode === "none" ? "NONE — this model has no mouth channel (speech without lip-sync)" : `${facial.mode} — ${facial.info}`);   // acknowledge the mouth channel (or its absence) AS SUCH — never fake one
   reapplyAttachments();                           // re-attach saved props/accessories for this model
@@ -655,6 +664,7 @@ function loadModel(url, label) {
     (err) => {
       if (seq !== _loadSeq) return;
       setStatus(`load failed: ${err?.message || err}`); console.error(err);
+      try { window.avatarIPC?.log?.(`LOAD FAILED ${url}: ${err?.message || err}`); } catch {}   // renderer console is invisible in the main log — failures must be loud (the shibahu lesson, 2026-06-12)
       // A peer that fails the mirror-load would show the PREVIOUS model frozen forever (its pose
       // frames are dropped by the length guard) — retry a few times, loudly, into the main log.
       if (!_isBrain && (_peerRetries[url] = (_peerRetries[url] || 0) + 1) <= 3) {
