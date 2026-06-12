@@ -216,7 +216,7 @@ function setPlatforms(list) {
 function surfaceYAt(gx, gy) {                    // nearest restable surface line to gy (floor or a platform top under gx), within the snap band
   const d = curDisp, band = d.height * 0.05;
   let best = null, bestDy = band;
-  const floorY = d.y + d.height - 2;
+  const floorY = (d.wb ?? (d.y + d.height)) - 2; // the VISIBLE desk surface = the work-area bottom (taskbar top) — the display bottom hides behind the taskbar where no window can draw
   if (Math.abs(gy - floorY) <= bestDy) { best = floorY; bestDy = Math.abs(gy - floorY); }
   for (const pf of platforms) {
     if (gx < pf.gx - pf.w / 2 || gx > pf.gx + pf.w / 2) continue;
@@ -531,29 +531,6 @@ function onModelLoaded(asset) {
   } catch (e) { console.warn("[avatar] skin-weight pass failed (continuing without):", e); }
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
   proc = buildProceduralRig(model, BONE_LIMITS, resolved);
-  // RE-ANCHOR + RE-MEASURE after the bind normalization (user 2026-06-12: "her bottom hit box is at
-  // her legs so there is just a weird shadow there"). The feet anchor + modelDims were taken from
-  // the BIND box — standing a squat-bound rig up extends the mesh BELOW that box, so the shadow,
-  // grab footprint and physics capsule all sat at her shins. Measure again now that the rest pose
-  // is final (rotation neutralized for the measurement; runs BEFORE the spring build so the tips
-  // capture from the corrected positions — a shift after capture would read as a load-time wiggle).
-  {
-    applyMeshVisibility();                           // hide saved-off parts FIRST — parked variant meshes must not inflate the measurement
-    const rq = rig.quaternion.clone();
-    rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
-    _box.makeEmpty();                                // VISIBLE meshes only + SKINNING-AWARE (the geometry box lies on skin-assembled models)
-    expandVisiblePosed(_box);
-    if (isFinite(_box.min.y) && isFinite(_box.max.y) && _box.max.y > _box.min.y) {
-      const s = rig.scale.x || 1;
-      const c = _box.getCenter(new THREE.Vector3());
-      model.position.x -= (c.x - rig.position.x) / s;
-      model.position.z -= c.z / s;
-      model.position.y -= (_box.min.y - rig.position.y) / s;   // feet back on the rig origin = the shadow/footprint line
-      modelDims = { w: (_box.max.x - _box.min.x) / s, h: (_box.max.y - _box.min.y) / s };
-    }
-    rig.quaternion.copy(rq); rig.updateWorldMatrix(true, true);
-    fitToScreen();                                   // the TRUE height can exceed the bind height (catgirl: squat → standing) — re-cap so she still fits her screen
-  }
   console.log("[avatar] roles:", resolved.matched.length, JSON.stringify(resolved.report.bySource), resolved.matched.length ? "→ " + resolved.matched.join(", ") : "(none)");
   setStatus(`loaded ✓ ${resolved.matched.length ? "procedural idle on " + resolved.matched.length + " bones" : "static (no recognised body bones)"}${clips.length ? " · " + clips.length + " baked clip(s) on-demand" : ""}`);
   // VRM ships its own spring bones (vrm.update drives them) — don't double up.
@@ -626,6 +603,39 @@ function onModelLoaded(asset) {
     }
     if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);   // per-avatar tuned physics (global hair feel)
     if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
+  }
+  // RE-ANCHOR + RE-MEASURE — deliberately AFTER the gravity counter-rotation above: this measures
+  // the FINAL standing pose. Measuring before it caught the pre-fix hair plume (head-leveling
+  // rotations amplified down 16-bone strands) as a 12.8-unit "height" on a 3.5-unit model — the
+  // poison behind the floating mesh, the giant shadow and the crushed auto-size ("the walls were
+  // pushing the avatar up when i made it larger"; battery 2026-06-12). The bind box measured at
+  // load had the squat-bound feet line wrong instead (shadow at her shins) — this fixes both.
+  {
+    applyMeshVisibility();                           // hide saved-off parts FIRST — parked variant meshes must not inflate the measurement
+    const rq = rig.quaternion.clone();
+    rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
+    _box.makeEmpty();                                // VISIBLE meshes only + SKINNING-AWARE (the geometry box lies on skin-assembled models)
+    expandVisiblePosed(_box);
+    // SANITY GATE backstop: the model was normalized to BASE_H at load — a box wildly past that is
+    // a poisoned measurement; keep the bind dims, move nothing, and say so loudly.
+    const s = rig.scale.x || 1;
+    const bw = (_box.max.x - _box.min.x) / s, bh2 = (_box.max.y - _box.min.y) / s;
+    let shifted = false;
+    if (isFinite(_box.min.y) && _box.max.y > _box.min.y && bw > 0.01 && bh2 > 0.01 && bw < BASE_H * 2.5 && bh2 < BASE_H * 2.5) {
+      const c = _box.getCenter(new THREE.Vector3());
+      model.position.x -= (c.x - rig.position.x) / s;
+      model.position.z -= c.z / s;
+      model.position.y -= (_box.min.y - rig.position.y) / s;   // feet back on the rig origin = the shadow/footprint/floor line
+      modelDims = { w: bw, h: bh2 };
+      shifted = true;
+    } else if (isFinite(_box.min.y)) {
+      const m = `[avatar] POISONED bounds measure on ${curKey}: ${bw.toFixed(1)}x${bh2.toFixed(1)} (normalized models are ~${BASE_H}) — keeping bind dims ${modelDims.w.toFixed(1)}x${modelDims.h.toFixed(1)}, anchor untouched`;
+      console.warn(m); try { window.avatarIPC?.log?.(m); } catch {}
+    }
+    rig.quaternion.copy(rq); rig.updateWorldMatrix(true, true);
+    if (shifted && spring?.count) spring = buildSpringBones(model, { exclude: resolved.springExclude, override: rigOverrides[curKey], regionWeight: profileFor(curKey).regions || {}, neverExtra: _springNeverExtra });   // verlet tips re-capture from the shifted rest — no load-time settle wiggle
+    if (shifted && spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring);
+    fitToScreen();                                   // the TRUE height can exceed the bind height (catgirl: squat → standing) — re-cap so she still fits her screen
   }
   {   // facial v2: per-channel ladders (mouth + blink independent); the geometric tiers need the
       // resolved HEAD + the body frame to anchor their eye/mouth bands on any rig.
@@ -963,35 +973,60 @@ function applyMeshVisibility() { const hid = profileFor(curKey).hiddenMeshes; if
 // a 15-unit-wide geometry box on a 1-unit-wide robot → giant shadow + crushed scale). SkinnedMesh
 // .computeBoundingBox() poses every vertex through its bones — the truth.
 function expandVisiblePosed(box) {
-  const boxes = [];
-  model.traverse((o) => {
-    if (!o.isMesh || !o.visible) return;
-    const b = new THREE.Box3();
-    if (o.isSkinnedMesh && o.computeBoundingBox) {
-      o.computeBoundingBox();                            // skinning-aware (three r151+)
-      if (o.boundingBox && !o.boundingBox.isEmpty()) b.copy(o.boundingBox).applyMatrix4(o.matrixWorld);
+  // MEASURE THE BONES, NOT THE MESH (battery 2026-06-12, round 2): skinned-mesh bounding boxes are
+  // computed against the BIND-time frame — after we scale/shift/normalize the model they come back
+  // as frame-trap garbage (her body measured 0.26 units, a hair object 7.4 — dims hit 12.8 on a
+  // 3.5-unit model, mesh floated above the base, shadow exploded, auto-size crushed). The DEFORMING
+  // bones (skin-weight map) are the truth the whole engine already trusts: their world positions
+  // bound her body, a small pad covers flesh beyond joints, and stray ground/backdrop planes are
+  // excluded automatically (planes aren't bones). Static no-bone models (statues) keep honest rigid
+  // geometry boxes.
+  const v = new THREE.Vector3();
+  const pts = [];
+  if (_weightMass && _weightMass.size) for (const [b, m] of _weightMass) { if (m > 0.5) { b.getWorldPosition(v); pts.push({ x: v.x, y: v.y, m }); } }
+  if (!pts.length) model.traverse((o) => { if (o.isBone) { o.getWorldPosition(v); pts.push({ x: v.x, y: v.y, m: 1 }); } });
+  if (pts.length > 3) {
+    // MASS-WEIGHTED 1–99% bounds: a parked-but-lightly-weighted helper (an IK target at the rig
+    // root, 5 units off the body) must not define her box — its sliver of mass falls outside the
+    // percentile. The body's bones carry ~all the mass and set the real extent.
+    const pct = (key, p) => {
+      const s2 = pts.slice().sort((a, b2) => a[key] - b2[key]);
+      const tot = s2.reduce((t, e) => t + e.m, 0);
+      let acc = 0;
+      for (const e of s2) { acc += e.m; if (acc >= tot * p) return e[key]; }
+      return s2[s2.length - 1][key];
+    };
+    box.min.set(pct("x", 0.01), pct("y", 0.01), -0.5);
+    box.max.set(pct("x", 0.99), pct("y", 0.99), 0.5);
+    box.expandByScalar(Math.max(box.max.y - box.min.y, 0.1) * 0.07);   // flesh extends past the joints
+    // HEIGHT from ANATOMY when the rig resolved: feet→head role span + headroom. Hair/cloth bones
+    // are heavy AND long (twin-tails), so even weighted percentiles stretch the vertical box —
+    // but a humanoid's height IS her feet-to-crown distance, and the roles are exact.
+    const ft2 = roleBones.left_foot || roleBones.right_foot, hd2 = roleBones.head;
+    if (ft2 && hd2) {
+      const fy = ft2.getWorldPosition(v).y;
+      const hy = hd2.getWorldPosition(new THREE.Vector3()).y;
+      if (hy > fy + 0.05) { box.min.y = fy - (hy - fy) * 0.04; box.max.y = hy + (hy - fy) * 0.18; }   // soles below the ankle joint; crown above the head joint
     }
-    if (b.isEmpty()) b.expandByObject(o);
-    if (!b.isEmpty()) boxes.push(b);
-  });
-  // GROUND/BACKDROP SHEETS ship inside avatar files (aveline: a 34-unit-wide, zero-height plane) —
-  // a paper-flat horizontal outlier must not define HER size (it poisoned the shadow width, the
-  // walls, the capsule and fitToScreen's width cap). Excluded from the MEASUREMENT only; it still
-  // renders — hide it via Parts if unwanted.
-  const solid = boxes.filter((b) => (b.max.y - b.min.y) > 0.02 * Math.max(b.max.x - b.min.x, b.max.z - b.min.z));
-  for (const b of (solid.length ? solid : boxes)) box.union(b);
+    return;
+  }
+  if (pts.length) { for (const p of pts) box.expandByPoint(v.set(p.x, p.y, 0)); box.expandByScalar(0.2); return; }
+  model.traverse((o) => { if (o.isMesh && o.visible) box.expandByObject(o); });
 }
 // Re-measure her on-screen dims from VISIBLE meshes (rotation neutralized) — show/hide and outfit
 // swaps change the real silhouette, and dims feed the shadow width, walls, capsule and grab box.
 function refreshDims() {
   if (!model) return;
+  if (_motion || (proc?.gesturing && proc.gesturing())) return;   // mid-gesture skinned bounds measure the POSED body (hands mid-clap) — skip; the next toggle re-measures at rest (audit P2)
   const rq = rig.quaternion.clone();
   rig.quaternion.identity(); rig.updateWorldMatrix(true, true);
   _box.makeEmpty();
   expandVisiblePosed(_box);
   if (isFinite(_box.min.y) && _box.max.y > _box.min.y) {
     const s = rig.scale.x || 1;
-    modelDims = { w: (_box.max.x - _box.min.x) / s, h: (_box.max.y - _box.min.y) / s };
+    const w = (_box.max.x - _box.min.x) / s, h = (_box.max.y - _box.min.y) / s;
+    if (w > 0.01 && h > 0.01 && w < BASE_H * 2.5 && h < BASE_H * 2.5) modelDims = { w, h };   // same sanity gate as the load re-anchor — never trust a poisoned measurement
+    else { const m = `[avatar] POISONED dims refresh skipped: ${w.toFixed(1)}x${h.toFixed(1)}`; console.warn(m); try { window.avatarIPC?.log?.(m); } catch {} }
   }
   rig.quaternion.copy(rq); rig.updateWorldMatrix(true, true);
 }
@@ -1447,7 +1482,7 @@ function animate() {
   // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
   // as a collision capsule (props bounce off her), step the world.
   if (physics.count() > 0 && _gReady) {
-    const [, bpx] = dipToLocalPx(gPos.x, curDisp.y + curDisp.height, myOrigin, myBounds, innerWidth, innerHeight);
+    const [, bpx] = dipToLocalPx(gPos.x, (curDisp.wb ?? (curDisp.y + curDisp.height)), myOrigin, myBounds, innerWidth, innerHeight);   // the physics floor matches the visible desk line (work-area bottom), same as her snap floor
     const fy = toWorld(0, bpx).y + 0.02;
     if (_floorWY === null || Math.abs(fy - _floorWY) > 1e-3) { _floorWY = fy; physics.setFloor(fy); }
     const hW = (modelDims.h || BASE_H) * sizeScale, rr = Math.max(0.1, (modelDims.w || 1.5) * sizeScale * 0.28);

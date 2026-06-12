@@ -97,10 +97,13 @@ function toPeers(channel, payload, exceptWinId) {
 // Push the live global position (+ the display she's on) to every window. Each derives its own
 // local render position from this. This is the ONE place her position is published.
 function publishPos() {
-  const d = displayForGlobalPos(), b = d.bounds;
+  const d = displayForGlobalPos(), b = d.bounds, wa = d.workArea || b;
   // drag flag: the brain must SUSPEND any AI glide while main owns a drag (started from any
   // window) — otherwise the two write gPos in turn and she rubber-bands at 125Hz vs 60Hz.
-  broadcast("avatar:pos", { gx: gPos.x, gy: gPos.y, drag: !!(_drag && !_drag.spin), disp: { x: b.x, y: b.y, width: b.width, height: b.height } });   // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
+  // wb = the WORK-AREA bottom (taskbar top): the visible desk surface. The overlay window itself
+  // gets clamped to the work area by Windows (1392 on a 1440 display), so a floor at the DISPLAY
+  // bottom buried her feet in a 48px strip no window can draw ("the walls" round, 2026-06-12).
+  broadcast("avatar:pos", { gx: gPos.x, gy: gPos.y, drag: !!(_drag && !_drag.spin), disp: { x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height } });   // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
 function setGlobalPos(x, y, clamp) {
   const p = clamp === false ? { x, y } : clampToUnion(x, y);
@@ -190,8 +193,8 @@ function makeWindow(display, isBrain, peerCount) {
   win.webContents.on("did-finish-load", () => {
     try {
       win.webContents.send("avatar:init", { isBrain, displayId: display.id, winId: win.webContents.id, origin: { x: b.x, y: b.y }, bounds: { width: b.width, height: b.height }, peerCount: peerCount || 0 });
-      const dHere = displayForGlobalPos().bounds;   // her LIVE display, not this window's (a reload must not teach the window a stale "current display")
-      win.webContents.send("avatar:pos", { gx: gPos.x, gy: gPos.y, disp: { x: dHere.x, y: dHere.y, width: dHere.width, height: dHere.height } });
+      const dh = displayForGlobalPos(), dHere = dh.bounds, wah = dh.workArea || dHere;   // her LIVE display, not this window's (a reload must not teach the window a stale "current display")
+      win.webContents.send("avatar:pos", { gx: gPos.x, gy: gPos.y, disp: { x: dHere.x, y: dHere.y, width: dHere.width, height: dHere.height, wb: wah.y + wah.height } });
       if (!isBrain && currentModelUrl) win.webContents.send("avatar:model", currentModelUrl);   // a late-created / reloaded peer catches up to the live model
     } catch {}
     if (isBrain) console.error("[main] displays: " + JSON.stringify(displays().map((d, i) => ({ i, x: d.bounds.x, y: d.bounds.y, w: d.bounds.width, h: d.bounds.height, primary: d.id === primaryDisplay().id }))));
