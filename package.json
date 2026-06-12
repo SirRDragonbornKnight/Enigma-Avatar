@@ -9,7 +9,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
+    "electron": "^42.4.0",
     "jsdom": "^29.1.1"
   },
   "dependencies": {
