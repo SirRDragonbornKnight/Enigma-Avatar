@@ -391,6 +391,22 @@ function onModelLoaded(asset) {
   // This is the uniform substrate the AI drives on top of ("full body, like a car").
   // Identify bones ONCE via the cascade (VRM → name → geometry → override), then feed
   // BOTH the procedural idle and the spring physics the same resolved map.
+  // HIERARCHY SURGERY (rig_overrides "reparentChildrenOf"): Rigify-class exports ship PARALLEL
+  // skeletons (control / ORG / DEF) whose constraint links the export BAKED AWAY — so hair meshes
+  // and ear chains ride a CONTROL head bone while the face deforms on the DEF chain ("the hair is
+  // following [the cursor] like her head should", 2026-06-11). Move the stranded children onto the
+  // bone that actually deforms (attach() preserves world transforms); roles then target that chain.
+  const _surgery = rigOverrides[curKey]?.reparentChildrenOf;
+  if (_surgery) {
+    for (const [from, to] of Object.entries(_surgery)) {
+      let src = null, dst = null;
+      model.traverse((o) => { if (o.name === from) src = o; else if (o.name === to) dst = o; });
+      if (!src || !dst) { console.warn(`[avatar] reparent: "${from}" → "${to}" not found — skipped`); continue; }
+      for (const c of [...src.children]) dst.attach(c);
+      console.log(`[avatar] reparented children of ${from} → ${to} (parallel-skeleton surgery)`);
+    }
+    model.updateWorldMatrix(true, true);
+  }
   const resolved = resolveRig(model, vrm, { override: rigOverrides[curKey] });
   roleBones = resolved.roles || {};               // expose role→bone for attach-by-role (structural; trust no names)
   applyRotation();                                // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
