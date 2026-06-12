@@ -415,7 +415,7 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
     fire(raw, "mouseenter");
     assert.ok(m.calls.some((c) => c[0] === "highlightBone" && c[1] === "Shibahu_Tail1_0199"), "hover -> highlightBone(raw name)");
     // …and the 🎯 pick button arms a click-on-her pick whose result lands in the filter.
-    const pk = [...document.querySelectorAll("button")].find((b) => /Pick — click a spot/i.test(b.textContent || ""));
+    const pk = [...document.querySelectorAll("button")].find((b) => /Pick a bone/i.test(b.textContent || ""));
     assert.ok(pk, "pick button exists");
     pk.click();
     assert.ok(pickCb, "pick armed a callback");

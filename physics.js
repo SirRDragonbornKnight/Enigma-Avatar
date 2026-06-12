@@ -35,6 +35,22 @@ export function createPhysics({ scene, loadAsset }) {
     if (floorBody) floorBody.setTranslation({ x: 0, y: floorY - 0.5, z: 0 }, true);
   }
 
+  // AI-PLACEABLE PLATFORMS (user design 2026-06-12): static slabs anywhere on screen — balls roll
+  // on them; the avatar's release-snap treats their tops as floor lines (avatar.js side). Replaced
+  // wholesale on every set; lazy like everything else (queued until the world exists).
+  let platBodies = [], _pendingPlats = null;
+  function setPlatforms(rects) {
+    if (!world) { _pendingPlats = rects; ensureWorld().then(() => { if (_pendingPlats) { const p = _pendingPlats; _pendingPlats = null; setPlatforms(p); } }); return; }
+    for (const b of platBodies) { try { world.removeRigidBody(b); } catch {} }
+    platBodies = [];
+    for (const r of (rects || [])) {
+      if (!isFinite(r.x) || !isFinite(r.y) || !(r.halfW > 0)) continue;
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(r.x, r.y - 0.04, 0));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(r.halfW, 0.04, 50).setFriction(0.55).setRestitution(0.4), body);
+      platBodies.push(body);
+    }
+  }
+
   // Track HER body as a KINEMATIC capsule (driven by us, unaffected by impacts) so props bounce off
   // her instead of passing through. Called every frame with her live torso centre + size; the capsule
   // is rebuilt only when her SIZE changes meaningfully (a resize), else just repositioned — cheap.
@@ -123,5 +139,5 @@ export function createPhysics({ scene, loadAsset }) {
     return awake;                                         // keep the frame rate up only while something moves
   }
 
-  return { throwProp, clearProps, step, setFloor, setAvatar, serializeProps, count: () => props.length };
+  return { throwProp, clearProps, step, setFloor, setPlatforms, setAvatar, serializeProps, count: () => props.length };
 }

@@ -398,11 +398,17 @@ export function createUI(api) {
     // in plain words ("the ahoge"). Big rigs: filter + capped list (a Rigify export has 593).
     const bones = api.bones ? api.bones() : [];
     if (bones.length) {
+      // The bone SYSTEM presents 593 rows of Rigify soup on some rigs ("seems bad"; user 2026-06-12)
+      // — but the skin weights know which ~170 actually move mesh. Default view = real bones only
+      // (deforming / role-resolved / already named), sorted roles-first then by influence; a
+      // checkbox reveals the helper soup when it's genuinely needed.
+      const hasW = bones.some((b) => b.deforms != null);
+      const realCount = hasW ? bones.filter((b) => b.deforms || b.role || b.label).length : bones.length;
       body.appendChild(divider());
       const open0 = _bonesOpen === true;                 // default CLOSED — huge lists; deliberate section
       const ch = document.createElement("div"); ch.style.cssText = "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;";
       const caret = document.createElement("span"); caret.textContent = open0 ? "▾" : "▸"; caret.style.fontSize = "9px";
-      const lbl = document.createElement("span"); lbl.textContent = `Bones — name them (${bones.length})`;
+      const lbl = document.createElement("span"); lbl.textContent = hasW ? `Bones — name them (${realCount} real of ${bones.length})` : `Bones — name them (${bones.length})`;
       ch.append(caret, lbl); body.appendChild(ch);
       const bbox = document.createElement("div"); bbox.style.display = open0 ? "block" : "none"; body.appendChild(bbox);
       ch.onclick = (e) => { e.stopPropagation(); _bonesOpen = bbox.style.display === "none"; bbox.style.display = _bonesOpen ? "block" : "none"; caret.textContent = _bonesOpen ? "▾" : "▸"; };
@@ -410,26 +416,36 @@ export function createUI(api) {
       const filt = document.createElement("input"); filt.type = "text"; filt.placeholder = "filter bones (name / label / role)…"; filt.spellcheck = false;
       filt.style.cssText = "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
       filt.onkeydown = (e) => e.stopPropagation();       // typing must not trigger global hotkeys
-      // IDENTIFY bones (user 2026-06-12): 🎯 pick = the next click ON HER selects the nearest bone
+      // IDENTIFY bones (user 2026-06-12): Pick = the next click ON HER selects the nearest bone
       // into the filter; hovering/clicking a row's raw name flashes a pink marker on that bone.
+      let showAll = false, allCb = null;
       if (api.pickBone) {
         const pk = document.createElement("button");
-        const IDLE_TXT = "🎯 Pick — click a spot on her body";
+        const IDLE_TXT = "Pick a bone — click a spot on her body";
         pk.textContent = IDLE_TXT;
         pk.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:2px 0 4px;display:block;";
         pk.onclick = (e) => {
           e.stopPropagation();
-          pk.textContent = "…now click her (Esc cancels)";
-          api.pickBone((name) => { filt.value = name; render(); pk.textContent = IDLE_TXT; });
+          pk.textContent = "…now click her (anywhere else cancels)";
+          api.pickBone((name) => { filt.value = name; showAll = true; if (allCb) allCb.checked = true; render(); pk.textContent = IDLE_TXT; });   // a picked helper bone must be visible in the list
         };
         bbox.appendChild(pk);
       }
       const list = document.createElement("div");
       const CAP = 30;
+      let allRow = null;
+      if (hasW && realCount < bones.length) {            // the helper-soup toggle (only when weights distinguish real from soup)
+        allRow = document.createElement("label"); allRow.style.cssText = "display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7;margin:0 0 4px;cursor:pointer;";
+        const cb = document.createElement("input"); cb.type = "checkbox"; allCb = cb;
+        cb.onchange = (e) => { e.stopPropagation(); showAll = cb.checked; render(); };
+        const t = document.createElement("span"); t.textContent = `show ${bones.length - realCount} helper bones (deform nothing)`;
+        allRow.append(cb, t);
+      }
       const render = () => {
         list.innerHTML = "";
         const q = filt.value.trim().toLowerCase();
-        const hits = bones.filter((b) => !q || b.name.toLowerCase().includes(q) || (b.label || "").toLowerCase().includes(q) || (b.role || "").toLowerCase().includes(q));
+        const base = hasW && !showAll ? bones.filter((b) => b.deforms || b.role || b.label) : bones;   // default: only bones that move mesh / hold a role / are named
+        const hits = base.filter((b) => !q || b.name.toLowerCase().includes(q) || (b.label || "").toLowerCase().includes(q) || (b.role || "").toLowerCase().includes(q));
         for (const b of hits.slice(0, CAP)) {
           const row = document.createElement("div"); row.style.cssText = "display:flex;align-items:center;gap:7px;padding:3px 0;";
           const nm = document.createElement("input"); nm.type = "text"; nm.value = b.label || ""; nm.placeholder = "name it…"; nm.spellcheck = false;
@@ -452,7 +468,8 @@ export function createUI(api) {
         }
       };
       filt.oninput = (e) => { e.stopPropagation(); render(); };
-      bbox.append(filt, list); render();
+      if (allRow) bbox.append(filt, allRow, list); else bbox.append(filt, list);
+      render();
     }
 
     // Shapes / morphs — the model's OWN shape keys (facial expressions, body toggles like "show X").

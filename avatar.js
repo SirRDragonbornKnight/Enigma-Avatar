@@ -170,23 +170,65 @@ function localPxToGlobal(cx, cy) { const [x, y] = localPxToDip(cx, cy, myOrigin,
 // Is she standing on THIS window's display? Captures/thumbnails route to HER window in main —
 // a crop rect computed in a DIFFERENT window's pixel space would cut garbage out of that capture.
 function onMyDisplay() { return _gReady && Math.round(curDisp.x) === Math.round(myOrigin.x) && Math.round(curDisp.y) === Math.round(myOrigin.y); }
-function _bodyPx() {                            // her CURRENT on-screen size in px (≈ DIP): [half-width, height]
-  const h = (modelDims.h || BASE_H) * sizeScale, w = (modelDims.w || 1.5) * sizeScale;
-  const a = toScreen(0, 0), b = toScreen(w, h);
-  return [Math.abs(b[0] - a[0]) / 2, Math.abs(a[1] - b[1])];
-}
 function _clampToDisp(p) {                      // glide/nudge stay on her current screen (only a DRAG crosses bezels).
-  // BODY-AWARE walls (user 2026-06-12: "the walls… need to be connected to the avatar… i want more
-  // room"): the limits scale with HER body, not the screen. Feet can stand flush on the BOTTOM edge
-  // (the old flat 4% margin hovered her ~55px above the taskbar — half the "weird shadow" read);
-  // the SIDES let her lean past the edge as long as a grabbable slice stays on-screen; the TOP
-  // keeps enough of her visible to reach.
-  const d = curDisp, [hw, bh] = _bodyPx();
-  const keep = Math.max(24, hw * 0.4);          // the slice of her that must remain on-screen (re-grab handle)
-  return {
-    x: Math.max(d.x - hw + keep, Math.min(d.x + d.width + hw - keep, p.x)),
-    y: Math.max(d.y + Math.min(bh * 0.35, d.height * 0.3), Math.min(d.y + d.height - 2, p.y)),
-  };
+  // WALLS v2 (user 2026-06-12: the body-scaled walls MOVED when she was resized — wrong): FIXED
+  // slim margins, independent of her size. The BOTTOM is PERMEABLE — the floor is a SNAP LINE she
+  // rests on (floorSnap below), not a wall: she can be deliberately sent through/below it (recover
+  // via tray / goTo). The clamp only stops her from being lost entirely.
+  const d = curDisp, m = 16;
+  return { x: Math.max(d.x + m, Math.min(d.x + d.width - m, p.x)), y: Math.max(d.y + m, Math.min(d.y + d.height * 1.4, p.y)) };
+}
+// --- THE FLOOR IS A SNAP LINE, NOT A WALL + AI-PLACEABLE PLATFORMS (user design 2026-06-12) -----
+// She ACTS like there's a floor: released (or glided) near the screen bottom or near a PLATFORM
+// top, her feet ease onto that surface — but nothing hard-blocks pushing her past it. Platforms
+// are AI-placed effect surfaces: visible translucent bars on every window, rapier static slabs in
+// the brain (balls roll on them), and snap targets for her feet.
+let platforms = [];                              // [{gx, gy, w}] in global DIP (surface line at gy, span w centred on gx)
+let _pfGroup = null;
+function renderPlatforms() {
+  if (_pfGroup) { scene.remove(_pfGroup); _pfGroup.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); }); _pfGroup = null; }
+  if (!platforms.length) { wake(0.5); return; }
+  _pfGroup = new THREE.Group();
+  for (const pf of platforms) {
+    const [lx, ly] = dipToLocalPx(pf.gx, pf.gy, myOrigin, myBounds, innerWidth, innerHeight);
+    const p1 = toWorld(lx - pf.w / 2, ly), p2 = toWorld(lx + pf.w / 2, ly);
+    const bar = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(0.05, Math.abs(p2.x - p1.x)), 0.05), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthTest: false }));
+    bar.position.set((p1.x + p2.x) / 2, p1.y, -1.5); bar.renderOrder = 5; bar.frustumCulled = false;
+    _pfGroup.add(bar);
+  }
+  scene.add(_pfGroup);
+  wake(1);
+}
+function syncPlatformPhysics() {                 // brain only: mirror the bars as rapier static slabs (balls roll on them)
+  if (!_isBrain || !physics.setPlatforms) return;
+  physics.setPlatforms(platforms.map((pf) => {
+    const [lx, ly] = dipToLocalPx(pf.gx, pf.gy, myOrigin, myBounds, innerWidth, innerHeight);
+    const p1 = toWorld(lx - pf.w / 2, ly), p2 = toWorld(lx + pf.w / 2, ly);
+    return { x: (p1.x + p2.x) / 2, y: p1.y, halfW: Math.max(0.03, Math.abs(p2.x - p1.x) / 2) };
+  }));
+}
+function setPlatforms(list) {
+  platforms = (Array.isArray(list) ? list : []).map((p) => ({ gx: +p.gx, gy: +p.gy, w: Math.max(24, +p.w || 220) })).filter((p) => isFinite(p.gx) && isFinite(p.gy)).slice(0, 32);
+  renderPlatforms(); syncPlatformPhysics();
+  setStatus(platforms.length ? `platforms: ${platforms.length}` : "platforms cleared");
+  return platforms.length;
+}
+function surfaceYAt(gx, gy) {                    // nearest restable surface line to gy (floor or a platform top under gx), within the snap band
+  const d = curDisp, band = d.height * 0.05;
+  let best = null, bestDy = band;
+  const floorY = d.y + d.height - 2;
+  if (Math.abs(gy - floorY) <= bestDy) { best = floorY; bestDy = Math.abs(gy - floorY); }
+  for (const pf of platforms) {
+    if (gx < pf.gx - pf.w / 2 || gx > pf.gx + pf.w / 2) continue;
+    const dy = Math.abs(gy - pf.gy);
+    if (dy <= bestDy) { best = pf.gy; bestDy = dy; }
+  }
+  return best;
+}
+function floorSnap() {                           // drag-release / glide-arrival: feet ease onto the nearby surface (the "acts like a floor" feel)
+  if (!_isBrain || held || _dragActive || gliding) return;
+  const s = surfaceYAt(gPos.x, gPos.y);
+  if (s != null && Math.abs(s - gPos.y) > 0.5) setGlide(gPos.x, s);
 }
 function setGlide(gx, gy) { if (!isFinite(gx) || !isFinite(gy)) return; gGlide = _clampToDisp({ x: gx, y: gy }); gliding = true; }
 // --- AI movement: where is she + named anchors, resolved against her CURRENT display ---------
@@ -658,6 +700,7 @@ let _loadSeq = 0;
 const _peerRetries = {};                           // url -> failed mirror-load attempts (peer only)
 function loadModel(url, label) {
   _cancelMotion();                                 // a model switch cancels any in-flight motion + lying hold + bone clip (stale baseline / rotation)
+  _bonePick = null;                                // …and any armed bone-pick (it survived switches and ate the first grab on the next model)
   if (held) { held = false; window.avatarIPC?.dragEnd?.(); }   // …and never leave her glued to the cursor across a switch (main also endDrag()s on modelLoaded — belt + braces)
   const seq = ++_loadSeq;                          // guard: a slower earlier load must not clobber a newer switch
   if (url === DEFAULT_KEY) { curKey = DEFAULT_KEY; onModelLoaded(buildDefaultAvatar()); showOnboarding(); return; }   // zero-asset procedural placeholder
@@ -1388,7 +1431,7 @@ function animate() {
   if (!held && gGlide) {
     const k = Math.min(1, dt * 4);
     gPos.x += (gGlide.x - gPos.x) * k; gPos.y += (gGlide.y - gPos.y) * k;
-    if (Math.hypot(gGlide.x - gPos.x, gGlide.y - gPos.y) < 1) { gPos.x = gGlide.x; gPos.y = gGlide.y; gGlide = null; gliding = false; }
+    if (Math.hypot(gGlide.x - gPos.x, gGlide.y - gPos.y) < 1) { gPos.x = gGlide.x; gPos.y = gGlide.y; gGlide = null; gliding = false; floorSnap(); }   // arrivals settle onto a nearby surface (no-op when none is within the band)
     window.avatarIPC?.setGlobalPos?.(gPos.x, gPos.y);
   }
   const _bp = gToWorld(gPos.x, gPos.y);
@@ -1610,10 +1653,16 @@ const EnigmaAvatar = {
   meshes: () => { const lab = profileFor(curKey).meshLabels || {}; return allMeshesInfo().map(({ mesh, name }, index) => ({ index, name: name || null, label: lab[index] || null, visible: mesh.visible })); },   // sub-objects BY INDEX (+ user label)
   setMeshVisible: (i, on) => setMeshVisible(i, on),                      // show/hide a mesh by index; saved per avatar
   setMeshLabel: (i, label) => setMeshLabel(i, label),                    // give a part a legible name (saved per avatar)
-  bones: () => {                                                          // every bone: raw name + user label + resolved role (for Settings naming / AI addressing)
+  bones: () => {                                                          // every bone: raw name + user label + resolved role + REAL mesh influence (Settings naming / AI addressing)
     const lab = profileFor(curKey).boneLabels || {};
     const roleOf = {}; for (const r in roleBones) if (roleBones[r]) roleOf[roleBones[r].name] = r;
-    const out = []; model?.traverse((o) => { if (o.isBone) out.push({ name: o.name, label: lab[o.name] || null, role: roleOf[o.name] || null }); });
+    const out = [];
+    model?.traverse((o) => {
+      if (!o.isBone) return;
+      const mass = _weightMass ? +(_weightMass.get(o) || 0).toFixed(1) : null;
+      out.push({ name: o.name, label: lab[o.name] || null, role: roleOf[o.name] || null, mass, deforms: mass == null ? null : mass > 0.5 });
+    });
+    out.sort((a, b) => ((b.role ? 1 : 0) - (a.role ? 1 : 0)) || ((b.mass || 0) - (a.mass || 0)));   // the bones that MATTER first: roles, then by how much mesh they really move ("the bone system seems bad" = 593 soup rows; user 2026-06-12)
     return out;
   },
   setBoneLabel: (n, l) => setBoneLabel(n, l),                            // name a bone (saved per avatar)
@@ -1647,6 +1696,7 @@ function answerQuery(what) {
   if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null;   // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
   if (what === "grip") return proc?.gripState ? proc.gripState() : null;   // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
   if (what === "outfits") return { outfits: outfitNames(), hiddenMeshes: profileFor(curKey).hiddenMeshes || [] };   // the saved looks + the live hidden set
+  if (what === "platforms") return { count: platforms.length, platforms: platforms.map((p) => ({ px: Math.round(p.gx - curDisp.x), py: Math.round(p.gy - curDisp.y), w: p.w })) };   // in her current monitor's px (the `where` convention)
   if (what === "bounds") {   // DIAGNOSTIC: per-VISIBLE-mesh world bounds (posed) — find what inflates the dims
     const out = [];
     const b = new THREE.Box3(), t = new THREE.Box3();
@@ -1716,6 +1766,11 @@ function handleCommand(c) {
   else if (c.action === "highlightBone" && c.bone) return uiHighlightBone(String(c.bone), c.dur);     // flash a marker on a bone (point AT a part while talking about it)
   else if (c.action === "outfit" && c.name) return c.delete ? uiDeleteOutfit(c.name) : (c.save ? uiSaveOutfit(c.name) : uiWearOutfit(c.name));   // outfit presets: wear by default; {save:true} snapshots the current look; {delete:true} removes
   else if (c.action === "anim") return c.stop ? stopAnim() : playAnim(c.name ?? c.url, { loop: c.loop !== false });   // authored clip on the CURRENT rig (anims/ library or a url); {stop:true} ends it
+  else if (c.action === "platform") {            // AI effect surfaces: {px,py,w} adds one (screen px on her monitor — `where` convention); {clear:true} wipes all
+    if (c.clear) return uiSetPlatforms([]);
+    if (isFinite(+c.px) && isFinite(+c.py)) return uiSetPlatforms([...platforms, { gx: curDisp.x + (+c.px), gy: curDisp.y + (+c.py), w: +c.w || 220 }]);
+    return platforms.length;
+  }
   else if (c.action === "hue" && c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0);      // rotate a material's hue — relayed
   else if (c.action === "query") return answerQuery(c.what);   // AI self-report: live state / materials / facial (ground truth)
 }
@@ -1744,7 +1799,10 @@ window.avatarIPC?.onGlobalPos?.((p) => {
   gPos.x = p.gx; gPos.y = p.gy; if (p.disp) curDisp = p.disp; _gReady = true;
   if (p.drag && (gGlide || gliding)) { gGlide = null; gliding = false; }   // a main-owned drag (from ANY window) outranks an AI glide — without this the two write gPos in turn and she rubber-bands
   const df = !!p.drag; _dragActive = df;
-  if (_isBrain && df !== _wasDragFlag) { _wasDragFlag = df; proc?.setGrip?.("both", df); }   // carried by the body → she grips with both hands for the ride
+  if (_isBrain && df !== _wasDragFlag) {
+    _wasDragFlag = df; proc?.setGrip?.("both", df);   // carried by the body → she grips with both hands for the ride
+    if (!df) setTimeout(() => floorSnap(), 30);       // release edge: feet ease onto a nearby surface (floor line / platform) — the floor FEEL without a wall
+  }
   if (moved && _isBrain) wake(0.6);   // keep the brain (→ pose broadcast) lively while she's dragged from another monitor
 });
 window.avatarIPC?.onCursor?.((p) => {   // a peer display's pointermove, relayed in global DIP → OUR local px (possibly off-window; the look math only needs the direction)
@@ -1796,6 +1854,7 @@ const UI_CMDS = {
   resetColors:      { scope: "all", bound: true, fn: () => resetColors() },
   setMeshVisible:   { scope: "all", bound: true, fn: (i, on) => setMeshVisible(i, on) },
   setMeshLabel:     { scope: "all", bound: true, fn: (i, l) => setMeshLabel(i, l) },
+  setPlatforms:     { scope: "all", fn: (l) => setPlatforms(l) },   // AI effect surfaces — every window draws its bars; the brain feeds the physics slabs
   saveOutfit:       { scope: "all", bound: true, fn: (n) => saveOutfit(n) },     // outfit presets: every window keeps its profile copy in sync; the brain persists
   wearOutfit:       { scope: "all", bound: true, fn: (n) => wearOutfit(n) },
   deleteOutfit:     { scope: "all", bound: true, fn: (n) => deleteOutfit(n) },
@@ -1853,6 +1912,7 @@ const uiResetColors = relayed("resetColors"), uiSetMeshVisible = relayed("setMes
 const uiSetBoneLabel = relayed("setBoneLabel");   // name a bone — Settings input + the bus 'nameBone' action share this relay
 const uiHighlightBone = relayed("highlightBone");   // flash a marker on a bone — Settings rows, the pick mode + the bus share it
 const uiSaveOutfit = relayed("saveOutfit"), uiWearOutfit = relayed("wearOutfit"), uiDeleteOutfit = relayed("deleteOutfit");   // outfit presets (Settings → Parts + bus 'outfit')
+const uiSetPlatforms = relayed("setPlatforms");   // AI platforms (bus 'platform')
 const uiSetRegionWeight = relayed("setRegionWeight"), uiSetRotateMode = relayed("setRotateMode"), uiSetLookMode = relayed("setLookMode");
 // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
 // the initiator, or a window created mid-session (display plugged in) would number its copies
@@ -1951,13 +2011,17 @@ addEventListener("pointerdown", (e) => {
   if (ui.containsEvent(e.target)) return;                        // clicking a popup's own controls
   cursor.x = e.clientX; cursor.y = e.clientY; computeOver();
   ui.hideMenu();                                                // the right-click menu always dismisses on an outside click
-  if (cursor.over) {
-    if (_bonePick) {                                            // pick mode (Settings → Bones → 🎯): this click selects a bone, not a drag
-      const n = pickBoneAt(cursor.x, cursor.y); const cb = _bonePick; _bonePick = null;
+  if (_bonePick) {                                              // pick mode (Settings → Bones): ONE-SHOT, always — a click on her picks a bone;
+    const cb = _bonePick; _bonePick = null;                     // a click anywhere else CANCELS (a stuck pick was eating the next grab; user 2026-06-12)
+    if (cursor.over) {
+      const n = pickBoneAt(cursor.x, cursor.y);
       if (n) { uiHighlightBone(n, 3); setStatus("picked bone: " + n); try { cb(n); } catch {} }
       _downX = -999;
       return;
     }
+    setStatus("bone pick cancelled");
+  }
+  if (cursor.over) {
     ui.hideGallery();
     if (!locked) {
       if (e.altKey || rotateMode) {   // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.

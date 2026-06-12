@@ -85,7 +85,7 @@ function clampToUnion(x, y) {
   const ds = displays();
   const d = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
   const b = d.bounds, m = 8;
-  return { x: Math.max(b.x + m, Math.min(b.x + b.width - m, x)), y: Math.max(b.y + m, Math.min(b.y + b.height, y)) };
+  return { x: Math.max(b.x + m, Math.min(b.x + b.width - m, x)), y: Math.max(b.y + m, Math.min(b.y + b.height * 1.4, y)) };   // bottom PERMEABLE (the floor is a snap line in the renderer, not a wall) — 1.4× keeps a runaway drag recoverable
 }
 
 function broadcast(channel, payload) { for (const w of liveWindows()) { try { w.win.webContents.send(channel, payload); } catch {} } }
