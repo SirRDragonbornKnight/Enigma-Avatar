@@ -480,7 +480,6 @@ export function createUI(api) {
       lsel.onchange = (e) => { e.stopPropagation(); api.setLookMode(lsel.value); };
       body.appendChild(sRow("Look with", lsel));
     }
-    body.appendChild(sCheck("Idle behavior (random emotes)", flags.idleBehaviorOn, (v) => (flags.idleBehaviorOn = v)));
     body.appendChild(sCheck("Face (blink / lip-sync)", flags.facialOn, (v) => (flags.facialOn = v)));
     body.appendChild(sCheck("Lock in place", flags.locked, (v) => (flags.locked = v)));
     body.appendChild(sCheck("Show skeleton (inspect bones)", api.getBonesShown(), (v) => api.showSkeleton(v)));

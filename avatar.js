@@ -272,14 +272,13 @@ const sizeByModel = (() => { try { return JSON.parse(localStorage.getItem(SIZE_K
 let curKey = FORCED_MODEL || DEFAULT_KEY;   // real model resolved in startup() (first in the library, else procedural)
 let sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE;   // reopen at the last-used size for this model
 let springOn = true, idleOn = true, facialOn = true, locked = false;   // engine toggles (Settings checkboxes)
-let lookOn = true, idleBehaviorOn = true;                       // companion behaviors: track cursor + occasional emotes
+let lookOn = true;                                              // companion behavior: track the cursor (reactive; everything self-firing is gone)
 // Accessor bridge so ui.js (Settings checkboxes) can read/write these toggles. Their
 // source of truth stays here — the animate loop reads the raw `let`s directly.
 const flags = {
   get springOn() { return springOn; }, set springOn(v) { springOn = v; },
   get idleOn() { return idleOn; }, set idleOn(v) { idleOn = v; },
   get lookOn() { return lookOn; }, set lookOn(v) { lookOn = v; },
-  get idleBehaviorOn() { return idleBehaviorOn; }, set idleBehaviorOn(v) { idleBehaviorOn = v; },
   get facialOn() { return facialOn; }, set facialOn(v) { facialOn = v; },
   get locked() { return locked; }, set locked(v) { locked = v; },
 };
@@ -293,9 +292,8 @@ let lookMode = "both";                                        // "both" | "head"
 try { const lm = localStorage.getItem("enigmaAvatar.lookMode"); if (lm) lookMode = lm; } catch {}
 const _eyeQy = new THREE.Quaternion(), _eyeQp = new THREE.Quaternion();   // reused per-frame: yaw (about face-up) + pitch (about ear-to-ear) eye rotations
 let _eyeCurX = 0, _eyeCurY = 0;   // smoothed eye-gaze state (cursor tracking only — the idle dart scheduler was removed: no idle animation, 2026-06-11)
-let _idleClock = 0, _idleNext = 9, _downX = -999, _downY = 0;   // idle-emote timer + click/pet detection
+let _downX = -999, _downY = 0;                                  // click/pet detection
 const _clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
-const IDLE_EMOTES = ["nod", "happy", "alert", "wag"];
 
 // --- SIZE POLICY (one place) ------------------------------------------------
 // There is ONE size value (sizeScale), persisted per model. Three entry points
@@ -1097,15 +1095,8 @@ function setLookMode(m) {
   setStatus("look with: " + lookMode);
   return lookMode;
 }
-// Occasional gentle emote when left alone (not held / hovered / speaking / menu open).
-function maybeIdleBehavior(dt) {
-  if (!proc || !idleBehaviorOn || held || cursor.over || ui.isOpen() || voice.isSpeaking() || _motion || (proc.gesturing && proc.gesturing())) { _idleClock = 0; return; }   // a motion/lying hold must not queue a stale emote (it fired the moment she got up) or bounce the fps ladder
-  _idleClock += dt;
-  if (_idleClock >= _idleNext) {
-    _idleClock = 0; _idleNext = 8 + Math.random() * 12;
-    EnigmaAvatar.express(IDLE_EMOTES[(Math.random() * IDLE_EMOTES.length) | 0], 1.8);
-  }
-}
+// (The random idle-emote scheduler that lived here is GONE — user ruling 2026-06-11 "remove all
+// of it": NOTHING fires by itself. Emotes happen only when commanded: tap/pet, menu, bus, AI.)
 
 // --- float + idle (NO gravity, NO walking) ----------------------------------
 // ADAPTIVE FRAME RATE — the overlay used to redraw a near-static figure 60×/s forever (~13% of a
@@ -1143,7 +1134,6 @@ function animate() {
   rig.position.set(_bp.x, _bp.y + _motionY, 0);                // global-derived base + the local jump hop; bones/springs do the rest
   updateShadow();                                               // ground-contact patch under the feet (stays grounded through jumps)
   updateLook(dt);                                               // head tracks the cursor
-  maybeIdleBehavior(dt);                                        // occasional gentle emote when left alone
   if (mixer && current) { mixer.update(dt); if (proc) proc.update(dt, false, { additive: true }); }  // a clip is playing → emotes layer additively
   else if (proc && (idleOn || inMotion || (proc.gesturing && proc.gesturing()))) proc.update(dt, false);   // idle + emotes; ALSO run during a motion/gesture (even if idle is off) so the body articulates + a lay-down hold persists
   if (facial && facialOn) facial.update(dt);                    // blink + lip-sync (jaw / morphs / VRM weights)
@@ -1310,7 +1300,7 @@ const EnigmaAvatar = {
   reloadRig: () => loadRigOverrides().then(() => { if (curKey && /models\//.test(curKey)) loadModel(curKey, curKey); }),   // re-read rig_overrides.json + re-resolve the CURRENT disk model live (no restart) — the AI's fix loop. Skips drag-dropped/transient models (bare filename / revoked blob / no override entry).
   matched: () => (proc ? proc.matched : []),
   tune: (p) => idleTune(p),   // idle feel, SAVED per model — idleTune sanitizes (numericOnly) BEFORE setParams: a stringly bus value ({breathe:"deep"}) NaN-poisoned core bone quats with no self-heal (audit 2026-06-11)
-  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, idleBehavior: idleBehaviorOn, locked, rotateMode, menu: ui.isOpen() }, idleProfile: profileFor(curKey).idle || null }),
+  state: () => ({ held, size: +sizeScale.toFixed(2), pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)], screen: [innerWidth, innerHeight], screenPos: posScreen(), cursorPx: [cursor.x | 0, cursor.y | 0], over: cursor.over, vrm: !!vrm, clips: clipNames(), procBones: proc ? proc.matched : [], springBones: spring ? spring.names : [], facial: facial ? { mode: facial.mode, info: facial.info } : null, attachments: attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })), toggles: { spring: springOn, idle: idleOn, facial: facialOn, look: lookOn, locked, rotateMode, menu: ui.isOpen() }, idleProfile: profileFor(curKey).idle || null }),
   springTune: (p) => springTune(p),                                      // saved per-avatar (hair flow, etc.)
   express: (type, dur) => { const d = +dur, dd = isFinite(d) && d > 0 ? d : undefined; if (proc) proc.setExpression(type, dd); wake((dd || 1.6) + 0.4); },   // AI emote — dur sanitized: a bus value like "2s" NaN-poisons core bone quats with NO self-heal (and the NaNs stream to peers)
   gesture: (name, dur) => {                                              // animated action — idle suspended
@@ -1587,7 +1577,7 @@ const uiSpringTune = relayed("springTune"), uiFacialTune = relayed("facialTune")
 const relayFlags = {};
 {
   const _setFlag = relayed("setFlag");
-  for (const k of ["springOn", "idleOn", "lookOn", "idleBehaviorOn", "facialOn", "locked"])
+  for (const k of ["springOn", "idleOn", "lookOn", "facialOn", "locked"])
     Object.defineProperty(relayFlags, k, { get: () => flags[k], set: (v) => _setFlag(k, v) });
 }
 

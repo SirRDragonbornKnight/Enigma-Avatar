@@ -28,8 +28,8 @@ test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
     createUI(api).showSettings();
     const cases = [
       ["Spring physics", "springOn"], ["Idle motion", "idleOn"], ["Look at cursor", "lookOn"],
-      ["Idle behavior", "idleBehaviorOn"], ["Face (blink", "facialOn"], ["Lock in place", "locked"],
-    ];
+      ["Face (blink", "facialOn"], ["Lock in place", "locked"],
+    ];   // ("Idle behavior (random emotes)" checkbox removed 2026-06-11 with its scheduler — nothing fires by itself)
     for (const [label, flag] of cases) {
       const cb = checkboxByLabel(label);
       assert.ok(cb, `checkbox "${label}" exists`);

@@ -357,7 +357,20 @@ function init() {
   ipcMain.on("avatar:setGlobalPos", (_e, p) => { if (_drag) return; if (p && isFinite(p.gx) && isFinite(p.gy)) setGlobalPos(p.gx, p.gy); });
   // Grab lifecycle (any window) — main then follows the OS cursor across every monitor.
   ipcMain.on("avatar:dragStart", (e, p) => { if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY); });
-  ipcMain.on("avatar:dragEnd", () => endDrag());
+  ipcMain.on("avatar:dragEnd", (e) => {
+    // While main owns a drag, the bezel-crossing interactivity handoff sends the OLD window a
+    // pointercancel — its safety dragEnd was KILLING the drag mid-cross, stranding her straddling
+    // the seam ("can get stuck between monitors", 2026-06-11). Only the window the CURSOR is on
+    // can deliver a real release; ignore end-requests from any other window during a drag.
+    if (_drag) {
+      try {
+        const cur = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
+        const w = liveWindows().find((x) => x.win.webContents.id === e.sender.id);
+        if (w && w.displayId !== cur) return;
+      } catch {}
+    }
+    endDrag();
+  });
   // Nudge by a fraction of her CURRENT display (arrow keys / AI) — resolved against the live layout.
   ipcMain.on("avatar:nudge", (_e, p) => {
     if (!p) return; const d = displayForGlobalPos().bounds;
