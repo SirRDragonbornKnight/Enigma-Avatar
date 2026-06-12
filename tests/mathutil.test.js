@@ -2,40 +2,11 @@
 // save, the spring weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
 import { test } from "node:test";
 import assert from "node:assert";
-import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, ambientAmp, dipToLocalPx, localPxToDip } from "../mathutil.js";
+import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, dipToLocalPx, localPxToDip } from "../mathutil.js";
 
-test("ambientAmp: deeper bones move more, capped, never zero, scales with base", () => {
-  assert.ok(ambientAmp(1) > 0, "shallow bones still get SOME life");
-  assert.ok(ambientAmp(3) > ambientAmp(1), "deeper = more motion");
-  assert.ok(Math.abs(ambientAmp(5) - ambientAmp(50)) < 1e-12, "capped at depth 5 — a 50-link hair chain must not flail");
-  assert.ok(Math.abs(ambientAmp(3, 0.04) - 2 * ambientAmp(3, 0.02)) < 1e-12, "linear in base");
-  assert.ok(ambientAmp(-2) > 0 && ambientAmp(NaN) > 0, "garbage depth degrades to the minimum, not NaN");
-  assert.ok(ambientAmp(50) <= 0.03, "max amplitude stays micro (≤ base)");
-});
+// (the ambientAmp + idle-v4 primitive tests died with the idle system, 2026-06-12)
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
-
-test("idle v4 primitives: dampSpring converges without overshoot and is frame-rate independent", async () => {
-  const { dampSpring, noise1, fnoise, jitter } = await import("../motionmath.js");
-  // converges: from rest, 1 unit away, halflife 0.2 — close after 2s, and NEVER overshoots
-  const s = { x: 0, v: 0 };
-  let prev = 0;
-  for (let i = 0; i < 120; i++) { dampSpring(s, 1, 0.2, 1 / 60); assert.ok(s.x <= 1 + 1e-9, "critically damped — no overshoot"); assert.ok(s.x >= prev - 1e-9, "monotonic approach from rest"); prev = s.x; }
-  assert.ok(Math.abs(s.x - 1) < 0.01, "reached the goal");
-  // closed-form stepping: one 0.1s step ≡ two 0.05s steps (exact integrator, frame-rate independent)
-  const a = { x: 0, v: 0 }, b = { x: 0, v: 0 };
-  dampSpring(a, 1, 0.2, 0.1);
-  dampSpring(b, 1, 0.2, 0.05); dampSpring(b, 1, 0.2, 0.05);
-  assert.ok(Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.v - b.v) < 1e-9, "semigroup property holds");
-  // noise: bounded, smooth, deterministic, non-constant
-  let mn = 9, mx = -9;
-  for (let t = 0; t < 50; t += 0.01) { const n = noise1(t); mn = Math.min(mn, n); mx = Math.max(mx, n); assert.ok(Math.abs(noise1(t + 0.001) - n) < 0.02, "smooth"); }
-  assert.ok(mn >= -1.3 && mx <= 1.3 && mx - mn > 0.5, `bounded + alive (range ${mn.toFixed(2)}..${mx.toFixed(2)})`);
-  assert.strictEqual(noise1(12.34), noise1(12.34), "deterministic");
-  assert.notStrictEqual(fnoise(3.3, 1), fnoise(3.3, 2), "seeds decorrelate channels");
-  // jitter: stays in [base·(1−f), base·(1+f)]
-  for (let i = 0; i < 200; i++) { const j = jitter(10, 0.5); assert.ok(j >= 5 - 1e-9 && j <= 15 + 1e-9); }
-});
 
 test("multi-window coords: DIP↔local-px round-trips and respects per-window bounds", () => {
   // middle monitor in the dev rig: origin (2560,145), 1920×1080 DIP, window inner 1920×1080 (ratio 1)

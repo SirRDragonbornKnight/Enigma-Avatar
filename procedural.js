@@ -2,29 +2,24 @@
 // clips needed). The rig cascade resolves bones to humanoid ROLES; per-bone hinge
 // axes are derived at build (a limb's local x/y/z is NOT anatomy — trust no axes).
 //
-// IDLE v4 — "LIVING LAYERS" (research-backed, 2026-06-10): a continuously-moving
-// system, not pose blending. Always-on breath (0.27 Hz) + postural sway (~0.7°,
-// inverted-pendulum bands) mean velocity NEVER reaches zero (the "moving hold");
-// weight shifts are randomized DC offsets chased by critically-damped springs on
-// a per-joint halflife LADDER (hips lead → chest → head → arms drag = follow-
-// through); arms hang riding the sway or take occasional IK poses whose targets
-// spring from wherever the hand IS (pop-free by construction) and wander while
-// held; every channel has its own noise seed (no shared clock) and every event
-// timer is jittered (no cadence). Gesture entry/exit slerp-blends ~0.25s.
-// Tunables: window.EnigmaAvatar.tune({breathe, swayAmp, shiftEvery, drift, ...}).
+// THERE IS NO IDLE ANIMATION. The whole idle system (breath, postural sway, weight
+// shifts, arm poses, glances, ambient micro-motion, fidgets, the per-model tuning
+// surface) was DELETED OUTRIGHT on user order (2026-06-12: "delete the idle
+// animation everywhere and anything that has to do with it"). She stands bit-still
+// until something REAL drives her: cursor-look (reactive), commanded gestures /
+// emotes / speech, springs reacting to actual movement, finger grip while carried.
+// Do not re-add self-generated motion here — not even as a "sensible default".
 
 import * as THREE from "three";
 import { resolveRig } from "./rig.js";
-import { bell, easeInOut as ez, dampSpring, fnoise, jitter } from "./motionmath.js";   // pure, unit-tested motion shaping + idle-v4 primitives (damper / gradient noise / jittered timers)
-import { ambientAmp } from "./mathutil.js";                // pure depth→amplitude curve for the ambient layer (unit-tested)
-import { classifyBone, NSFW_REGIONS } from "./region.js";  // ambient must skip NSFW bones (their LEAF bones are childless → never sprung → not in sprungNames)
+import { bell, easeInOut as ez } from "./motionmath.js";   // pure, unit-tested motion shaping (gesture envelopes / blends)
 
 const DEG = Math.PI / 180;
 
 // Bone IDENTIFICATION lives in rig.js now (a VRM → name → geometry → override
 // cascade). This module is the MOTION layer: given the resolved role→bone map it
-// drives the layered idle + emotes. Pass `resolved` from resolveRig(); if omitted
-// (e.g. unit tests / standalone use), it resolves names+geometry itself.
+// drives commanded gestures/emotes + reactive look/grip. Pass `resolved` from
+// resolveRig(); if omitted (unit tests / standalone use), it resolves itself.
 export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   const R = resolved || resolveRig(model, null);
   const bones = R.roles;                 // role -> live bone
@@ -337,7 +332,6 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   model.updateWorldMatrix(true, true);
   const chestRef = bones.chest || bones.spine || bones.hips || null;
   let clapLocal = null, clapRightL = null, clapUpL = null, clapFwdL = null, armReach = 0, handRestL = null, handRestR = null;
-  let stanceAnchors = null, stanceHips = null;
   if (chestRef && bones.left_arm && bones.left_forearm && bones.left_hand && bones.right_arm && bones.right_forearm && bones.right_hand) {
     const wpos = (bb) => bb.getWorldPosition(new THREE.Vector3());
     armReach = (wpos(bones.left_arm).distanceTo(wpos(bones.left_forearm)) + wpos(bones.left_forearm).distanceTo(wpos(bones.left_hand))
@@ -350,23 +344,6 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     clapFwdL = _forward.clone().applyQuaternion(cq).normalize();   // body FORWARD in chest space — the anti-clipping axis (push targets/paths/elbows out in front)
     handRestL = chestRef.worldToLocal(wpos(bones.left_hand));
     handRestR = chestRef.worldToLocal(wpos(bones.right_hand));
-    // STANCE hand anchors (HIPS-local, pose-invariant) — the idle PLACES hands here via IK (user
-    // ruling: drive the PARTS, not local x/y/z): on-hip (elbow out — a huge silhouette cue) and
-    // clasped-low-front. hw = half shoulder width sizes them to the body.
-    const hipsA = bones.hips || chestRef;
-    const hw = wpos(bones.left_arm).distanceTo(wpos(bones.right_arm)) / 2;
-    // TRUE hip half-width from the LEG ROOTS (shoulder width was a wrong proxy on wide-hipped builds —
-    // the "hand on hip" landed floating outside the hip). Fall back to shoulders when legless.
-    const lw = (bones.left_leg && bones.right_leg) ? Math.max(hw * 0.4, wpos(bones.left_leg).distanceTo(wpos(bones.right_leg)) / 2) : hw * 0.8;
-    const hp = wpos(hipsA);
-    const mkA = (v) => hipsA.worldToLocal(v.clone());
-    stanceHips = hipsA;
-    stanceAnchors = {
-      hipL: mkA(hp.clone().addScaledVector(bodyRight, -(lw + hw * 0.10)).addScaledVector(bodyUp, hw * 0.40).addScaledVector(_forward, hw * 0.16)),   // ON the hip's side, knuckles just forward
-      hipR: mkA(hp.clone().addScaledVector(bodyRight, (lw + hw * 0.10)).addScaledVector(bodyUp, hw * 0.40).addScaledVector(_forward, hw * 0.16)),
-      frontL: mkA(hp.clone().addScaledVector(_forward, Math.max(hw * 1.35, lw * 1.3)).addScaledVector(bodyUp, hw * 0.3).addScaledVector(bodyRight, -hw * 0.22)),   // clear of the body FRONT — sized by hips too (deep/wide builds: hw alone put the clasp inside the torso → forearms clipped through)
-      frontR: mkA(hp.clone().addScaledVector(_forward, Math.max(hw * 1.35, lw * 1.3)).addScaledVector(bodyUp, hw * 0.3).addScaledVector(bodyRight, hw * 0.22)),
-    };
   }
   const _cp = { c: new THREE.Vector3(), r: new THREE.Vector3(), u: new THREE.Vector3(), f: new THREE.Vector3(), tl: new THREE.Vector3(), tr: new THREE.Vector3(), m: new THREE.Vector3(), pl: new THREE.Vector3(), pr: new THREE.Vector3(), q: new THREE.Quaternion() };
   // armReach was captured in WORLD units at build — after a live scroll-resize every IK magnitude
@@ -420,7 +397,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       });
     };
     calibrate("left_hand", "L"); calibrate("right_hand", "R");
-    if (fingers.L.length + fingers.R.length) console.log(`[avatar] idle: finger curl on ${fingers.L.length}+${fingers.R.length} joints (axes calibrated toward the palm)`);
+    if (fingers.L.length + fingers.R.length) console.log(`[avatar] grip: finger curl on ${fingers.L.length}+${fingers.R.length} joints (axes calibrated toward the palm; reactive only — curls while carried)`);
   }
   let gripL = 0, gripR = 0, gripTgtL = 0, gripTgtR = 0;   // 0..1 smoothed grip (she "holds on" while grabbed/dragged)
 
@@ -430,107 +407,21 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     return Math.max((L[axis + "_min"] ?? -180) * DEG, Math.min((L[axis + "_max"] ?? 180) * DEG, v));
   };
 
-  // PER-MODEL IDLE (2026-06-11 pivot): every idle layer ships at ZERO — the engine carries no
-  // universal personality (the one-size idle read wrong on every body plan; user ruling). The
-  // life comes from THIS model's profiles.json `idle` block (seeded by idleprofile.js from its
-  // real capabilities, then individually tuned). Reactive channels — cursor-look, gestures,
-  // emotes, lip-sync, springs, grip — are NOT idle and run regardless of these numbers.
-  // (Amplitude/cadence reference values live in idleprofile.js LIVE: breath 0.27 Hz, sway ~0.7°.)
-  const params = {
-    breathe: 0,        // chest breath amplitude (rad) — the single biggest "alive" signal
-    breatheRate: 1.7,  // breath angular rate (rad/s) ≈ 0.27 Hz ≈ 16 breaths/min (a rate, not an amplitude)
-    look: 0,           // idle head-glance amplitude (cursor-look is separate and stays live)
-    elbowFlex: 0,      // relaxed elbow bend while the arms hang
-    drift: 1.0,        // master liveliness multiplier (a profile can calm/excite everything at once)
-    swayAmp: 0,        // postural sway amplitude (rad)
-    wrist: 0,          // hand/wrist micro-motion
-    shiftEvery: 0,     // mean seconds between weight shifts (0 = never)
-    poseEvery: 0,      // mean seconds between arm poses (clasp/on-hip; 0 = never)
-    ambient: 0,        // ambient micro-motion master for unresolved bones (0 = off)
-    armLife: 0,        // arm-hang + finger noise scale (0 = arms/fingers rest still; grip still works)
-    fidgetEvery: 0,    // mean seconds between appendage fidgets (0 = never)
-    fidgetRegions: [], // which spring regions may fidget (empty = any safe appendage)
-  };
-
+  // (The idle params/tune surface, ambient micro-motion layer, fidget scheduler, weight-shift
+  // stance machine, arm-pose machinery, breath/sway oscillators and their damped-spring states
+  // all lived here — DELETED OUTRIGHT, user order 2026-06-12. No tunables remain: there is
+  // nothing to tune. The blocks below are the survivors: commanded gestures/emotes + reactive
+  // look/grip, and the gesture-boundary anti-pop blends they need.)
   let t = 0, expr = "", exprT = 0, exprDur = 2.5, _additive = false, lookX = 0, lookY = 0, lookW = 0;
-  let gesture = "", gestureT = 0, gestureDur = 1.6, gestureHold = false;   // AI-driven animated action (clap/jump/flip/laydown …) — SUSPENDS the idle; hold=stay posed (laydown) until cleared
+  let gesture = "", gestureT = 0, gestureDur = 1.6, gestureHold = false;   // AI-driven animated action (clap/jump/flip/laydown …); hold=stay posed (laydown) until cleared
 
-  // ---- AMBIENT layer + FIDGETS — the "any body plan" idle. The role idle above only animates the
-  // ~19 resolved humanoid roles; on a spider/dragon/robot (or a humanoid's fingers) every other bone
-  // sat DEAD. The ambient layer gives EVERY unresolved, unsprung bone a tiny desynced micro-motion
-  // (depth-scaled — chain tips breathe, trunks barely move), and the fidget scheduler occasionally
-  // KICKS a sprung appendage (tail swish / ear flick / wing ruffle) through the spring physics.
-  // avatar.js binds the exclusions + the spring impulse hook AFTER springs/eyes resolve (bindExtras).
-  let extras = { sprungNames: [], excludeNames: [], impulse: null };
-  let ambient = null;                                 // [{b, rest, s1, s2, amp}] — built lazily (after bindExtras)
-  let fidgetT = 0, fidgetNext = 6;
+  let extras = { sprungNames: [] };                     // avatar.js hands over the sprung-bone names AFTER springs resolve (bindExtras) — the finger layer must not double-drive a sprung ribbon
 
-  // ---- IDLE v4 — LIVING LAYERS (research 2026-06-10; replaces the v3 stance machine, which was the
-  // robotic architecture itself: discrete pose → fixed-duration ease → hold POPS on retarget, reads
-  // repetitive on a regular cadence, and is dead-still between shifts). v4 is a continuously-moving
-  // system: always-on oscillators (breath + postural sway — velocity NEVER reaches zero: "moving
-  // hold") summed onto neutral, weight shifts as DC offsets chased by critically-damped springs with
-  // a per-joint halflife LADDER (hips lead, chest follows, head trails, arms drag = follow-through),
-  // every channel on its own noise seed (no shared clock), every event timer jittered. Limbs still
-  // move in BODY space (flex/IK — user ruling) and torso pitch/roll stays on the proven local axes.
-  const SPR = {};                                       // damped-spring state per channel {x,v}
-  const spr = (k) => (SPR[k] || (SPR[k] = { x: 0, v: 0 }));
-  let wSide = 0;                                        // weight: -1 = on LEFT leg, +1 = on RIGHT, 0 = square
-  let wPose = null;                                     // randomized targets of the current weight stance
-  let wT = 0, wNext = 4 + Math.random() * 4;            // first shift comes early
-  let armMode = "hang";                                 // "hang" | "clasp" | "hipL" | "hipR" | "release"
-  let armT = 0, armNext = jitter(20);                   // first pose chance comes sooner than steady-state
-  let sighT = 0, sighNext = jitter(70), sighK = 0;      // sigh = one deep slow breath (envelope 0..1)
-  let energySeed = Math.random() * 100;
-  let breathPh = 0;                                     // breath phase accumulator (rate changes never jump the wave); starts at exhale-rest so frame 0 ramps FROM the rest pose instead of teleporting mid-breath
-  const armTgtL = { s: [null, null, null], cur: new THREE.Vector3() };   // per-hand IK target springs (world, per component)
-  const armTgtR = { s: [null, null, null], cur: new THREE.Vector3() };
-  for (const a of [armTgtL, armTgtR]) a.s = [{ x: 0, v: 0 }, { x: 0, v: 0 }, { x: 0, v: 0 }];
-  let armTgtLive = false;                               // springs initialized from the live hand positions yet?
   // gesture-boundary anti-pop: capture the role quats when a gesture starts/ends and slerp across
   const _fromQ = {}, _scratchQ = {};
   for (const role in bones) { _fromQ[role] = new THREE.Quaternion(); _scratchQ[role] = new THREE.Quaternion(); }
-  let gestureIn = 1, idleIn = 1, idleInDur = 0.3;       // 0→1 blend clocks (gesture entry / idle re-entry); the re-entry SPEED is per-path
+  let gestureIn = 1, baseIn = 1, baseInDur = 0.3;       // 0→1 blend clocks (gesture entry / base-pose re-entry); the re-entry SPEED is per-path
   const captureFrom = () => { for (const role in bones) _fromQ[role].copy(bones[role].quaternion); };
-  function buildAmbient() {
-    const excl = new Set([...extras.sprungNames, ...extras.excludeNames]);
-    const roleSet = new Set(Object.values(bones));
-    const fingerSet = new Set([...fingers.L, ...fingers.R].map((f) => f.b));   // the finger-curl layer owns these now (double-driving = shake)
-    const handDesc = new Set();                       // FINGERS — descendants of the hands get a much livelier curl drift (visible micro-life)
-    for (const h of [bones.left_hand, bones.right_hand]) h?.traverse?.((o) => { if (o.isBone && o !== h) handDesc.add(o); });
-    const list = [];
-    model.traverse((o) => {
-      if (!o.isBone || roleSet.has(o) || excl.has(o.name) || fingerSet.has(o)) return;
-      if (!o.parent || !o.parent.isBone) return;      // skeleton roots: noise there wobbles the whole model
-      // NSFW invariant: walk to the NEAREST CLASSIFIED ANCESTOR — chain tips are childless (spring
-      // skips them → they fall through to ambient) and a chain named only at its root
-      // (Breast → Bone042 → Bone043) must still be skipped all the way down (audit).
-      let reg = null;
-      for (let p = o; p && p.isBone && !reg; p = p.parent) reg = classifyBone(p.name);
-      if (reg && NSFW_REGIONS.has(reg)) return;
-      let depth = 0; for (let p = o.parent; p && p.isBone; p = p.parent) depth++;
-      list.push({ b: o, rest: o.quaternion.clone(), s1: 7.3 + list.length * 1.7, s2: 13.9 + list.length * 2.3, amp: ambientAmp(depth) * (handDesc.has(o) ? 2.6 : 1) });
-    });
-    ambient = list;
-    if (list.length) console.log(`[avatar] idle: ambient micro-motion on ${list.length} unresolved bones (+ ${Object.keys(bones).length} role bones, ${handDesc.size} finger bones boosted)`);
-  }
-  function maybeFidget(dt) {
-    if (!(params.fidgetEvery > 0) || !extras.impulse) return;   // per-model: a profile with no fidgets never kicks
-    fidgetT += dt;
-    if (fidgetT < fidgetNext) return;
-    fidgetT = 0; fidgetNext = jitter(Math.max(2, params.fidgetEvery));   // floor 2s: a 0.1 setting would impulse-kick appendages ~10×/s (audit)
-    const side = Math.random() < 0.5 ? -1 : 1;
-    let tries = [                                      // safe appendages only (never NSFW regions); first one this model HAS wins
-      ["tail", { x: side * (0.9 + Math.random() * 0.7), y: 0.25, z: 0 }, 0.45],
-      ["ear", { x: side * 0.5, y: 0.4, z: 0 }, 0.16],
-      ["wing", { x: 0, y: 0.6, z: side * 0.5 }, 0.4],
-      ["hair", { x: side * 0.3, y: 0.12, z: 0 }, 0.3],
-    ];
-    if (Array.isArray(params.fidgetRegions) && params.fidgetRegions.length)
-      tries = tries.filter(([r]) => params.fidgetRegions.includes(r));   // the profile names which appendages are HERS to fidget
-    for (let i = tries.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [tries[i], tries[j]] = [tries[j], tries[i]]; }
-    for (const [region, v, dur] of tries) if (extras.impulse(region, v, dur)) return;
-  }
   const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _aq = new THREE.Quaternion();
   // Each frame a controlled bone is set from a base pose, then offset — never
   // accumulates. Base is the bone's REST pose normally; in additive mode it's the
@@ -655,10 +546,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         for (const role in bones) { const b = bones[role]; _scratchQ[role].copy(b.quaternion); b.quaternion.copy(_fromQ[role]).slerp(_scratchQ[role], kg); }
       }
       _additive = wasAdd;
-      if (!gestureHold && gestureT >= gestureDur) { gesture = ""; captureFrom(); idleIn = 0; idleInDur = 0.3; }   // hold-clips (laydown) stay posed until cleared; on exit the idle blends back in (no snap)
+      if (!gestureHold && gestureT >= gestureDur) { gesture = ""; captureFrom(); baseIn = 0; baseInDur = 0.3; }   // hold-clips (laydown) stay posed until cleared; on exit the base pose blends back in (no snap)
       return;
     }
-    const lk = params.look;
 
     // AI expression: emotes drive the body bones; spring bones (tail/hair/ears)
     // then react via physics — e.g. "wag" swishes the hips so the tail whips.
@@ -693,233 +583,72 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       return;
     }
 
-    // ===== IDLE v4 — LIVING LAYERS (no pose-blend states; see the state block for the architecture).
-    const D = params.drift;
-    const nz = (seed, sp = 1) =>                            // legacy smooth sin-sum (AMBIENT layer only — per-bone seeded there)
-      Math.sin(t * 0.38 * sp + seed) * 0.62 + Math.sin(t * 0.62 * sp + seed * 1.7 + 1.3) * 0.30 + Math.sin(t * 1.05 * sp + seed * 2.3 + 2.1) * 0.08;
-
-    // ENERGY — minutes-scale restlessness (≈0.65..1.35): calm spells and fidgety spells, never uniform.
-    const energy = 1 + 0.35 * fnoise(t * 0.045, energySeed);
-
-    // BREATH — always on ("moving hold": a pose with zero velocity reads DEAD). ONE-SIGNED raised
-    // cosine (sin²), per the field survey: a raw sine's negative half reads as exhaling BELOW rest
-    // (TalkingHead/VMagicMirror both use envelope/sin² waveforms). Sigh = one deep, slower breath
-    // whose envelope is itself a smooth bell (an instant amplitude jump was a visible 2.9° pop).
-    sighT += dt;
-    if (sighT >= sighNext && sighK <= 0) { sighT = 0; sighNext = jitter(70); sighK = 1e-6; }
-    if (sighK > 0) { sighK = Math.min(1, sighK + dt / 4.5); if (sighK >= 1) sighK = 0; }
-    const sighE = sighK > 0 ? Math.sin(Math.PI * sighK) : 0;                  // smooth in AND out over ~4.5s
-    const bAmp = params.breathe * (1 + 1.3 * sighE) * (0.85 + 0.3 * energy);
-    breathPh += params.breatheRate * (1 - 0.35 * sighE) * dt;
-    const breath = Math.sin(breathPh * 0.5) ** 2;                              // 0..1 at the SAME cadence (sin² halves the period)
-
-    // POSTURAL SWAY — always on, but NOISE-dominated (the sine-dominated v4.0 mix read as a metronomic
-    // "she's rocking back and forth"; gradient noise wanders without rhythm). And it stays OUT of the
-    // hips pitch: the hips are the rig root, so pitching them swings the ENTIRE avatar (feet included)
-    // — that read as the whole model floating/rocking in space rather than a body balancing on feet.
-    const swayP = (Math.sin(t * 1.88 + 0.7) * 0.2 + Math.sin(t * 5.07 + 2.1) * 0.1 + fnoise(t * 0.16, 3) * 0.9) * params.swayAmp * energy * D;
-    const swayR = (Math.sin(t * 1.55 + 4.2) * 0.12 + fnoise(t * 0.13, 7) * 0.95) * params.swayAmp * 0.6 * energy * D;   // noise-dominated like the pitch channel (0.3 sine left this 62% metronome — on the ROOT roll of all places; audit)
-
-    // WEIGHT SHIFT — a new randomized contrapposto every shiftEvery±50% s (restless → more often).
-    // Targets are DC offsets the damped springs CHASE (velocity preserved → re-shift mid-shift can't pop).
-    wT += dt;
-    if (!(params.shiftEvery > 0) && wPose) wPose = null;   // shifts tuned OFF mid-stance → release the held contrapposto (audit: she froze at ±7° hip roll forever); the springs ease back to neutral pop-free
-    if (params.shiftEvery > 0 && wT >= wNext) {        // 0 = this model never shifts weight (wPose stays the neutral stance)
-      wT = 0; wNext = jitter(Math.max(2, params.shiftEvery)) / Math.max(0.6, energy);   // floor 2s: the slider's bottom notch (0.1) would re-target ~25×/s = perpetual squirm (audit)
-      wSide = wSide === 0 ? (Math.random() < 0.5 ? -1 : 1) : (Math.random() < 0.25 ? 0 : -wSide);   // mostly alternate, sometimes square
-      const m = 0.75 + Math.random() * 0.55, s = wSide;                                             // never the exact same stance twice
-      wPose = s === 0
-        ? { hipR: 0, spineR: 0, spineY: 0, chestR: 0, headR: 0, headY: 0, lF: 0.025, lA: -0.01, rF: 0.025, rA: 0.01, sL: -0.06, sR: -0.06 }
-        : {
-            hipR: -s * 0.105 * m, spineR: s * 0.066 * m, spineY: -s * 0.05 * m, chestR: s * 0.03 * m,   // hip drops over the support leg; spine counter-rolls (the S-curve)
-            headR: -s * 0.02 * m, headY: -s * 0.065 * m,
-            lF: s < 0 ? 0.015 : 0.05 + 0.05 * m, lA: s < 0 ? -0.018 : -(0.04 + 0.03 * m),               // support leg ~straight; free knee soft + splayed out
-            rF: s > 0 ? 0.015 : 0.05 + 0.05 * m, rA: s > 0 ? 0.018 : (0.04 + 0.03 * m),
-            sL: s < 0 ? -0.035 : -(0.13 + 0.09 * m), sR: s > 0 ? -0.035 : -(0.13 + 0.09 * m),
-          };
-    }
-    const W = wPose || { hipR: 0, spineR: 0, spineY: 0, chestR: 0, headR: 0, headY: 0, lF: 0.02, lA: 0, rF: 0.02, rA: 0, sL: -0.05, sR: -0.05 };
-    // halflife LADDER — hips lead, chest follows, head trails, legs roll through late (follow-through;
-    // research: staggered joint timing is what separates a body from a mannequin)
-    dampSpring(spr("hipR"), W.hipR, 0.4, dt);
-    dampSpring(spr("spineR"), W.spineR, 0.55, dt); dampSpring(spr("spineY"), W.spineY, 0.55, dt);
-    dampSpring(spr("chestR"), W.chestR, 0.68, dt);
-    dampSpring(spr("headR"), W.headR, 0.85, dt); dampSpring(spr("headY"), W.headY, 0.85, dt);
-    dampSpring(spr("lF"), W.lF, 0.5, dt); dampSpring(spr("lA"), W.lA, 0.5, dt);
-    dampSpring(spr("rF"), W.rF, 0.5, dt); dampSpring(spr("rA"), W.rA, 0.5, dt);
-    dampSpring(spr("sL"), W.sL, 0.62, dt); dampSpring(spr("sR"), W.sR, 0.62, dt);
-
-    // torso: breath + sway + spring-chased stance offsets (local pitch/roll on the TORSO is proven).
-    // Breath travels UP the chain with a phase lag; the spine counter-rolls part of the sway (S-curve).
-    pose("hips", 0, exHipY, spr("hipR").x + swayR * 0.5);                       // NO pitch on the root, EVER — sway OR emote (the happy bounce put ±17° of pitch here ~once a minute, rocking the whole model feet-included; audit): it all rides the spine/chest instead
-    pose("spine", Math.sin((breathPh - 0.55) * 0.5) ** 2 * bAmp * 0.5 + swayP * 0.45 + exSpine + exHipP * 0.7, spr("spineY").x, spr("spineR").x - swayR * 0.45);
-    pose("chest", breath * bAmp + swayP * 0.3 + exSpine * 0.5 + exHipP * 0.5, 0, spr("chestR").x);
-
-    // head/neck: glance wander (own noise seeds) + cursor look + trailing stance + breath bob
-    const glY = fnoise(t * 0.11, 20) * lk, glP = fnoise(t * 0.13, 21) * params.look * 0.3;   // pitch glance rides params.look like yaw (was a bare 0.05 — moved even when idle glances were OFF)
-    pose("neck", -breath * bAmp * 0.45 + exHeadP * 0.3 + lookY * lookW * 0.35, lookX * lookW * 0.35, spr("hipR").x * -0.3);
-    pose("head", glP * (1 - lookW) + lookY * lookW + exHeadP, (glY + spr("headY").x) * (1 - lookW) + lookX * lookW + exHeadY, spr("headR").x);
-
-    // shoulders: breath rise — deliberately ASYMMETRIC (the right lags and lifts slightly less)
-    pose("left_shoulder", 0, 0, breath * bAmp * 0.25);
-    pose("right_shoulder", 0, 0, -(Math.sin((breathPh - 0.4) * 0.5) ** 2) * bAmp * 0.21);
-
-    // LEGS — flex() about the real body hinges; spring-chased so a weight shift rolls through the
-    // knees a beat after the hips. Sway stays out of the legs: feet planted.
-    flex("left_leg", spr("lF").x, spr("lA").x);
-    flex("right_leg", spr("rF").x, spr("rA").x);
-    flex("left_shin", spr("sL").x);
-    flex("right_shin", spr("sR").x);
-
-    // ARMS — two modes. HANG (the default): the arms ride the torso sway with per-side LAG (follow-
-    // through) + per-side noise seeds (asymmetry — mirrored arms read as a mannequin). POSE (occasional,
-    // jittered): the hands are PLACED via IK at a body anchor (clasp-front / hand-on-true-hip), with the
-    // TARGET spring-chased from wherever the hand IS — entry, exit ("release"), and retargets are
-    // pop-free by construction — and the held target itself WANDERS a little (moving hold).
-    armT += dt;
-    if (params.poseEvery > 0) {
-      if (!isFinite(armNext)) { armT = 0; armNext = jitter(params.poseEvery); }   // re-enable after a 0: the Infinity parked by the off-branch never re-schedules by itself (audit: poses were permanently dead until reload)
-      if (armT >= armNext) {
-        armT = 0;
-        if (armMode === "hang") {
-          if (clapLocal && stanceAnchors && Math.random() < 0.75) {
-            const r = Math.random();
-            armMode = r < 0.5 ? "clasp" : (r < 0.75 ? "hipL" : "hipR");
-            armTgtLive = false;                            // seed the target springs from the LIVE hand positions on entry
-            armNext = jitter(13);                          // hold the pose ~6.5–19.5s
-          } else armNext = jitter(params.poseEvery * 0.4); // declined → another chance sooner
-        } else if (armMode !== "release") { armMode = "release"; armNext = jitter(params.poseEvery); }   // let go: chase the rest position, then resume the hang math (springs stay live — no snap)
-      }
-    } else if (armMode !== "hang" && armMode !== "release") {
-      armMode = "release"; armT = 0; armNext = Infinity;   // poses tuned OFF mid-hold → let go cleanly, never re-enter
-    }
-    const armSwayL = spr("armL"), armSwayR = spr("armR");
-    dampSpring(armSwayL, swayP, 0.9, dt); dampSpring(armSwayR, swayP, 1.05, dt);   // arms DRAG behind the torso, each with its own lag
-    const aL = params.armLife;                          // per-model: 0 = the hang noise is gone, arms rest still (static base flex stays — it's a pose, not motion)
-    if (armMode === "hang" || !clapLocal) {
-      flex("left_arm", 0.035 + armSwayL.x * 0.9 + fnoise(t * 0.16, 31) * 0.022 * energy * aL, 0.03 + fnoise(t * 0.12, 32) * 0.016 * aL);
-      flex("right_arm", 0.035 + armSwayR.x * 0.9 + fnoise(t * 0.16, 33) * 0.022 * energy * aL, 0.03 + fnoise(t * 0.12, 34) * 0.016 * aL);
-      flex("left_forearm", params.elbowFlex + fnoise(t * 0.19, 35) * 0.03 * energy * aL);
-      flex("right_forearm", params.elbowFlex + fnoise(t * 0.19, 36) * 0.03 * energy * aL);
-    } else {
-      chestRef.updateWorldMatrix(true, false);
-      if (stanceHips) stanceHips.updateWorldMatrix(true, false);
-      chestRef.getWorldQuaternion(_cp.q);
-      _cp.r.copy(clapRightL).applyQuaternion(_cp.q).normalize();
-      _cp.u.copy(clapUpL).applyQuaternion(_cp.q).normalize();
-      _cp.f.copy(clapFwdL).applyQuaternion(_cp.q).normalize();   // live body forward
-      if (!armTgtLive) {                                 // entry: springs start AT the hands (zero velocity) — no snap possible
-        bones.left_hand.getWorldPosition(armTgtL.cur); bones.right_hand.getWorldPosition(armTgtR.cur);
-        for (let i = 0; i < 3; i++) { armTgtL.s[i].x = armTgtL.cur.getComponent(i); armTgtL.s[i].v = 0; armTgtR.s[i].x = armTgtR.cur.getComponent(i); armTgtR.s[i].v = 0; }
-        armTgtLive = true;
-      }
-      const reach = armReachLive();
-      const anchorFor = (hand) => {                      // → world target in _cp.m ("release" → the rest hand position = a smooth let-go)
-        const spec = armMode === "clasp" ? (hand === "L" ? "frontL" : "frontR")
-          : (armMode === "hipL" && hand === "L") ? "hipL" : (armMode === "hipR" && hand === "R") ? "hipR" : null;
-        if (spec) { _cp.m.copy(stanceAnchors[spec]); stanceHips.localToWorld(_cp.m); }
-        else { _cp.m.copy(hand === "L" ? handRestL : handRestR); chestRef.localToWorld(_cp.m); }
-        return _cp.m;
-      };
-      const chase = (tgt, hand, seed) => {
-        anchorFor(hand).addScaledVector(_cp.u, fnoise(t * 0.14, seed) * reach * 0.018).addScaledVector(_cp.r, fnoise(t * 0.1, seed + 1) * reach * 0.018);   // moving hold: the held target wanders ~2% of reach
-        _cp.m.addScaledVector(_cp.f, Math.min(reach * 0.22, tgt.cur.distanceTo(_cp.m) * 0.45));   // BOW the travel path out in FRONT while the hand is far — the straight-line shortcut cut through the torso
-        for (let i = 0; i < 3; i++) dampSpring(tgt.s[i], _cp.m.getComponent(i), 0.5, dt);
-        return tgt.cur.set(tgt.s[0].x, tgt.s[1].x, tgt.s[2].x);
-      };
-      const tl = chase(armTgtL, "L", 41), tr = chase(armTgtR, "R", 45);
-      _cp.pl.copy(_cp.u).multiplyScalar(-0.35).addScaledVector(_cp.r, armMode === "hipL" ? -1.2 : -0.8).addScaledVector(_cp.f, 0.35);   // elbows OUT + slightly forward — forearms wrap AROUND the body, not through it
-      _cp.pr.copy(_cp.u).multiplyScalar(-0.35).addScaledVector(_cp.r, armMode === "hipR" ? 1.2 : 0.8).addScaledVector(_cp.f, 0.35);
-      twoBoneIK("left_arm", "left_forearm", "left_hand", tl, _cp.pl);
-      twoBoneIK("right_arm", "right_forearm", "right_hand", tr, _cp.pr);
-      if (armMode === "release") {                       // hands back near rest → resume the pure hang math
-        _cp.c.copy(handRestL); chestRef.localToWorld(_cp.c);
-        const dl = tl.distanceTo(_cp.c);
-        _cp.c.copy(handRestR); chestRef.localToWorld(_cp.c);
-        // BLEND the handoff, SLOWLY (1s): the hand is already home, but the IK pose can differ from
-        // the hang pose by ~115° of internal arm TWIST (IK doesn't control twist; the pole planes
-        // differ) — at the gesture-exit rate (0.3s) that read as an arm twitch (probe: 12.5°/frame).
-        // At 1s it reads as the arm relaxing. (Unblended it was a single-frame snap; audit.)
-        // idleIn<1 = a gesture-exit blend is ALREADY in flight: switching modes under it is fine,
-        // but re-capturing here would grab the RAW (pre-slerp) pose and cancel that blend mid-air —
-        // a measured 9.8–13°/frame arm pop (audit). Let the running blend carry the handoff instead.
-        if (dl < reach * 0.08 && tr.distanceTo(_cp.c) < reach * 0.08) {
-          armMode = "hang";
-          if (idleIn >= 1) { captureFrom(); idleIn = 0; idleInDur = 1.0; }
-        }
-      }
-    }
-    if (exArm) {                                         // emote arm swings layer ADDITIVELY about the real flex hinge — pose()/flex() would clobber the IK
+    // ===== BASE POSE — rest + commanded offsets ONLY. (The idle layers that lived here — breath,
+    // sway, weight shifts, arm hang/poses, glances, wrist noise, ambient micro-motion, fidgets —
+    // were DELETED OUTRIGHT, user order 2026-06-12. She stands bit-still; what remains below is
+    // reactive cursor-look + commanded emote offsets on a fixed rest stance.)
+    pose("hips", 0, exHipY, 0);                          // NO pitch on the root, EVER — emote pitch rides the spine/chest (pitching the root swings the whole model, feet included; audit)
+    pose("spine", exSpine + exHipP * 0.7, 0, 0);
+    pose("chest", exSpine * 0.5 + exHipP * 0.5, 0, 0);
+    pose("neck", exHeadP * 0.3 + lookY * lookW * 0.35, lookX * lookW * 0.35, 0);
+    pose("head", lookY * lookW + exHeadP, lookX * lookW + exHeadY, 0);
+    pose("left_shoulder", 0, 0, 0);
+    pose("right_shoulder", 0, 0, 0);
+    flex("left_leg", 0); flex("right_leg", 0);
+    flex("left_shin", 0); flex("right_shin", 0);
+    flex("left_arm", 0.035, 0.03); flex("right_arm", 0.035, 0.03);   // the static A-pose hang — a fixed POSE, not motion (same base the old hang layer stood on)
+    flex("left_forearm", 0); flex("right_forearm", 0);
+    pose("left_hand", 0, 0, 0); pose("right_hand", 0, 0, 0);
+    pose("left_foot", 0, 0, 0); pose("right_foot", 0, 0, 0);
+    if (exArm) {                                         // emote arm swings layer ADDITIVELY about the real flex hinge
       if (flexAxis.left_arm && bones.left_arm) bones.left_arm.quaternion.multiply(_q.setFromAxisAngle(flexAxis.left_arm, FSIGN * exArm));
       if (flexAxis.right_arm && bones.right_arm) bones.right_arm.quaternion.multiply(_q.setFromAxisAngle(flexAxis.right_arm, FSIGN * -exArm));
     }
 
-    // hands/wrists: tiny individual life (rotates the hand bone itself — IK doesn't own its rotation)
-    pose("left_hand",  fnoise(t * 0.23, 60) * params.wrist * D, fnoise(t * 0.2, 61) * params.wrist * 0.6 * D, 0);
-    pose("right_hand", fnoise(t * 0.23, 62) * params.wrist * D, fnoise(t * 0.2, 63) * params.wrist * 0.6 * D, 0);
-
-    // GESTURE-EXIT anti-pop: for ~0.3s after a gesture/motion ends, slerp every role bone from the
-    // gesture's final pose into the live idle — the idle is already moving, so she flows out of a clap
-    // instead of teleporting to the stance (the v3 single-frame snap the audit flagged).
-    if (idleIn < 1) {
-      idleIn = Math.min(1, idleIn + dt / idleInDur);
-      const kb = ez(idleIn);
+    // GESTURE-EXIT anti-pop: for a beat after a gesture/motion ends, slerp every role bone from the
+    // gesture's final pose into the base pose — she flows out of a clap instead of teleporting.
+    if (baseIn < 1) {
+      baseIn = Math.min(1, baseIn + dt / baseInDur);
+      const kb = ez(baseIn);
       for (const role in bones) { const b = bones[role]; _scratchQ[role].copy(b.quaternion); b.quaternion.copy(_fromQ[role]).slerp(_scratchQ[role], kb); }
     }
 
-    // AMBIENT — every unresolved, unsprung bone gets tiny desynced life (fingers, a spider's legs,
-    // a dragon's wing joints, a robot's segments). Built lazily so bindExtras (spring/eye exclusions)
-    // has landed; gesture/motion/additive branches return before this, so controlled stillness is preserved.
-    if (!ambient) buildAmbient();
-    const A = params.ambient * D * (0.7 + 0.3 * energy);   // ambient breathes with the energy phases too
-    const kAmb = ez(idleIn);                               // ambient bones FROZE during a gesture and sit outside the role-bone blend — slerp them back in too (after a minutes-long hold the noise phase decorrelates → fingertip snap on getup; audit)
-    // FINGERS — coordinated slow curl (visible, unlike the ambient micro-wiggle) + GRIP: while she's
-    // grabbed/dragged the fingers curl — she holds on. Deeper joints curl more; each joint rides its
-    // own slow phase so the hands breathe rather than pump. Outside the role-bone blend → kAmb-eased.
+    // FINGERS — reactive GRIP only: while she's grabbed/dragged the fingers curl (she holds on);
+    // released, they ease back to the bind. Deeper joints curl more. Outside the role-bone blend
+    // → eased through gesture exits with the same clock.
+    const kB = ez(baseIn);
     const gk = Math.min(1, dt * 6);
     gripL += (gripTgtL - gripL) * gk; gripR += (gripTgtR - gripR) * gk;
     if (fingers.L.length || fingers.R.length) {
       const curl = (list, grip) => {
         for (const f of list) {
-          // drift rides armLife (per-model; 0 = fingers rest at bind) — GRIP is reactive and always works
-          const amt = ((0.05 + 0.05 * fnoise(t * 0.19, f.seed)) * (0.6 + 0.4 * energy) * D * params.armLife + grip * 0.4) * (0.5 + 0.32 * f.depth);
+          const amt = grip * 0.4 * (0.5 + 0.32 * f.depth);
           _aq.copy(f.rest).multiply(_q.setFromAxisAngle(f.ax, amt));
-          if (kAmb >= 1) f.b.quaternion.copy(_aq); else f.b.quaternion.slerp(_aq, kAmb);
+          if (kB >= 1) f.b.quaternion.copy(_aq); else f.b.quaternion.slerp(_aq, kB);
         }
       };
       curl(fingers.L, gripL); curl(fingers.R, gripR);
     }
-    if (A > 0) for (const a of ambient) {
-      // two bands: a micro tremor + a SLOW, larger posture drift (~8s) — the drift is what reads as
-      // alive from across the room; the frequencies stay low so more amplitude never becomes shake.
-      _e.set((nz(a.s1, 0.5) + nz(a.s1 + 47, 0.13) * 1.8) * a.amp * A, (nz(a.s2, 0.4) + nz(a.s2 + 31, 0.11) * 1.8) * a.amp * A, 0, "XYZ");
-      _aq.copy(a.rest).multiply(_q.setFromEuler(_e));
-      if (kAmb >= 1) a.b.quaternion.copy(_aq); else a.b.quaternion.slerp(_aq, kAmb);
-    }
-    maybeFidget(dt);                                   // occasional tail swish / ear flick / wing ruffle (through the spring physics)
   }
 
   return {
     matched: R.matched,
     restAdjust,                          // boneName → net WORLD rotation the bind normalization applied there (for dangly-chain gravity preservation in avatar.js)
     update,
-    params,
-    setParams: (p) => Object.assign(params, p),
     setExpression: (type, dur = 2.5) => { expr = type; exprT = 0; exprDur = dur; },
     setLook: (x, y, w) => { lookX = x || 0; lookY = y || 0; lookW = w == null ? 1 : Math.max(0, Math.min(1, w)); },
     setGesture: (name, dur, opts) => {
       const next = String(name || "").toLowerCase();
       captureFrom();                                     // anti-pop: blend FROM the current pose, whichever way we're switching
       if (next) gestureIn = 0;                           // EVERY entry blends — incl. gesture→gesture (108°/frame) AND same-gesture re-trigger (a re-sent "clap"/"laydown" restarted the clip at p=0 from mid-pose: 69-83°/frame measured; audit)
-      if (!next && gesture) { idleIn = 0; idleInDur = 0.3; }   // gesture cleared (cancel / getup finish): blend the idle back in
+      if (!next && gesture) { baseIn = 0; baseInDur = 0.3; }   // gesture cleared (cancel / getup finish): blend the base pose back in
       gesture = next; gestureT = 0; gestureDur = dur || 1.6; gestureHold = !!(opts && opts.hold);
     },
     gesturing: () => !!gesture,
     setGrip: (side, on) => { const v = on ? 1 : 0; if (side === "L" || side === "both") gripTgtL = v; if (side === "R" || side === "both") gripTgtR = v; },   // fingers curl while she's carried
     hasGesture: (n) => Object.prototype.hasOwnProperty.call(GESTURES, String(n || "").toLowerCase()),   // validate a dispatch BEFORE suspending the idle (unknown names must error, not freeze)
-    bindExtras: (x) => {                                 // avatar.js hands over spring/eye exclusions + the impulse hook AFTER those exist; ambient rebuilds with them
+    bindExtras: (x) => {                                 // avatar.js hands over the sprung-bone names AFTER springs resolve
       Object.assign(extras, x || {});
-      ambient = null;
       const sprung = new Set(extras.sprungNames || []);  // a name-classified hand descendant (e.g. "HandRibbon"→cloth) is SPRUNG — the spring overwrites our curl every frame, so drop it from the finger layer (audit)
       for (const k of ["L", "R"]) fingers[k] = fingers[k].filter((f) => !sprung.has(f.b.name));
     },
@@ -927,27 +656,25 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       if (!clapLocal) return { error: "no clap anchors (chest/arm chains unresolved)" };
       chestRef.updateWorldMatrix(true, false);
       const tgt = _cp.c.copy(clapLocal); chestRef.localToWorld(tgt);
+      chestRef.getWorldQuaternion(_cp.q);
+      _cp.r.copy(clapRightL).applyQuaternion(_cp.q).normalize();
+      _cp.u.copy(clapUpL).applyQuaternion(_cp.q).normalize();
       const out = { reach: +armReach.toFixed(3) };
       for (const side of ["left", "right"]) {
         for (const r of [side + "_arm", side + "_forearm", side + "_hand"]) pose(r, 0, 0, 0);   // clean rest baseline
         const sh = bones[side + "_arm"], hd = bones[side + "_hand"];
         out[side + "Dist"] = sh ? +sh.getWorldPosition(new THREE.Vector3()).distanceTo(tgt).toFixed(3) : null;   // shoulder→target (vs reach = clamp check)
-        const ok = twoBoneIK(side + "_arm", side + "_forearm", side + "_hand", tgt, null);
+        // same elbow pole the clap uses — with pole=null a PERFECTLY straight bind (180° elbow, the
+        // catgirl's left arm) has no bend plane and reported "solve-failed" while real gestures worked
+        const pole = _cp.pl.copy(_cp.u).multiplyScalar(-1).addScaledVector(_cp.r, side === "left" ? -0.6 : 0.6);
+        const ok = twoBoneIK(side + "_arm", side + "_forearm", side + "_hand", tgt, pole);
         out[side + "Err"] = ok && hd ? +hd.getWorldPosition(new THREE.Vector3()).distanceTo(tgt).toFixed(3) : "solve-failed";
         for (const r of [side + "_arm", side + "_forearm", side + "_hand"]) if (bones[r]) bones[r].quaternion.copy(rest[r]);   // restore — with the idle toggled OFF nothing would re-pose them (the probe froze the arms at the clap centre)
       }
       return out;
     },
     roleBones: () => { const o = {}; for (const r in bones) o[r] = (bones[r] && bones[r].name) || null; return o; },   // DIAGNOSTIC: which actual bone each humanoid role resolved to
-    idleState: () => {                                 // DIAGNOSTIC: live idle-v4 internals — arm mode, weight side, anchor + hand-target world positions (drive blind, verify with numbers)
-      const v = (x) => (x ? [+x.x.toFixed(3), +x.y.toFixed(3), +x.z.toFixed(3)] : null);
-      const aw = {};
-      if (stanceAnchors && stanceHips) { stanceHips.updateWorldMatrix(true, false); for (const k in stanceAnchors) { const p = stanceAnchors[k].clone(); stanceHips.localToWorld(p); aw[k] = v(p); } }
-      const hl = bones.left_hand ? v(bones.left_hand.getWorldPosition(new THREE.Vector3())) : null;
-      const hr = bones.right_hand ? v(bones.right_hand.getWorldPosition(new THREE.Vector3())) : null;
-      const restL = handRestL && chestRef ? (() => { const p = handRestL.clone(); chestRef.updateWorldMatrix(true, false); chestRef.localToWorld(p); return v(p); })() : null;
-      return { armMode, wSide, anchors: aw, handL: hl, handR: hr, tgtL: armTgtLive ? v(armTgtL.cur) : null, tgtR: armTgtLive ? v(armTgtR.cur) : null, restWorldL: restL, reach: +armReachLive().toFixed(3), grip: [+gripL.toFixed(2), +gripR.toFixed(2)], fingers: fingers.L.length + fingers.R.length };
-    },
+    gripState: () => ({ grip: [+gripL.toFixed(2), +gripR.toFixed(2)], fingers: fingers.L.length + fingers.R.length, reach: +armReachLive().toFixed(3) }),   // DIAGNOSTIC: the reactive grip (idleState died with the idle machinery, 2026-06-12)
     flexAxes: () => { const o = {}; for (const r in flexAxis) { const v = flexAxis[r]; o[r] = v ? [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)] : null; } return o; },
     jointAngles: () => {   // DIAGNOSTIC: live joint angles from WORLD positions (180=straight, <180=bent) — unambiguous
       const ang = (A, B, C) => { const a = bones[A], b = bones[B], c = bones[C]; if (!a || !b || !c) return null;
@@ -958,7 +685,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       const gap = (bones.left_hand && bones.right_hand)
         ? +bones.left_hand.getWorldPosition(new THREE.Vector3()).distanceTo(bones.right_hand.getWorldPosition(new THREE.Vector3())).toFixed(3)
         : null;                                       // hand↔hand world distance — proves a clap MEETS (rest ≈ shoulder width; beat ≈ palm thickness)
-      return { leftKnee: ang("left_leg", "left_shin", "left_foot"), leftElbow: ang("left_arm", "left_forearm", "left_hand"), handGap: gap, armReach: +armReach.toFixed(3), fsign: FSIGN, fwd: [+_forward.x.toFixed(2), +_forward.y.toFixed(2), +_forward.z.toFixed(2)], ambient: ambient ? ambient.length : 0, roles: Object.keys(bones).length, gesture, gesturing: !!gesture, gestureHold };
+      return { leftKnee: ang("left_leg", "left_shin", "left_foot"), leftElbow: ang("left_arm", "left_forearm", "left_hand"), handGap: gap, armReach: +armReach.toFixed(3), fsign: FSIGN, fwd: [+_forward.x.toFixed(2), +_forward.y.toFixed(2), +_forward.z.toFixed(2)], roles: Object.keys(bones).length, gesture, gesturing: !!gesture, gestureHold };
     },
     stance: () => {   // DIAGNOSTIC: leg stance truth — knee angles, toe headings, and (squat-normalized rigs) how far the kneecap/toes drifted off the bind's heading. Rig-frame refs are from BUILD time (post-load checks; a later live Alt-drag skews them harmlessly).
       const out = { bindUpright: _bindUpright, sides: {} };

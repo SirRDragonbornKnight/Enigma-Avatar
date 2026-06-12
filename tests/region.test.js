@@ -5,11 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { classifyBone, NSFW_REGIONS } from "../region.js";
-import { BREEZE_SCALE } from "../spring.js";
 
-test("every NSFW region gets ZERO ambient breeze (the dick/anus split missed the breeze table once)", () => {
-  for (const r of NSFW_REGIONS) assert.strictEqual(BREEZE_SCALE[r], 0, `BREEZE_SCALE.${r} must be 0 — NSFW parts move from body motion + user sliders ONLY`);
-});
+// (the BREEZE_SCALE NSFW-zero test died with the breeze itself, 2026-06-12 — no ambient wind exists)
 
 test("innocent real-word bones don't classify as NSFW (audit false positives)", () => {
   assert.notStrictEqual(classifyBone("TopKnot_01"), "dick", "a samurai hair bun is not anatomy");

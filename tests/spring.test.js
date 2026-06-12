@@ -33,14 +33,14 @@ test("spring override — extra force-springs, never suppresses", () => {
   assert.ok(!names.has("Tail"), "never should suppress a matched bone");
 });
 
-test("ambient breeze sways NAME-matched chains at rest (was geo-fallback-only → sprung hair sat dead)", () => {
+test("springs are DEAD STILL at rest (the breeze was deleted with the idle system, 2026-06-12)", () => {
   const findBone = (m, n) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === n) b = o; }); return b; };
-  const steps = (s, n) => { for (let i = 0; i < n; i++) s.update(1 / 60); };
-  const mA = hairRig(); const sA = buildSpringBones(mA, { breeze: 0 }); steps(sA, 90);     // no wind
-  const mB = hairRig(); const sB = buildSpringBones(mB, { breeze: 0.4 }); steps(sB, 90);   // wind
-  const qA = findBone(mA, "Hair_01").quaternion, qB = findBone(mB, "Hair_01").quaternion;
-  const dot = Math.abs(qA.x * qB.x + qA.y * qB.y + qA.z * qB.z + qA.w * qB.w);
-  assert.ok(dot < 0.999999, `name-matched hair must sway under breeze at rest (quat dot ${dot})`);
+  const m = hairRig(); const s = buildSpringBones(m, {});
+  const q0 = findBone(m, "Hair_01").quaternion.clone();
+  for (let i = 0; i < 240; i++) s.update(1 / 60);                       // 4s, body perfectly still
+  const q = findBone(m, "Hair_01").quaternion;
+  const dot = Math.abs(q0.x * q.x + q0.y * q.y + q0.z * q.z + q0.w * q.w);
+  assert.ok(1 - dot < 1e-9, `sprung hair must NOT move on its own at rest (quat dot ${dot}) — springs react to body motion only`);
 });
 
 test("impulse() kicks only the matching region's bones, then settles; unknown region returns false", () => {

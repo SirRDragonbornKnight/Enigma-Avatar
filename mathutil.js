@@ -8,13 +8,7 @@ export function norm360(v) { return ((((+v || 0) % 360) + 360) % 360); }
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-// Ambient idle amplitude (radians) for an UNRESOLVED bone at `depth` parents from the skeleton root.
-// Deeper = more motion (a chain's joints accumulate → leg/wing TIPS visibly breathe while bones near
-// the trunk barely move, like real posture sway). Capped so deep chains (50-link hair) never flail.
-export function ambientAmp(depth, base = 0.03) {
-  const d = +depth > 0 ? +depth : 0;
-  return base * (0.35 + 0.65 * clamp(d / 5, 0, 1));
-}
+// (ambientAmp — the ambient-idle depth→amplitude curve — was deleted with the idle system, 2026-06-12.)
 
 // Read a per-avatar profile's rotation as {x,y,z}° — migrating the legacy single-axis `yaw` into the
 // Y axis. Pure: takes the profile object, returns a fresh normalized rotation.

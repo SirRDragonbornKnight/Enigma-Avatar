@@ -27,9 +27,9 @@ test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
     const { api, flags } = makeApi();
     createUI(api).showSettings();
     const cases = [
-      ["Spring physics", "springOn"], ["Idle motion", "idleOn"], ["Look at cursor", "lookOn"],
+      ["Spring physics", "springOn"], ["Look at cursor", "lookOn"],
       ["Face (blink", "facialOn"], ["Lock in place", "locked"],
-    ];   // ("Idle behavior (random emotes)" checkbox removed 2026-06-11 with its scheduler — nothing fires by itself)
+    ];   // ("Idle motion" checkbox removed 2026-06-12 with the whole idle system; the random-emotes checkbox went 2026-06-11 — nothing fires by itself)
     for (const [label, flag] of cases) {
       const cb = checkboxByLabel(label);
       assert.ok(cb, `checkbox "${label}" exists`);
@@ -240,31 +240,17 @@ test("Cloth has its OWN weight section (fabric is separate from the body jiggle)
   } finally { dom.cleanup(); }
 });
 
-test("rotate is Alt+drag (no mode checkbox) and the Idle section tunes THIS model", () => {
+test("rotate is Alt+drag (no mode checkbox) and the Idle section is GONE (idle deleted 2026-06-12)", () => {
   const dom = installDOM();
   try {
-    const m = makeApi({ getIdleProfile: () => ({ drift: 1, breathe: 0.045, swayAmp: 0.012, look: 0.17, armLife: 1, wrist: 0.06, ambient: 1, shiftEvery: 13, poseEvery: 38, fidgetEvery: 9 }) });
-    m.api.tuneIdle = (p) => m.calls.push(["tuneIdle", p]);
+    const m = makeApi();
     createUI(m.api).showSettings();
     // The MODE checkbox is gone — armed, it hijacked plain drag ("can't move her, can rotate"; 2026-06-11).
     assert.ok(!checkboxByLabel("Rotate by dragging"), "rotate MODE checkbox removed");
     assert.ok([...document.querySelectorAll("div")].some((d) => /hold Alt and drag/i.test(d.textContent || "")), "Alt+drag hint shown instead");
-    // Per-model Idle section: sliders route through tuneIdle, with display-scale round-trips.
-    const slider = (label) => {
-      for (const r of document.querySelectorAll("div")) {
-        const sp = r.querySelector(":scope > span");
-        if (sp && (sp.textContent || "").startsWith(label)) { const i = r.querySelector('input[type="range"]'); if (i) return i; }
-      }
-      return null;
-    };
-    const li = slider("Liveliness");
-    assert.ok(li, "Idle 'Liveliness' slider exists");
-    li.value = "1.5"; fire(li, "input");
-    assert.ok(m.calls.some((c) => c[0] === "tuneIdle" && c[1] && Math.abs(c[1].drift - 1.5) < 1e-6), "→ tuneIdle({drift:1.5})");
-    const br = slider("Breath");
-    assert.ok(br, "Idle 'Breath' slider exists");
-    br.value = "0.9"; fire(br, "input");
-    assert.ok(m.calls.some((c) => c[0] === "tuneIdle" && c[1] && Math.abs(c[1].breathe - 0.045) < 1e-6), "display 0.9 → breathe 0.045 (scale round-trip)");
+    // The whole idle system was deleted (user order 2026-06-12) — NO idle UI may exist.
+    assert.ok(![...document.querySelectorAll("div,span,button")].some((d) => /Idle —|Re-seed|Liveliness/i.test(d.textContent || "")), "no Idle section / sliders / re-seed button anywhere");
+    assert.ok(!checkboxByLabel("Idle motion"), "the Idle motion toggle is gone (nothing to toggle)");
   } finally { dom.cleanup(); }
 });
 

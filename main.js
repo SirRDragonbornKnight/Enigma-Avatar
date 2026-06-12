@@ -97,7 +97,7 @@ function publishPos() {
   const d = displayForGlobalPos(), b = d.bounds;
   // drag flag: the brain must SUSPEND any AI glide while main owns a drag (started from any
   // window) — otherwise the two write gPos in turn and she rubber-bands at 125Hz vs 60Hz.
-  broadcast("avatar:pos", { gx: gPos.x, gy: gPos.y, drag: !!_drag, disp: { x: b.x, y: b.y, width: b.width, height: b.height } });
+  broadcast("avatar:pos", { gx: gPos.x, gy: gPos.y, drag: !!(_drag && !_drag.spin), disp: { x: b.x, y: b.y, width: b.width, height: b.height } });   // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
 function setGlobalPos(x, y, clamp) {
   const p = clamp === false ? { x, y } : clampToUnion(x, y);
@@ -127,17 +127,20 @@ function applyInteractive() {
 }
 
 // --- drag (main-owned, follows the OS cursor across every monitor) ----------
-function startDrag(winId, grabX, grabY) {
+function startDrag(winId, grabX, grabY, spin) {
   let cur = { x: 0, y: 0 };
   try { cur = screen.getCursorScreenPoint(); } catch {}
-  _drag = { winId, grabX, grabY, beatAt: Date.now(), beatCur: cur };
+  // spin = an Alt+drag ROTATE hold: same single-owner freeze + watchdog (its capture must survive
+  // bezels exactly like a move-drag — it used to stall mid-spin when the arbiter flipped it), but
+  // main does NOT follow the cursor (rotation is renderer-local; her position stays put).
+  _drag = { winId, grabX, grabY, spin: !!spin, beatAt: Date.now(), beatCur: cur };
   applyInteractive();
   if (_dragTimer) clearInterval(_dragTimer);
   _dragTimer = setInterval(() => {
     if (!_drag) return;
     try {
       const c = screen.getCursorScreenPoint();
-      setGlobalPos(c.x - _drag.grabX, c.y - _drag.grabY);
+      if (!_drag.spin) setGlobalPos(c.x - _drag.grabX, c.y - _drag.grabY);
       // Dead-man watchdog: while capture is alive the grab window heartbeats on every pointermove.
       // If the cursor has wandered far from where it was at the last heartbeat AND the heartbeats
       // have stopped, the capture is gone (Win+L/UAC/etc. with the pointercancel swallowed) — no
@@ -378,7 +381,7 @@ function init() {
   // after a capture-loss drop the old window's `held` can linger until its next pointerup, and
   // gating new grabs on that stale state would make her ungrabbable. The replaced drag's window
   // can still end the new one only via a real pointerup ("up" is honored from any window).
-  ipcMain.on("avatar:dragStart", (e, p) => { if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY); });
+  ipcMain.on("avatar:dragStart", (e, p) => { if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY, !!p.spin); });
   // Heartbeat from the GRAB window's pointermove stream — proof its capture is still alive. Feeds
   // the dead-man watchdog in the follow timer (see startDrag).
   ipcMain.on("avatar:dragBeat", (e) => {

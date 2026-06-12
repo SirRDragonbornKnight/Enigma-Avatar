@@ -261,31 +261,9 @@ export function createUI(api) {
       body.appendChild(rotHint);
     }
 
-    // --- Idle — THIS avatar's own behavior (per-model since 2026-06-11: there is no universal
-    //     idle anymore; these numbers ARE her personality, seeded from what she actually has).
-    if (api.getIdleProfile) {
-      const ip = api.getIdleProfile();
-      body.appendChild(divider());
-      body.appendChild(sectionHead("Idle — this avatar's own behavior (0 = off · saved per model)"));
-      const tn = (k, scale = 1) => (v) => api.tuneIdle && api.tuneIdle({ [k]: v / scale });
-      body.appendChild(weightRow("Liveliness ×", ip.drift ?? 1, tn("drift"), 2));
-      body.appendChild(weightRow("Breath", (ip.breathe ?? 0) * 20, tn("breathe", 20), 2));          // display ≈ 0..2 (0.045 rad → 0.9)
-      body.appendChild(weightRow("Posture sway", (ip.swayAmp ?? 0) * 80, tn("swayAmp", 80), 2));    // 0.012 rad → 0.96
-      body.appendChild(weightRow("Glances", (ip.look ?? 0) * 6, tn("look", 6), 2));                 // 0.17 rad → ~1
-      body.appendChild(weightRow("Arm life", ip.armLife ?? 0, tn("armLife"), 1));
-      body.appendChild(weightRow("Wrist micro", (ip.wrist ?? 0) * 16, tn("wrist", 16), 2));         // 0.06 → 0.96
-      body.appendChild(weightRow("Ambient micro", ip.ambient ?? 0, tn("ambient"), 2));
-      body.appendChild(weightRow("Weight shift (s)", ip.shiftEvery ?? 0, tn("shiftEvery"), 40));
-      body.appendChild(weightRow("Arm pose (s)", ip.poseEvery ?? 0, tn("poseEvery"), 90));
-      body.appendChild(weightRow("Fidget (s)", ip.fidgetEvery ?? 0, tn("fidgetEvery"), 30));
-      if (api.reseedIdle) {
-        const rs = document.createElement("button");
-        rs.textContent = "↺ Re-seed from this model's capabilities";
-        rs.style.cssText = "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:4px 0;";
-        rs.onclick = (e) => { e.stopPropagation(); api.reseedIdle(); buildSettings(); };
-        body.appendChild(rs);
-      }
-    }
+    // (The "Idle — this avatar's own behavior" section lived here — DELETED with the whole idle
+    //  system, user order 2026-06-12: "delete the idle animation everywhere and anything that has
+    //  to do with it". There is nothing to tune: she only moves when something real drives her.)
 
     // Size is scroll-only (hover the avatar + wheel; +/- and 0 on the keyboard; AI bus `size`).
 
@@ -324,7 +302,7 @@ export function createUI(api) {
       springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
       springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
       springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
-      springNum("Hair breeze", "breeze", "0", "0.6", "0.02", 0.16);
+      // (the "Hair breeze" knob died with the idle system, 2026-06-12 — ambient wind was self-generated motion)
     }
 
     // Colors — recolor each material by its STABLE INDEX. Names are unreliable (a model can have
@@ -468,7 +446,6 @@ export function createUI(api) {
 
     const hr = document.createElement("div"); hr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;"; body.appendChild(hr);
     body.appendChild(sCheck("Spring physics", flags.springOn, (v) => (flags.springOn = v)));
-    body.appendChild(sCheck("Idle motion", flags.idleOn, (v) => (flags.idleOn = v)));
     body.appendChild(sCheck("Look at cursor", flags.lookOn, (v) => (flags.lookOn = v)));
     // Look with HEAD / EYES / BOTH — only offered when the model actually has eye bones.
     if (api.hasEyes && api.hasEyes() && api.setLookMode) {

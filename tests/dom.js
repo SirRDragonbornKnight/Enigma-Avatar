@@ -55,7 +55,7 @@ export const StubTHREE = { SRGBColorSpace: "srgb", Color: StubColor, Vector3: cl
 export function makeApi(over = {}) {
   const calls = [];
   const rec = (name) => (...args) => { calls.push([name, ...args]); };
-  const flags = { springOn: true, idleOn: true, lookOn: true, idleBehaviorOn: true, facialOn: true, locked: false };
+  const flags = { springOn: true, lookOn: true, facialOn: true, locked: false };   // (idleOn / idleBehaviorOn died with the idle system, 2026-06-12)
   const profile = { colors: {}, hue: {}, spring: {} };
   const api = {
     THREE: StubTHREE, BASE_H: 6, rig: { scale: { x: 1 } },

@@ -20,34 +20,6 @@ export function jumpElevation(p, h) {
   return lift - crouchDip - landDip;
 }
 
-// --- idle v4 primitives (research-backed living-idle math) -------------------
-// Exact critically-damped spring step (theorangeduck "spring-roll-call" formulation): chases `goal`,
-// halving the remaining distance roughly every `halflife` seconds, PRESERVING velocity — retargeting
-// mid-motion is seamless (a fixed-duration ease restarts with a velocity discontinuity = the visible
-// POP). Closed-form, so stepping is exact and frame-rate independent. s = {x, v}, mutated + returned.
-export function dampSpring(s, goal, halflife, dt) {
-  const y = (2 * 0.6931472) / (halflife + 1e-5);     // 2·ln2/h — critical damping for that halflife
-  const j0 = s.x - goal, j1 = s.v + j0 * y;
-  const eydt = Math.exp(-y * dt);
-  s.x = eydt * (j0 + j1 * dt) + goal;
-  s.v = eydt * (s.v - j1 * y * dt);
-  return s;
-}
-
-// Deterministic 1D gradient noise (Perlin-style: hashed lattice gradients + quintic fade), smooth,
-// ≈[-1,1], zero-mean. Sines alone LOOP (reads repetitive); gradient noise never visibly repeats.
-function _gh(i) { let h = (i | 0) * 374761393; h = (h ^ (h >>> 13)) * 1274126177; h ^= h >>> 16; return ((h & 0xffff) / 0x8000) - 1; }
-export function noise1(t) {
-  const i = Math.floor(t), f = t - i;
-  const u = f * f * f * (f * (f * 6 - 15) + 10);       // quintic fade — C2-continuous at lattice points
-  const g0 = _gh(i) * f, g1 = _gh(i + 1) * (f - 1);
-  return (g0 + (g1 - g0) * u) * 2;
-}
-
-// 2-octave fractal noise with a NON-HARMONIC octave ratio (2.7) and a per-channel seed: joints driven
-// from different seeds never sync (a shared clock is THE robotic tell) and the sum never loops.
-export function fnoise(t, seed = 0) { return noise1(t + seed * 127.1) * 0.667 + noise1(t * 2.7 + seed * 311.7 + 17.3) * 0.333; }
-
-// Jittered event interval — base ±frac (default ±50%): a fixed cadence (weight shift every N s sharp)
-// itself reads as mechanical. `rnd` injectable for deterministic tests.
-export function jitter(base, frac = 0.5, rnd = Math.random) { return base * (1 - frac + 2 * frac * rnd()); }
+// (The idle-v4 primitives — dampSpring / gradient noise / jittered timers — lived here. DELETED
+//  with the whole idle system, user order 2026-06-12: "delete the idle animation everywhere and
+//  anything that has to do with it". bell / easeInOut / jumpElevation above are GESTURE math.)

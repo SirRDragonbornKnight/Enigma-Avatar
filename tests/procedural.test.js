@@ -120,6 +120,24 @@ test("squat normalization fixes the leg TWIST: kneecaps track the toes, toes kee
   }
 });
 
+test("she is BIT-STILL by default — the idle machinery is DELETED (user order 2026-06-12)", () => {
+  // Not "idle tuned to zero" — the breath/sway/shift/arm/ambient/fidget code no longer exists.
+  // One update applies the static base pose; thereafter NOTHING may move any bone, ever, with no
+  // input. Any future re-added self-motion fails this on frame two.
+  const m = fullBiped();
+  const proc = buildProceduralRig(m, {});
+  proc.update(1 / 60);                                  // frame 1: the base pose lands (rest + static arm hang)
+  m.updateWorldMatrix(true, true);
+  const snap = {};
+  m.traverse((o) => { if (o.isBone) snap[o.name] = o.quaternion.clone(); });
+  for (let i = 0; i < 1200; i++) proc.update(1 / 60);   // 20 seconds of nothing
+  m.traverse((o) => {
+    if (!o.isBone) return;
+    const dot = Math.abs(o.quaternion.dot(snap[o.name]));
+    assert.ok(1 - dot < 1e-12, `${o.name} moved with no input (quat dot ${dot}) — self-generated motion is forbidden`);
+  });
+});
+
 test("bind normalization is IMMUNE to the user's saved rotation (rig-local frame; audit P1)", () => {
   // applyRotation runs BEFORE buildProceduralRig: a saved ~40deg pitch (one Alt-drag away) made an
   // upright, correctly-authored model read as "slouch-bound" and fold at the hips on every reload.

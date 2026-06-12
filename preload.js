@@ -53,7 +53,9 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // window stays interactive (frozen arbiter) so its OS capture delivers the release anywhere;
   // dragBeat is its pointermove heartbeat (feeds main's capture-loss watchdog). dragEnd carries
   // WHY: "up" (real release — honored from any window) vs "cancel" (safety net — grab window only).
-  dragStart: (grabX, grabY) => ipcRenderer.send("avatar:dragStart", { grabX, grabY }),
+  // spin=true registers an Alt+drag ROTATE hold: same arbiter freeze + watchdog (the spin window
+  // must keep its capture across bezels too), but main does NOT follow the cursor (no position move).
+  dragStart: (grabX, grabY, spin) => ipcRenderer.send("avatar:dragStart", { grabX, grabY, spin: !!spin }),
   dragBeat: () => ipcRenderer.send("avatar:dragBeat"),
   dragEnd: (why) => ipcRenderer.send("avatar:dragEnd", { why: why === "cancel" ? "cancel" : "up" }),
   // Brain → main → peers: the live skeleton pose (one Float32Array buffer per frame). Transferred.

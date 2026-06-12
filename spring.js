@@ -17,17 +17,16 @@ import { classifyBone, NSFW_REGIONS } from "./region.js";
 import { regionFeel } from "./mathutil.js";   // pure weight→physics mapping (unit-tested)
 export { classifyBone, NSFW_REGIONS } from "./region.js";   // re-export so existing importers keep working
 
-// How much ambient BREEZE each region feels at rest (×P.breeze). Dangly stuff sways; soft-body /
-// NSFW regions get 0 — wind-jiggled anatomy reads wrong; those move from body motion + weights only.
-export const BREEZE_SCALE = { hair: 1, tail: 0.8, ear: 0.45, cloth: 1, wing: 0.8, accessory: 0.7, other: 0.6, breast: 0, butt: 0, genital: 0, dick: 0, anus: 0, belly: 0, jiggle: 0 };   // every NSFW_REGIONS entry MUST map to 0 (audit: dick/anus were split out of genital but missed here → ?? 0.6 fallback gave them wind); exported so the test can enforce that invariant
+// (The ambient BREEZE — wind-at-rest swaying every dangly chain — was DELETED with the whole idle
+// system, user order 2026-06-12: it was SELF-GENERATED motion. Springs react to real movement only.)
 
 export function buildSpringBones(model, opts = {}) {
-  // opts carries physics params (stiffness/drag/gravity/breeze), per-region weights, AND rig hooks:
+  // opts carries physics params (stiffness/drag/gravity), per-region weights, AND rig hooks:
   //   exclude     : Set<THREE.Bone> already claimed by a humanoid role — never spring these
   //   override    : the per-model rig_overrides entry; override.spring = { extra, never }
   //   regionWeight: { breast:1.5, cloth:0, ... } — per-region jiggle amount (0..~3)
   const { exclude = new Set(), override = null, regionWeight = {}, ...paramOpts } = opts;
-  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, breeze: 0, regionWeight: { ...regionWeight }, ...paramOpts };   // breeze defaults OFF (user ruling 2026-06-11: no idle animation — ambient wind is SELF-GENERATED motion; springs still react to real body movement). Per-model opt-in: saved spring profile / Settings breeze slider.
+  const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, regionWeight: { ...regionWeight }, ...paramOpts };
   if (!P.regionWeight) P.regionWeight = {};
   const springExtra = new Set(override?.spring?.extra || []);
   const springNever = new Set(override?.spring?.never || []);
@@ -89,7 +88,7 @@ export function buildSpringBones(model, opts = {}) {
   const restWDir = new THREE.Vector3(), wantWDir = new THREE.Vector3();
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-  // Active fidget IMPULSES — the idle (or the AI) KICKS a region's tips (tail swish, ear flick, wing
+  // Commanded IMPULSES — the AI (bus 'impulse') KICKS a region's tips (tail swish, ear flick, wing
   // ruffle) and the verlet spring swings + settles naturally. Works WITH the physics instead of
   // fighting it (writing quaternions here would be overwritten next update). World-space kick, smooth
   // sine envelope over `dur`. Returns false if the model has no such region (caller can try another).
@@ -102,9 +101,7 @@ export function buildSpringBones(model, opts = {}) {
     return true;
   }
 
-  let t = 0;
   function update(dt) {
-    t += dt;
     for (let i = _impulses.length - 1; i >= 0; i--) { const im = _impulses[i]; im.t += dt; if (im.t >= im.dur) _impulses.splice(i, 1); }   // advance once per frame, not per bone
     for (const it of items) {
       const b = it.bone;
@@ -128,15 +125,7 @@ export function buildSpringBones(model, opts = {}) {
       it.prev.copy(it.tip);
       it.tip.add(inertia);
       it.tip.y += grav;
-      // Ambient breeze — ALL dangly chains sway gently at rest, not just geometric-fallback ones (the
-      // sprung hair/tail/ears used to sit DEAD when the body was still — the single biggest "statue"
-      // tell). Per-region scale; NSFW/soft-body regions get NO wind (they move from body motion only).
-      const bz = it.geo ? 1 : (BREEZE_SCALE[it.region] ?? 0.6);
-      if (P.breeze && bz) {
-        it.tip.x += Math.sin(t * 0.9 + it.phase) * P.breeze * bz * dt;
-        it.tip.z += Math.cos(t * 0.7 + it.phase * 1.3) * P.breeze * bz * dt;
-      }
-      for (const im of _impulses) if (im.region === it.region) {            // fidget kick — smooth envelope, slight per-bone phase so a tail whips, not shifts
+      for (const im of _impulses) if (im.region === it.region) {            // commanded kick (AI bus 'impulse') — smooth envelope, slight per-bone phase so a tail whips, not shifts
         const e = Math.sin(Math.PI * Math.min(1, im.t / im.dur)) * (0.75 + 0.25 * Math.sin(it.phase));
         it.tip.x += im.x * e * dt; it.tip.y += im.y * e * dt; it.tip.z += im.z * e * dt;
       }
@@ -181,6 +170,6 @@ export function buildSpringBones(model, opts = {}) {
     setParams: (p) => { if (p && p.regionWeight) { Object.assign(P.regionWeight, p.regionWeight); const { regionWeight, ...rest } = p; Object.assign(P, rest); } else Object.assign(P, p); },   // merge regionWeight (a saved spring blob must never REPLACE the per-region map)
     regions, setRegionWeight,
     setRegionWeights: (map) => { for (const k in (map || {})) P.regionWeight[k] = clamp(+map[k] || 0, 0, 2); },
-    impulse,                                          // fidget kick (idle scheduler + AI bus 'impulse' action)
+    impulse,                                          // commanded kick (AI bus 'impulse' action)
   };
 }
