@@ -1,16 +1,16 @@
 {
-    "name": "Avatar Mod",
+    "name": "Enigma Avatar",
     "id": "avatar",
-    "version": "0.0.0",
-    "status": "stub",
-    "description": "STUB - no working implementation. See README.md. Anatomical bone-limits data survives at mods/avatar/bone_limits.json.",
+    "version": "0.1.0",
+    "status": "active",
+    "description": "On-screen desktop companion: a floating, click-through 3D avatar (glTF/GLB/VRM/FBX) with AI-composed procedural motion (pose/flex layers + per-finger control), spring-bone hair/tail physics, and facial blink + lip-sync. Driven over a local WebSocket bus.",
     "author": "Enigma AI Engine",
     "commands": [],
     "ui": {
         "layout": "vertical",
         "widgets": []
     },
-    "prompt": "Avatar mod is currently a stub. No commands available. See mods/avatar/README.md for revival plan.",
+    "prompt": "Enigma Avatar is the on-screen desktop companion — a floating 3D character on the user's desktop. It is a VISUAL layer with no [CMD] commands; you drive it over a local bus by composing motion from PRIMITIVES (there is no fixed emote/gesture list): masked, weighted pose/flex motion layers and per-finger control, or via `perform` (your reply text with inline [pose:...]/[look:...] tags). Query `capabilities` to see what THIS model can drive. It lip-syncs (Kokoro TTS) when it speaks. Safe no-op if the overlay/bus isn't running.",
     "dependencies": [],
     "settings": {}
 }

@@ -1,0 +1,17 @@
+# Large binaries & deps — provisioned locally, never committed (existing convention).
+node_modules/
+models/
+props/
+rl/
+
+# Generated / per-user runtime state (regenerated on use).
+# profiles.json: per-avatar setups (attachments, tuned physics, colors)
+# models.json:  user-added model manifest (points into the ignored models/)
+# outputs/:     synthesized speech wavs, etc.
+profiles.json
+models.json
+outputs/
+__pycache__/
+*.log
+# tools/face_audit.json: regenerable model-face audit dump (python tools/audit_faces.py).
+tools/face_audit.json
