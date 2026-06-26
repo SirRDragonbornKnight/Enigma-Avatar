@@ -57,6 +57,14 @@ function specGlossCompat(parser) {
 // opts: { kind, resourceDir, blobMap } — all optional; blobMap resolves multi-file
 // drag-drop refs by basename. No module-level load state → no cross-load races.
 export function loadAsset(url, onOk, onErr, opts = {}) {
+  // SECURITY: the bus is the driver and any local process can send {action:"load",url}. Block REMOTE
+  // fetch by default — a bus message must not make the overlay pull an arbitrary http(s) URL. Local
+  // paths, file://, blob:, data: all pass, so the external models dir (C:\Users\SirKn\3d Avatar\
+  // Avatars\) keeps loading with no path restriction. (Set opts.allowRemote to opt in explicitly.)
+  if (!opts.allowRemote && /^https?:/i.test(url)) {
+    onErr?.(new Error("remote URL load blocked (local files only)"));
+    return;
+  }
   const kind = opts.kind || kindOf(url);
   if (kind === "unsupported") {                         // HONEST failure — no loader for this format (.obj/.dae/...)
     onErr?.(new Error(`unsupported format: ${extOf(url) || "(no extension)"} -- only glTF/GLB/VRM/FBX are loadable`));
@@ -80,7 +88,8 @@ export function loadAsset(url, onOk, onErr, opts = {}) {
         const probs = await applyFbxMaterials(obj, dir, mgr);
         for (const p of probs) onWarn(p);
       } catch (e) { onWarn(e); }
-      onOk({ scene: obj, animations: obj.animations || [], vrm: null });
+      try { onOk({ scene: obj, animations: obj.animations || [], vrm: null }); }
+      catch (e) { onErr?.(e); }   // FBX onLoad is async -> a throw in onOk escapes as an unhandled rejection (never reaches onErr); route it to the honest-failure path
     }, undefined, onErr);
   } else {
     const gl = new GLTFLoader(mgr);

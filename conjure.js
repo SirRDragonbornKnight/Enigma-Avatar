@@ -14,6 +14,7 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
   function spawn(url, opts = {}) {
     const id = String(opts.id || ("conj" + (++_n)));
     if (items.has(id)) _remove(id);
+    while (items.size >= 16) { const oldest = items.keys().next().value; if (oldest == null) break; _remove(oldest); }   // HARD CAP: an AI looping [conjure:x] must not spawn props without bound
     const at = opts.at || {};
     const rec = {
       obj: null, base: 1, t: 0,

@@ -122,7 +122,7 @@ The engine is split into focused modules; `avatar.js` is the orchestrator that w
 or run `Start-Avatar.ps1` directly to see logs). It pops onto your desktop with **no UI** -- **right-click it**
 for everything. Portable **Node v24** (`%LOCALAPPDATA%\node-portable`) + Electron are installed locally; first
 launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `no_admin_constraint` memory).
-- **left-drag** move; scroll or **+/-** resize (**0** resets); **Ctrl+Alt+Q** quit; **Ctrl+Alt+A** force click-through; **H** info panel.
+- **left-drag** move; scroll or **+/-** resize (**0** resets); **Ctrl+Shift+Alt+Q** quit; **Ctrl+Shift+Alt+C** force click-through (PANIC: reclaim the desktop if she ever blocks clicks); **Ctrl+Shift+Alt+A** force interactive (reach the panel); **H** info panel.
 - Size is remembered per model (localStorage); per-avatar attachments / physics / colors persist in `profiles.json`.
 
 ## AI control (the bus)

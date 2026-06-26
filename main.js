@@ -29,6 +29,7 @@ app.commandLine.appendSwitch("disable-http-cache");
 let windows = [];                 // [{ displayId, win, bounds, isBrain }] — bounds in DIP
 let tray = null;
 let forceInteractive = false;
+let _forceThrough = false;   // PANIC: force EVERY window click-through so the desktop is always reclaimable (Ctrl+Shift+Alt+C)
 // The avatar's single source-of-truth position, in virtual-desktop DIP. Every window
 // renders her relative to its own display origin. Initialised onto the primary at launch.
 let gPos = { x: 0, y: 0 };
@@ -132,7 +133,8 @@ function applyInteractive() {
   try { cursorDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id; } catch {}
   for (const w of liveWindows()) {
     let interactive;
-    if (_drag) interactive = w.win.webContents.id === _drag.winId;       // dragging → the GRAB window only, full-window, until release
+    if (_forceThrough) interactive = false;                              // PANIC override: every window click-through, no matter what (reclaim the desktop)
+    else if (_drag) interactive = w.win.webContents.id === _drag.winId;   // dragging → the GRAB window only, full-window, until release
     else {
       const over = _overByWin.get(w.win.webContents.id) || false;
       interactive = (forceInteractive || over) && (w.displayId === cursorDisplayId);
@@ -278,6 +280,7 @@ function onDisplayMetricsChanged() {
   }
   setGlobalPos(gPos.x, gPos.y);   // re-clamp her base into the new union + publish the (possibly changed) work-area bottom
   refreshTrayMenu();
+  applyInteractive();   // re-arbitrate click-through against the resized/moved bounds NOW — don't let a window capture on stale geometry until the next renderer tick (~0.16-0.5s)
 }
 
 // --- model import (native dialog / drag-drop → the library) -----------------
@@ -339,6 +342,7 @@ function bringToDisplay(displayId) {
   const d = displays().find((x) => x.id === displayId) || primaryDisplay();
   const b = d.bounds;
   endDrag();
+  _forceThrough = false;   // an explicit "bring her here" is the discoverable recovery from a latched panic click-through
   setGlobalPos(b.x + b.width / 2, b.y + b.height * 0.62);
   for (const w of liveWindows()) { try { if (w.win.isMinimized()) w.win.restore(); w.win.setAlwaysOnTop(true, "screen-saver"); } catch {} }
   refreshTrayMenu();
@@ -568,6 +572,7 @@ function init() {
   // unhandled rejection (the brain simply isn't there to act yet).
   const runJS = (code) => { const b = brainWin(); if (b) try { b.webContents.executeJavaScript(code)?.catch?.(() => {}); } catch {} };
   globalShortcut.register("CommandOrControl+Shift+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(); });
+  globalShortcut.register("CommandOrControl+Shift+Alt+C", () => { _forceThrough = !_forceThrough; if (_forceThrough) endDrag(); console.error("[main] force click-through " + (_forceThrough ? "ON - desktop reclaimed (drag dropped, avatar ignores all clicks)" : "OFF - avatar grabbable again")); applyInteractive(); });
   globalShortcut.register("CommandOrControl+Shift+Alt+Q", () => { console.error("[main] quit via Ctrl+Alt+Q"); app.quit(); });
   globalShortcut.register("CommandOrControl+Shift+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
   globalShortcut.register("CommandOrControl+Shift+Alt+-", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));

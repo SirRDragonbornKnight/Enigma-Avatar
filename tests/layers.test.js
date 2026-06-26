@@ -200,3 +200,38 @@ test("layer 'speed' scales a DATA layer's env ramp (not just fn-layer time)", ()
   const slow = mk(1), fast = mk(2);
   assert.ok(fast > slow + 0.02, `speed 2 ramps the env in faster than speed 1 (fast ${fast.toFixed(3)} > slow ${slow.toFixed(3)})`);
 });
+
+// ===== BOUNDARY GUARDS (audit 2026-06-26): a bad layer off the bus must degrade honestly, never
+// kill the frame or permanently brick a bone. These lock the fixes proven by probe. =====
+const qFinite = (b) => [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w].every(Number.isFinite);
+
+test("GUARD: a THROWING fn layer drops ITSELF and the frame survives (siblings keep driving)", () => {
+  const proc = buildProceduralRig(fullBiped(), {});
+  const bones = proc.roles();
+  const restHead = bones.head.quaternion.clone();
+  proc.setLayer("bad", { fn: () => { throw new Error("boom"); } });
+  proc.setLayer("good", { parts: { head: [0.3, 0, 0] } });
+  assert.doesNotThrow(() => proc.update(0.016), "a throwing fn must not throw out of update() (which would freeze every bone)");
+  assert.ok(angOff(bones.head, restHead) > 0.2, "the sibling 'good' layer still drove the head");
+  assert.ok(!proc.layerIds().includes("bad"), "the throwing layer removed itself");
+});
+
+test("GUARD: an fn returning a stringly/NaN part never bricks a bone (additive mode included)", () => {
+  const proc = buildProceduralRig(fullBiped(), {});
+  const bones = proc.roles();
+  proc.setLayer("poison", { fn: () => ({ parts: { head: ["x", NaN, 0] } }) });
+  for (let i = 0; i < 5; i++) proc.update(0.016, false, { additive: true });   // additive = the unrecoverable path the audit found
+  assert.ok(qFinite(bones.head), "head quaternion stays finite through a stringly/NaN fn output");
+  proc.setLayer("poison", null);
+  for (let i = 0; i < 5; i++) proc.update(0.016, false, { additive: true });
+  assert.ok(qFinite(bones.head), "head still finite after clearing the bad layer (no NaN persisted in _vstate)");
+});
+
+test("GUARD: speed_limit:0 is INERT (Infinity), it does not FREEZE the role", () => {
+  const proc = buildProceduralRig(fullBiped(), { head: { speed_limit: 0, pitch: 120, yaw: 120, roll: 120 } });
+  const bones = proc.roles();
+  const restHead = bones.head.quaternion.clone();
+  proc.setLayer("a", { parts: { head: [0.3, 0, 0] } });
+  for (let i = 0; i < 30; i++) proc.update(0.016);
+  assert.ok(angOff(bones.head, restHead) > 0.2, "head reached its target despite a 0 speed_limit (was frozen at 0 before the fix)");
+});

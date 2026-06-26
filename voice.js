@@ -23,11 +23,19 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
   }
 
   // XHR reads file:// reliably in the Electron renderer (fetch() rejects file://).
-  function loadBytes(url) {
+  // Hard cap the read: a malicious/huge WAV off the bus must not be slurped into memory then decoded.
+  // The real audio is file:// (status 0, no Content-Length) so the cap is enforced on the actual
+  // byteLength; the header check is just an early abort when a size IS advertised.
+  function loadBytes(url, maxBytes = 64 * 1024 * 1024) {   // 64 MB — single-user local TTS WAVs are tiny
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("GET", url, true); xhr.responseType = "arraybuffer";
-      xhr.onload = () => ((xhr.status === 200 || xhr.status === 0) && xhr.response ? resolve(xhr.response) : reject(new Error("HTTP " + xhr.status)));
+      xhr.onreadystatechange = () => { if (xhr.readyState === 2) { const n = +xhr.getResponseHeader("Content-Length"); if (n > maxBytes) { xhr.abort(); reject(new Error("audio too large (" + n + " bytes)")); } } };
+      xhr.onload = () => {
+        if (!((xhr.status === 200 || xhr.status === 0) && xhr.response)) return reject(new Error("HTTP " + xhr.status));
+        if (xhr.response.byteLength > maxBytes) return reject(new Error("audio too large (" + xhr.response.byteLength + " bytes)"));   // backstop: file:// gives no Content-Length
+        resolve(xhr.response);
+      };
       xhr.onerror = () => reject(new Error("could not read audio"));
       xhr.send();
     });
@@ -37,6 +45,7 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
   // a file:// <audio> routed through Web Audio is treated as cross-origin and tainted,
   // which silences BOTH the sound and the analyser. Raw AudioBuffers never taint.
   async function speak(url, opts = {}) {
+    if (/^https?:/i.test(url)) { setStatus?.("say blocked: remote URL (local audio only)"); return; }   // SECURITY: a bus {action:"say"} must not fetch arbitrary remote audio. Local file:///blob:/data: pass.
     stop();
     speaking = true;                                // mark NOW so isSpeaking() is true during the async load/decode too
     const myseq = seq;                              // this call's generation (stop() bumped it)

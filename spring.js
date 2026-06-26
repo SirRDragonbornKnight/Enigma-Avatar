@@ -171,7 +171,7 @@ export function buildSpringBones(model, opts = {}) {
     count: items.length,
     names: items.map((i) => i.bone.name),
     update,
-    setParams: (p) => { if (p && p.regionWeight) { Object.assign(P.regionWeight, p.regionWeight); const { regionWeight, ...rest } = p; Object.assign(P, rest); } else Object.assign(P, p); },   // merge regionWeight (a saved spring blob must never REPLACE the per-region map)
+    setParams: (p) => { if (!p) return; if (p.regionWeight) { for (const k in p.regionWeight) { const w = +p.regionWeight[k]; if (isFinite(w)) P.regionWeight[k] = w < 0 ? 0 : w > 2 ? 2 : w; } const { regionWeight, ...rest } = p; Object.assign(P, rest); } else Object.assign(P, p); },   // merge + CLAMP region weights (a saved/hand-edited blob must not bypass the 0..2 slider clamp and drive a verlet instability), and never REPLACE the per-region map
     regions, setRegionWeight,
     impulse,                                          // commanded kick (AI bus 'impulse' action)
   };

@@ -38,6 +38,23 @@ export function stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn,
   if (vrm) vrm.update(dt);                                       // VRM spring bones / look-at / expressions (humanoid copy-back is OFF — see #1 at load)
 }
 
+// Pure resolver for the perform `[look:...]` tag: a named direction (4 cardinals + 4 diagonals +
+// center) OR an explicit "px,py" point. Top-level (outside the bootstrap block) so it's importable +
+// regression-tested: the named-lookup strips [ _-] and must NOT eat the minus sign on numeric coords
+// (else negative gaze coords mirror). Returns { x, y, label } or null (unrecognized -> caller makes an
+// HONEST no-op, never a false success).
+export function lookTarget(arg, w, h) {
+  const cx = w / 2, cy = h / 2, raw = String(arg || "center").toLowerCase().trim(), key = raw.replace(/[ _-]/g, "");
+  const dirs = {
+    left: [0, cy], right: [w, cy], up: [cx, 0], down: [cx, h], center: [cx, cy],
+    upleft: [0, 0], upright: [w, 0], downleft: [0, h], downright: [w, h],
+  };
+  if (dirs[key]) return { x: dirs[key][0], y: dirs[key][1], label: key };
+  const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(raw.replace(/\s+/g, ""));   // numeric form matched on RAW (minus preserved)
+  if (m && isFinite(+m[1]) && isFinite(+m[2])) return { x: +m[1], y: +m[2], label: +m[1] + "," + +m[2] };
+  return null;
+}
+
 // The browser runtime bootstrap (renderer, DOM, animate loop, AI bus) only runs in the overlay
 // window. Under `node --test` there is no `location`/`document`, so the module loads as just the
 // pure export above and the bootstrap is skipped — keeping avatar.js import-safe for unit tests.
@@ -383,6 +400,19 @@ function enterNoModel() {
 }
 
 function onModelLoaded(asset) {
+  // BOUNDARY GUARD: the rig/facial build below can throw on a corrupt/degenerate model (resolveRig,
+  // buildProceduralRig, buildFacial, the bind-normalization math). Inside the loader's async onLoad a
+  // throw escapes PAST onErr as an unhandled rejection, leaving a HALF-STATE: old model already
+  // disposed, no new one, no honest message. Catch it here -> the canonical no-model state + a reason.
+  try { _buildLoadedModel(asset); }
+  catch (e) {
+    console.error("[avatar] model build failed -> honest no-model fallback:", e);
+    try { window.avatarIPC?.log?.(`[avatar] model build failed: ${(e && e.message) || e}`); } catch {}
+    enterNoModel();
+    setStatus(`load failed: ${(e && e.message) || "rig build error"}`);
+  }
+}
+function _buildLoadedModel(asset) {
   disposeModel();
   model = asset.scene;
   if (!model) { setStatus("load failed: no scene"); return; }
@@ -685,8 +715,9 @@ const PROFILE_KEY = "enigmaAvatar.profiles";
 let profiles = {};
 const profileFor = (key) => (profiles[key] || (profiles[key] = {}));
 async function loadProfiles() {
-  try { const r = await fetch("./profiles.json", { cache: "no-store" }); if (r.ok) { profiles = (await r.json()) || {}; return; } } catch {}
-  try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}; } catch { profiles = {}; }
+  const ok = (p) => p && typeof p === "object" && !Array.isArray(p);   // a non-object profiles blob would round-trip garbage into every profileFor()
+  try { const r = await fetch("./profiles.json", { cache: "no-store" }); if (r.ok) { const j = await r.json(); profiles = ok(j) ? j : {}; return; } } catch {}
+  try { const j = JSON.parse(localStorage.getItem(PROFILE_KEY)); profiles = ok(j) ? j : {}; } catch { profiles = {}; }
 }
 let _profileTimer = 0;
 function saveProfileSoon() {        // debounced persist of the whole profiles object (no attachment snapshot)
@@ -1078,7 +1109,7 @@ function setMorphValue(i, v) {
 function applyMorphs() {
   const m = profileFor(curKey).morphs; if (!m) return;
   const { meshes } = morphMeshes();
-  for (const k in m) { const i = +k, val = m[k]; for (const o of meshes) if (i < o.morphTargetInfluences.length) o.morphTargetInfluences[i] = val; }
+  for (const k in m) { const i = +k, val = +m[k]; if (!isFinite(val)) continue; const amt = val < 0 ? 0 : val > 1 ? 1 : val; for (const o of meshes) if (i < o.morphTargetInfluences.length) o.morphTargetInfluences[i] = amt; }   // VALIDATE on read-back: a garbage/legacy profiles.json value must not reach the GPU (the writer guards; the load path must too)
 }
 // Per-mesh friendly LABEL (parts often have useless names like "Object_107" or duplicates) — the
 // user can rename a part so the Settings list is legible. Stored per avatar, keyed by mesh index.
@@ -1196,7 +1227,7 @@ const _fpRT = new THREE.WebGLRenderTarget(2, 2);
 let hitRect = [0, 0, 0, 0];           // debug bbox of the silhouette / fallback region
 let hitMask = null;                   // Uint8Array silhouette (1 = avatar) at maskW×maskH, bottom-left origin; null → fallback
 let maskW = 0, maskH = 0;
-let fpCoverage = 0, fpClock = 0.2;
+let fpCoverage = 0, fpClock = 0.2, _fbWarned = false;
 // Footprint scratch, REUSED across passes — this runs ~6×/s, so a fresh RGBA-readback
 // array + mask every call was needless GC churn. Re-allocated only when the window
 // aspect changes (SW is fixed at 256; SH tracks innerHeight/innerWidth).
@@ -1213,14 +1244,15 @@ function computeFootprint() {
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
   const buf = _fpBuf, mask = _fpMask;
-  renderer.readRenderTargetPixels(_fpRT, 0, 0, SW, SH, buf);   // overwrites every byte of buf
+  try { renderer.readRenderTargetPixels(_fpRT, 0, 0, SW, SH, buf); }   // overwrites every byte of buf
+  catch (e) { hitMask = null; try { window.avatarIPC?.log?.("[avatar] footprint readback threw (" + ((e && e.message) || e) + ") -> hitMask=null (fail-safe THROUGH)"); } catch {} return; }   // GL context loss must NOT leave a STALE silhouette capturing clicks where she no longer is — strict fail-safe
   mask.fill(0);                                                // mask is reused → clear last pass's bits before re-marking
   let mnx = 1e9, mny = 1e9, mxx = -1, mxy = -1, count = 0;
   for (let i = 0, p = 3; i < SW * SH; i++, p += 4) {
     if (buf[p] > 24) { mask[i] = 1; count++; const x = i % SW, y = (i / SW) | 0; if (x < mnx) mnx = x; if (x > mxx) mxx = x; if (y < mny) mny = y; if (y > mxy) mxy = y; }
   }
   fpCoverage = count / (SW * SH);
-  if (!count || fpCoverage > 0.55) { hitMask = null; return; }   // empty, or corrupted (degenerate geometry) → fallback column
+  if (!count || fpCoverage > 0.85) { hitMask = null; return; }   // empty, or near-fully opaque (corrupted render) -> fail-safe fallback. A legit large-but-SHAPED avatar keeps its precise mask, so the empty gaps around her still click through (was 0.55, which threw away good masks and dropped to the screen-blocking column).
   hitMask = mask; maskW = SW; maskH = SH;
   const sxL = (mnx / SW) * innerWidth, sxR = ((mxx + 1) / SW) * innerWidth;
   const syT = (1 - (mxy + 1) / SH) * innerHeight, syB = (1 - mny / SH) * innerHeight;
@@ -1244,14 +1276,26 @@ function computeOver() {
   let over;
   if (hitMask) {
     over = overSilhouette(cursor.x, cursor.y);                   // shaped to the avatar — empty space clicks through
-  } else {                                                       // corrupted/empty footprint → central body column
-    const hw = Math.min((modelDims.w || 2) * sizeScale, worldW * 0.6) / 2;
-    const hh = Math.min((modelDims.h || 4) * sizeScale, worldH * 0.9);
-    const [ax, ay] = toScreen(pos.x - hw, pos.y + hh), [bx, by] = toScreen(pos.x + hw, pos.y);
-    let mnx = Math.min(ax, bx) - 26, mxx = Math.max(ax, bx) + 26, mny = Math.min(ay, by) - 26, mxy = Math.max(ay, by) + 26;
-    mnx = Math.max(0, mnx); mny = Math.max(0, mny); mxx = Math.min(innerWidth, mxx); mxy = Math.min(innerHeight, mxy);
-    hitRect = [mnx, mny, mxx, mxy];
-    over = cursor.x >= mnx && cursor.x <= mxx && cursor.y >= mny && cursor.y <= mxy;
+  } else {
+    // FAIL-SAFE fallback (silhouette unavailable: empty / off-screen / corrupted render). A click-
+    // through overlay MUST fail toward passing clicks through, never toward blocking the desktop.
+    // (1) If she does not project onto THIS window, nothing is grabbable here -> click through. This
+    // is also what keeps the PEER monitors click-through while she lives on another screen — the exact
+    // multi-monitor lockout. (2) Otherwise expose only a SMALL central grab handle around her body,
+    // hard-capped so it can never eat the screen (the old fallback was a 60%-wide x 90%-tall column).
+    const [cxp, cyp] = toScreen(pos.x, pos.y);
+    if (cxp < -40 || cxp > innerWidth + 40 || cyp < -40 || cyp > innerHeight + 40) {
+      over = false; hitRect = [0, 0, 0, 0];
+    } else {
+      const halfW = Math.min(80, Math.max(28, Math.abs(toScreen(pos.x + (modelDims.w || 1.4) * sizeScale * 0.5, pos.y)[0] - cxp)));
+      const topY = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.55)[1];
+      let mny = Math.min(topY, cyp), mxy = Math.max(topY, cyp + 30);
+      if (mxy - mny > innerHeight * 0.6) mxy = mny + innerHeight * 0.6;   // never taller than 60% of the window
+      const mnx = cxp - halfW, mxx = cxp + halfW;
+      hitRect = [mnx, mny, mxx, mxy];
+      over = cursor.x >= mnx && cursor.x <= mxx && cursor.y >= mny && cursor.y <= mxy;
+      if (!_fbWarned) { _fbWarned = true; try { window.avatarIPC?.log?.(`[avatar] click-through FALLBACK (no silhouette; coverage=${fpCoverage.toFixed(2)}) -> small grab handle ${Math.round(halfW * 2)}x${Math.round(mxy - mny)}px at ${Math.round(cxp)},${Math.round(cyp)}`); } catch {} }
+    }
   }
   if (over !== cursor.over) { cursor.over = over; syncInteractive(); }
 }
@@ -1362,7 +1406,7 @@ function animate() {
   if (active && !_wasActive) fpClock = 1; _wasActive = active;   // idle→active edge: force a fresh grab silhouette so a grab right after waking can't miss a stale mask
   const fps = pickFps(active, _restClock, FPS_ACTIVE, FPS_IDLE, FPS_REST, 6);
   if (_frameAcc < 1 / fps) return;                              // not time for the next frame's WORK yet (skip render, keep the heartbeat)
-  const dt = Math.min(0.05, _frameAcc); _frameAcc = 0;
+  const dt = Math.min(0.05, Math.max(0, _frameAcc || 0)); _frameAcc = 0;   // floor at 0 (NaN/negative would bypass the velocity clamp + freeze layer expiry)
   if (active) _restClock = 0; else _restClock += dt;
   // (root-motion updateMotion() removed 2026-06-25 — _motionY stays 0; the AI authors motion via layers)
   // GLIDE: the brain steps the GLOBAL position toward the target and publishes it (main re-broadcasts to
@@ -1408,7 +1452,7 @@ function animate() {
 // rewrite exists to kill) and keeps a grab silhouette so she's draggable on this monitor too.
 function peerFrame() {
   if (_frameAcc < 1 / PEER_FPS) return;
-  const dt = Math.min(0.05, _frameAcc); _frameAcc = 0;
+  const dt = Math.min(0.05, Math.max(0, _frameAcc || 0)); _frameAcc = 0;   // floor at 0 (NaN/negative would bypass the velocity clamp + freeze layer expiry)
   if (model && _gReady) {
     if (_lastPose) applyPose(_lastPose);
     const _bp = gToWorld(gPos.x, gPos.y);
@@ -1598,14 +1642,8 @@ const EnigmaAvatar = {
       else if (type === "dismiss") { arg ? conjurer.dismiss(arg) : conjurer.clear(); did.push("dismiss"); }
       else if (type === "pose") { const f = parseTagArg(arg); if (f && typeof f === "object" && proc?.setLayer) { const parts = {}; for (const k in f) parts[k] = Array.isArray(f[k]) ? f[k] : [+f[k] || 0, 0, 0]; proc.setLayer("ai_pose", { parts, dur: 2.5, env: [0.25, 0.5] }); } wake(3); did.push("pose"); }
       else if (type === "look") {
-        const cx = innerWidth / 2, cy = innerHeight / 2, key = String(arg || "center").toLowerCase().replace(/[ _-]/g, "");
-        const dirs = {   // #34: 4 cardinals + 4 diagonals + center
-          left: [0, cy], right: [innerWidth, cy], up: [cx, 0], down: [cx, innerHeight], center: [cx, cy],
-          upleft: [0, 0], upright: [innerWidth, 0], downleft: [0, innerHeight], downright: [innerWidth, innerHeight],
-        };
-        let pt = dirs[key];
-        if (!pt) { const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(key); if (m && isFinite(+m[1]) && isFinite(+m[2])) pt = [+m[1], +m[2]]; }   // explicit point form look:px,py
-        if (pt) { EnigmaAvatar.lookAt(pt[0], pt[1]); did.push("look:" + key); }
+        const lt = lookTarget(arg, innerWidth, innerHeight);   // pure resolver (exported + regression-tested): named dir OR explicit px,py with minus signs preserved
+        if (lt) { EnigmaAvatar.lookAt(lt.x, lt.y); did.push("look:" + lt.label); }
         else did.push("look-skip:" + arg);   // unrecognized -> HONEST no-op, not a false 'look:'+arg success
       }
       else did.push("skip:" + type);   // an [emotion]/unknown tag: body expressions were purged — the AI authors emotion via pose/flex layers now

@@ -67,7 +67,7 @@ export function createUI(api) {
       // browser / no-IPC fallback: pick a single self-contained file and load it as a blob
       const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".glb,.gltf,.vrm,.fbx"; inp.style.display = "none";
       document.body.appendChild(inp);
-      inp.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) api.loadModel(URL.createObjectURL(f), f.name); inp.remove(); });
+      inp.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) { const u = URL.createObjectURL(f); api.loadModel(u, f.name); setTimeout(() => URL.revokeObjectURL(u), 20000); } inp.remove(); });   // revoke after the async load settles (20s, matches the drag-drop sweep) — don't leak a blob handle per pick
       inp.click();
     }
   }
@@ -114,7 +114,7 @@ export function createUI(api) {
   const _propInput = document.createElement("input");
   _propInput.type = "file"; _propInput.accept = ".glb,.gltf,.vrm,.fbx"; _propInput.style.display = "none";
   document.body.appendChild(_propInput);
-  _propInput.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) api.attachMesh(URL.createObjectURL(f), { category: _propCategory, kind: kindOf(f.name) }); });
+  _propInput.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) { const u = URL.createObjectURL(f); api.attachMesh(u, { category: _propCategory, kind: kindOf(f.name) }); setTimeout(() => URL.revokeObjectURL(u), 20000); } });   // revoke after the async load settles — don't leak a blob handle per prop pick
 
   // A plain, OS-style context menu (no glass / emoji / switches).
   const MENU_CSS =

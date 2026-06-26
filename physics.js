@@ -69,6 +69,7 @@ export function createPhysics({ scene, loadAsset }) {
 
   // Spawn a prop mesh as a dynamic ball and hurl it. from = {x,y} world, vel = {x,y} world/s.
   async function throwProp(url, from, vel, sizeWorld = 0.34) {
+    if (![from?.x, from?.y, vel?.x, vel?.y].every(Number.isFinite)) return null;   // a NaN off the bus must not enter the sim as a permanent dead body (serializes NaN to peers, can poison the contact solver)
     await ensureWorld();
     return new Promise((resolve) => {
       loadAsset(url, (asset) => {
@@ -91,6 +92,7 @@ export function createPhysics({ scene, loadAsset }) {
         body.setEnabledTranslations(true, true, false, true);   // keep the toy in the 2D screen plane
         body.enableCcd(true);                                   // CCD: a fast throw (vy ~5.8, dt<=0.05) can't tunnel thin slabs
         world.createCollider(RAPIER.ColliderDesc.ball(r).setRestitution(0.62).setFriction(0.45).setDensity(1.2), body);
+        while (props.length >= 24) { const old = props.shift(); scene.remove(old.obj); old.obj.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); }); if (world) world.removeRigidBody(old.body); }   // HARD CAP: a stuck bus / AI loop must not spawn rapier bodies until the step + VRAM choke
         props.push({ body, obj, radius: r });
         resolve(true);
       }, () => resolve(null));
@@ -126,7 +128,7 @@ export function createPhysics({ scene, loadAsset }) {
   const _q = new THREE.Quaternion();
   function step(dt) {
     if (!world || !props.length) return false;
-    world.timestep = Math.min(0.05, Math.max(1 / 240, dt));
+    world.timestep = Math.min(0.05, Math.max(1 / 240, dt > 0 ? dt : 1 / 240));   // NaN/<=0 dt -> floor, never propagate a NaN timestep into world.step() (one bad frame NaNs every prop)
     world.step();
     let awake = false;
     for (const p of props) {

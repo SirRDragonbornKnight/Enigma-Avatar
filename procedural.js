@@ -370,7 +370,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   const speedLimit = (role) => {
     const L = limits[role] || limitDefault;
     const dps = L && L.speed_limit != null ? L.speed_limit : null;
-    return dps == null ? Infinity : dps * DEG;
+    return dps == null || !(dps > 0) ? Infinity : dps * DEG;   // absent OR <=0/NaN -> INERT (Infinity): a 0/negative bone_limits entry must not FREEZE or INVERT a whole role
   };
 
   // (The idle params/tune surface, ambient micro-motion layer, fidget scheduler, weight-shift
@@ -422,6 +422,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // velocity-continuous clamp: limit a channel's per-frame DELTA to speed_limit*dt so motion is never
   // janky. delta 0 -> no clamp (a still pose never deadlocks); a big target is approached over frames.
   const _vclamp = (prev, target, maxStep) => {
+    if (!isFinite(target)) return isFinite(prev) ? prev : 0;   // garbage target (stringly/NaN fn output, unlimited-role overflow) -> hold last good; NEVER persist NaN into _vstate (the compositor twin of bricking a bone)
     const d = target - prev;
     if (d > maxStep) return prev + maxStep;
     if (d < -maxStep) return prev - maxStep;
@@ -447,7 +448,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         w *= Math.min(ein, eout);
       }
       if (!w) continue;
-      const src = L.fn ? (L.fn(localT * speed) || {}) : L;   // fn(t) layers compute offsets from ABSOLUTE local time (speed-warped)
+      let src;
+      if (L.fn) { try { src = L.fn(localT * speed) || {}; } catch { layers.delete(id); continue; } }   // a THROWING fn layer must drop ITSELF, not kill the whole frame (which would freeze every bone)
+      else src = L;                                            // fn(t) layers compute offsets from ABSOLUTE local time (speed-warped); a non-finite output is caught by _vclamp's guard
       const parts = src.parts, flexes = src.flex;
       if (parts) for (const role in parts) {
         if (!bones[role]) continue;
@@ -565,7 +568,17 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       if (!id) return false;
       const k = String(id);
       if (!spec) { layers.delete(k); return true; }
-      layers.set(k, { ...spec, _t: 0 });
+      // SANITIZE at this single chokepoint: the bus is stringly-typed, and a NaN/Infinity/string in
+      // weight/amp/speed/dur/parts/flex would propagate through the clamp and PERMANENTLY poison a
+      // bone quaternion (blank her until reload) -- the compositor twin of the click-through lockout.
+      const fin = (v, d) => { const n = +v; return isFinite(n) ? n : d; };
+      const triples = (o) => { const r = {}; for (const role in o) { const a = o[role]; r[role] = Array.isArray(a) ? a.map((x) => fin(x, 0)) : [fin(a, 0), 0, 0]; } return r; };
+      const clean = { ...spec, _t: 0, weight: fin(spec.weight, 1), amp: fin(spec.amp, 1), speed: fin(spec.speed, 1) };
+      if (spec.dur != null) clean.dur = fin(spec.dur, 0);
+      if (Array.isArray(spec.env)) clean.env = spec.env.map((x) => fin(x, 0));
+      if (spec.parts && typeof spec.parts === "object") clean.parts = triples(spec.parts);
+      if (spec.flex && typeof spec.flex === "object") clean.flex = triples(spec.flex);
+      layers.set(k, clean);
       return true;
     },
     clearLayer: (id) => layers.delete(String(id)),

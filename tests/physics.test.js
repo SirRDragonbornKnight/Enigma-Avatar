@@ -160,3 +160,24 @@ test("physics: gravity-vs-floor contract — ball rests at floorY + r; diag() re
   assert.equal(d.floorY, yF, "diag reports the live floor line");
   assert.ok(d.gravity.y < 0, `diag reports a downward gravity vector (y ${d.gravity.y})`);
 });
+
+// BOUNDARY GUARDS (audit 2026-06-26): a NaN off the bus must not enter the sim as a permanent dead
+// body, and a NaN/<=0 dt must not poison world.step() (one bad frame would NaN every prop).
+test("GUARD: throwProp rejects a NaN coordinate BEFORE the sim (no dead body, loader untouched)", async () => {
+  let loaderCalled = false;
+  const physics = createPhysics({ scene: new THREE.Scene(), loadAsset: () => { loaderCalled = true; } });
+  const r = await physics.throwProp("ball.glb", { x: NaN, y: 0 }, { x: 1, y: 1 }, 0.4);
+  assert.equal(r, null, "throwProp returns null on a NaN coordinate");
+  assert.equal(loaderCalled, false, "the loader was never invoked for a garbage throw");
+  assert.equal(physics.count(), 0, "no prop spawned");
+});
+
+test("GUARD: step() floors a NaN/<=0 dt — a thrown prop stays finite", async () => {
+  const scene = new THREE.Scene();
+  const physics = createPhysics({ scene, loadAsset: boxLoader });
+  physics.setFloor(-3);
+  await physics.throwProp("ball.glb", { x: 0, y: 1 }, { x: 0, y: 0 }, 0.4);
+  physics.step(NaN); physics.step(0); physics.step(-1); physics.step(1 / 60);
+  const p = scene.children[scene.children.length - 1].position;
+  assert.ok([p.x, p.y, p.z].every(Number.isFinite), `prop position stays finite through NaN/0/negative timesteps (${p.x},${p.y},${p.z})`);
+});

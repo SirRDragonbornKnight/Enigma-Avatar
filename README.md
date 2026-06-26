@@ -44,7 +44,7 @@ for everything (models, **Add model...**, size, settings, quit). Launches hidden
 
 - Portable **Node v24** (`%LOCALAPPDATA%\node-portable`) + Electron are already installed -- **no admin**.
   First launch runs `npm install` (electron + three + three-vrm) locally. **Never use a winget MSI** (needs admin).
-- **left-drag** move; scroll or **+/-** resize (**0** resets); **Ctrl+Alt+Q** quit; **Ctrl+Alt+A** force click-through; **H** info panel.
+- **left-drag** move; scroll or **+/-** resize (**0** resets); **Ctrl+Shift+Alt+Q** quit; **Ctrl+Shift+Alt+C** force click-through (PANIC: reclaim the desktop if she ever blocks clicks); **Ctrl+Shift+Alt+A** force interactive (reach the panel); **H** info panel.
 
 ## Add / swap models
 > **First run on a new device:** `models/` isn't shipped (large + non-redistributable), so a fresh clone has no models. The overlay then shows an **ASCII "No model loaded" hint** (no self-made placeholder character) -- add a real model with either route below and it replaces the hint.

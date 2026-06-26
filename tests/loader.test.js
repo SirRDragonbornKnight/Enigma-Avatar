@@ -67,3 +67,33 @@ test("#12 loadAsset routes an FBX bind problem to onWarn (not black-holed)", asy
   assert.ok(warned.length > 0, "a binding warning was surfaced via onWarn");
   assert.match(String(warned[0].message || warned[0]), /textures|bind|resource dir/i, "honest warning text");
 });
+
+// BUS GATE (audit 2026-06-26): the bus is the driver; a {action:"load",url} must not make the overlay
+// fetch an arbitrary REMOTE url. Local/file/blob/data must still load (the external Avatars dir). We
+// assert the GATE decision synchronously (real loading is async) using an unsupported ext so no real
+// loader is constructed — a LOCAL path reaches the 'unsupported format' check (proving it passed the gate).
+test("bus gate: loadAsset BLOCKS remote http(s) urls", () => {
+  for (const u of ["http://evil.test/x.glb", "https://evil.test/x.vrm"]) {
+    let err = null, ok = false;
+    loadAsset(u, () => { ok = true; }, (e) => { err = e; });
+    assert.ok(err && /remote URL load blocked/i.test(String(err.message || err)), `blocked ${u}`);
+    assert.ok(!ok, "onOk did not fire for a remote url");
+  }
+});
+
+test("bus gate: a LOCAL path passes the gate (reaches format handling, not blocked)", () => {
+  let blocked = false, reachedFormat = false;
+  loadAsset("C:/Users/SirKn/3d Avatar/Avatars/x.obj", () => {}, (e) => {
+    const m = String(e.message || e);
+    if (/remote URL load blocked/i.test(m)) blocked = true;
+    if (/unsupported format/i.test(m)) reachedFormat = true;   // got PAST the gate to kindOf
+  });
+  assert.ok(!blocked, "local path NOT blocked by the remote gate (external Avatars dir keeps loading)");
+  assert.ok(reachedFormat, "local path reached format handling — proves it passed the gate");
+});
+
+test("bus gate: allowRemote:true is an explicit opt-in that bypasses the gate", () => {
+  let blocked = false;
+  loadAsset("http://ok.test/x.obj", () => {}, (e) => { if (/remote URL load blocked/i.test(String(e.message || e))) blocked = true; }, { allowRemote: true });
+  assert.ok(!blocked, "allowRemote:true bypasses the remote gate");
+});

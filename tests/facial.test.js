@@ -128,3 +128,17 @@ test("VRM #31: prefers a dedicated opener over 'aa', else falls back to 'aa'", (
   assert.ok((b.values.aa || 0) > 0.5, "falls back to the 'aa' viseme");
 });
 
+// BOUNDARY GUARD (audit 2026-06-26): a NaN amplitude (garbage off the bus / a bad RMS) must not
+// permanently freeze the mouth open — before the fix, mouthTgt=NaN stuck forever (mouth += (NaN-x)*k).
+test("GUARD: setMouth(NaN) is ignored; the mouth stays drivable (no permanent freeze)", () => {
+  const mesh = meshWithMorphs({ jawOpen: 0 });
+  const f = buildFacial(model(mesh), null);
+  assert.strictEqual(f.mode, "morph", "morph-mode mouth");
+  f.setMouth(NaN);                                  // garbage amplitude
+  for (let i = 0; i < 10; i++) f.update(1 / 60, false);
+  assert.ok(Number.isFinite(mesh.morphTargetInfluences[0]), "morph influence finite after a NaN setMouth");
+  f.setMouth(0.8);                                  // a real drive must still reopen the mouth
+  for (let i = 0; i < 60; i++) f.update(1 / 60, false);
+  assert.ok(mesh.morphTargetInfluences[0] > 0.3, `mouth RECOVERS after the NaN (influence ${mesh.morphTargetInfluences[0].toFixed(2)}; before the fix it stuck at NaN forever)`);
+});
+

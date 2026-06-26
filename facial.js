@@ -45,7 +45,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
       mode: "vrm", blinkMode: "vrm", info: `VRM expressions (mouth '${mouthName}' / blink)`,
       ownedMorphs: [],                                                                      // VRM drives expressions, not raw morph indices
       params: P, setParams: (p) => Object.assign(P, p),
-      setMouth: (a) => { mouthTgt = clamp01(a); },
+      setMouth: (a) => { const n = +a; if (isFinite(n)) mouthTgt = clamp01(n); },   // ignore a NaN/garbage amplitude -> mouth holds last target, never freezes open until reload
       setBlink: (v) => { manualBlink = v == null || v < 0 ? -1 : clamp01(v); },             // hold the lids; <0 = released (eyes open)
       blink() { blinking = BLINK_DUR; },                                                    // one blink — fired by a real drive only
       update(dt, blinkOn = true) {
@@ -154,7 +154,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
     info: `mouth: ${mouthDrv ? mouthDrv.info : "NONE"} · blink: ${blinkDrv ? blinkDrv.info : "NONE"}`,
     ownedMorphs: [...new Set([...(mouthDrv?.owned || []), ...(blinkDrv?.owned || [])])],   // auto-driven morphs (a manual UI set won't stick)
     params: P, setParams: (p) => Object.assign(P, p),
-    setMouth: (a) => { mouthTgt = clamp01(a); },
+    setMouth: (a) => { const n = +a; if (isFinite(n)) mouthTgt = clamp01(n); },   // ignore a NaN/garbage amplitude -> mouth holds last target, never freezes open until reload
     setBlink: (v) => { manualBlink = v == null || v < 0 ? -1 : clamp01(v); },              // hold the lids (wink/squint/calibration); <0 = released (eyes open)
     blink() { blinking = BLINK_DUR; },                                                     // one blink — fired by a real drive only (speech onset / AI tag)
     update(dt, blinkOn = true) {

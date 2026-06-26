@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseControlTags, parseTagArg, resolvePropName } from "../control.js";
+import { lookTarget } from "../avatar.js";
 
 test("extracts tags in order and returns clean spoken text", () => {
   const { clean, tags } = parseControlTags("Sure! [happy] let me show you. [conjure:sword] Here it is.");
@@ -73,4 +74,27 @@ test("resolvePropName: bare names map to assets; paths pass through; unknown -> 
   assert.equal(resolvePropName("./props/x.glb", assets), "./props/x.glb", "a path passes through unchanged");
   assert.equal(resolvePropName("", assets), null, "empty -> null");
   assert.equal(resolvePropName(null, assets), null, "null -> null");
+});
+
+// [look:...] resolver — BUG FIX (audit 2026-06-26): stripping [ _-] for the named-direction lookup
+// must NOT eat the minus sign on numeric "px,py" coords, or a negative gaze target gets mirrored.
+test("look: named directions resolve to screen anchors", () => {
+  const W = 1000, H = 800;
+  assert.deepEqual(lookTarget("center", W, H), { x: 500, y: 400, label: "center" });
+  assert.deepEqual(lookTarget("up-left", W, H), { x: 0, y: 0, label: "upleft" }, "hyphen/underscore/space variants all normalize");
+  assert.deepEqual(lookTarget("up_left", W, H), { x: 0, y: 0, label: "upleft" });
+  assert.equal(lookTarget("left", W, H).x, 0);
+  assert.equal(lookTarget(undefined, W, H).label, "center", "no arg -> center");
+});
+
+test("look: explicit px,py PRESERVES negative coordinates (no mirror)", () => {
+  assert.deepEqual(lookTarget("-30,-40", 1000, 800), { x: -30, y: -40, label: "-30,-40" }, "negatives kept (was flipped to 30,40 before the fix)");
+  assert.deepEqual(lookTarget("100,-200", 1000, 800), { x: 100, y: -200, label: "100,-200" });
+  assert.deepEqual(lookTarget("250,300", 1000, 800), { x: 250, y: 300, label: "250,300" });
+});
+
+test("look: garbage resolves to null (HONEST no-op, never a false success)", () => {
+  assert.equal(lookTarget("sideways", 1000, 800), null);
+  assert.equal(lookTarget("1,2,3", 1000, 800), null, "malformed triple -> null");
+  assert.equal(lookTarget("x,y", 1000, 800), null, "non-numeric -> null");
 });
