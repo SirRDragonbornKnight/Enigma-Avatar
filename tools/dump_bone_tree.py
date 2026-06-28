@@ -2,6 +2,7 @@
 whether it's a skin joint (deforms the mesh), and its local rotation (squat-era binds show up
 as big quats). Pure stdlib; JSON chunk only. Usage: python dump_leg_tree.py <model.glb> [regex]
 """
+
 import json, re, struct, sys
 
 path = sys.argv[1]
@@ -23,8 +24,10 @@ joints = set()
 for s in gltf.get("skins", []):
     joints.update(s.get("joints", []))
 
+
 def nm(i):
     return nodes[i].get("name", f"#{i}") if i is not None and 0 <= i < len(nodes) else "(root)"
+
 
 rows = []
 for i, n in enumerate(nodes):

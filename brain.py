@@ -25,6 +25,7 @@ the model does not have.
 
 Output is ASCII only (the Windows cp1252 console cannot print unicode).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,6 +47,7 @@ _POSE_TAG = re.compile(r"\[pose:([a-z0-9_]+)=([^\]]+)\]", re.I)
 
 # --------------------------------------------------------------------------- bus client (request/reply)
 
+
 class Bus:
     """A request/reply client for the avatar bus. Same wire protocol as avbus.py: a command may
     carry a reqId, and the overlay answers {"type":"reply","reqId":..,"result":..}."""
@@ -53,15 +55,17 @@ class Bus:
     def __init__(self, uri: str = URI):
         self.uri = uri
         self.ws = None
-        self._n = (os.getpid() % 9000 + 1000) * 100000   # per-process reqId base: don't collide with another producer (avbus) sharing the hub
+        self._n = (
+            os.getpid() % 9000 + 1000
+        ) * 100000  # per-process reqId base: don't collide with another producer (avbus) sharing the hub
 
     async def __aenter__(self):
         try:
             self.ws = await asyncio.wait_for(websockets.connect(self.uri), timeout=5)
-        except Exception as exc:                                  # honest: name why we could not reach the body
+        except Exception as exc:  # honest: name why we could not reach the body
             raise SystemExit(
-                f"brain: could not reach the avatar bus at {self.uri} "
-                f"(is the overlay + bus.py running?): {exc!r}") from exc
+                f"brain: could not reach the avatar bus at {self.uri} (is the overlay + bus.py running?): {exc!r}"
+            ) from exc
         return self
 
     async def __aexit__(self, *exc):
@@ -89,6 +93,7 @@ class Bus:
 
 
 # --------------------------------------------------------------------------- helpers
+
 
 def _ascii(s) -> str:
     """The Windows cp1252 console cannot print unicode; an LLM-authored line may contain it."""
@@ -129,12 +134,13 @@ def sanitize_perform(text: str, caps: dict) -> tuple[str, list[str]]:
         if role in roles:
             return m.group(0)
         dropped.append(role)
-        return ""                                                 # drop the tag, keep the speech
+        return ""  # drop the tag, keep the speech
 
     return _POSE_TAG.sub(keep, text).replace("  ", " ").strip(), dropped
 
 
 # --------------------------------------------------------------------------- the deterministic author
+
 
 def ground_author(caps: dict, beat: int) -> dict:
     """Pick the next behavior using ONLY what `caps` advertises. Returns a behavior dict:
@@ -147,11 +153,15 @@ def ground_author(caps: dict, beat: int) -> dict:
     repertoire: list[dict] = []
 
     # 1) Greet + gaze. The look channel is always present, so this works on every model.
-    repertoire.append({
-        "name": "greet", "speech": "Hi! Let me show you what I can do.",
-        "commands": [{"action": "perform", "text": "Hi! [look:up-right]"}],
-        "verify": "reply", "expect": "applied a look tag",
-    })
+    repertoire.append(
+        {
+            "name": "greet",
+            "speech": "Hi! Let me show you what I can do.",
+            "commands": [{"action": "perform", "text": "Hi! [look:up-right]"}],
+            "verify": "reply",
+            "expect": "applied a look tag",
+        }
+    )
 
     # 2) Wave - ONLY if the right arm can flex (otherwise we honestly do not claim it).
     if "right_arm" in flex:
@@ -160,42 +170,61 @@ def ground_author(caps: dict, beat: int) -> dict:
             flexspec["right_forearm"] = [0.5]
         cmds = [{"action": "pose", "flex": flexspec, "dur": 3.0, "id": "brain_wave"}]
         if fingers_r:
-            cmds.append({"action": "fingers", "side": "R", "curl": 0.0})       # open the hand for the wave
-        repertoire.append({
-            "name": "wave", "speech": "Look, I can wave with this arm.",
-            "commands": cmds, "verify": "joints", "expect": "the right elbow angle changes",
-        })
+            cmds.append({"action": "fingers", "side": "R", "curl": 0.0})  # open the hand for the wave
+        repertoire.append(
+            {
+                "name": "wave",
+                "speech": "Look, I can wave with this arm.",
+                "commands": cmds,
+                "verify": "joints",
+                "expect": "the right elbow angle changes",
+            }
+        )
 
     # 3) Nod - only if there is a head role to drive.
     if "head" in roles:
-        repertoire.append({
-            "name": "nod", "speech": "Yes, mhm.",
-            "commands": [{"action": "perform", "text": "Mhm. [pose:head=0.18/0/0]"}],
-            "verify": "reply", "expect": "applied a head pose tag",
-        })
+        repertoire.append(
+            {
+                "name": "nod",
+                "speech": "Yes, mhm.",
+                "commands": [{"action": "perform", "text": "Mhm. [pose:head=0.18/0/0]"}],
+                "verify": "reply",
+                "expect": "applied a head pose tag",
+            }
+        )
 
     # 4) Look around - a small gaze sweep, always available.
     sweep = ["left", "right", "up", "center"][beat % 4]
-    repertoire.append({
-        "name": "look", "speech": f"Looking {sweep}.",
-        "commands": [{"action": "perform", "text": f"[look:{sweep}]"}],
-        "verify": "reply", "expect": f"applied look:{sweep}",
-    })
+    repertoire.append(
+        {
+            "name": "look",
+            "speech": f"Looking {sweep}.",
+            "commands": [{"action": "perform", "text": f"[look:{sweep}]"}],
+            "verify": "reply",
+            "expect": f"applied look:{sweep}",
+        }
+    )
 
     # 5) Relax - release the wave so the loop returns to rest (only meaningful if we can wave).
     if "right_arm" in flex:
         relax = [{"action": "pose", "flex": {"right_arm": [0.0]}, "dur": 1.5, "id": "brain_wave"}]
         if fingers_r:
-            relax.append({"action": "fingers", "side": "R", "curl": None})       # release to the reactive grip
-        repertoire.append({
-            "name": "relax", "speech": "And relax.",
-            "commands": relax, "verify": "joints", "expect": "the elbow returns toward rest",
-        })
+            relax.append({"action": "fingers", "side": "R", "curl": None})  # release to the reactive grip
+        repertoire.append(
+            {
+                "name": "relax",
+                "speech": "And relax.",
+                "commands": relax,
+                "verify": "joints",
+                "expect": "the elbow returns toward rest",
+            }
+        )
 
     return repertoire[beat % len(repertoire)]
 
 
 # --------------------------------------------------------------------------- the LLM author (optional)
+
 
 def llm_author(endpoint: str, model: str, caps: dict, beat: int) -> dict:
     """Ask an OpenAI-compatible endpoint to write ONE short perform-tagged line, then sanitize its
@@ -205,22 +234,34 @@ def llm_author(endpoint: str, model: str, caps: dict, beat: int) -> dict:
     sys_prompt = (
         "You drive an on-screen avatar by writing ONE short, friendly spoken line with inline motion "
         "tags. Tags: [look:left|right|up|down|center|up-left|...] and [pose:ROLE=pitch/yaw/roll] in "
-        "radians. You may ONLY use these ROLE names: " + ", ".join(roles) + ". Flex-able limbs: "
-        + ", ".join(flex) + ". Keep it under 16 words. Reply with the line only, no quotes.")
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "system", "content": sys_prompt},
-                     {"role": "user", "content": f"Beat {beat + 1}: do one natural little gesture."}],
-        "temperature": 0.8, "stream": False,
-    }).encode()
-    req = urllib.request.Request(endpoint.rstrip("/") + "/chat/completions",
-                                 data=body, headers={"Content-Type": "application/json"})
+        "radians. You may ONLY use these ROLE names: "
+        + ", ".join(roles)
+        + ". Flex-able limbs: "
+        + ", ".join(flex)
+        + ". Keep it under 16 words. Reply with the line only, no quotes."
+    )
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": f"Beat {beat + 1}: do one natural little gesture."},
+            ],
+            "temperature": 0.8,
+            "stream": False,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        endpoint.rstrip("/") + "/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             data = json.loads(r.read())
         raw = data["choices"][0]["message"]["content"]
-        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S | re.I)          # drop reasoning blocks (qwen3.x etc. emit them)
-        text = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")   # first non-empty line
+        raw = re.sub(
+            r"<think>.*?</think>", "", raw, flags=re.S | re.I
+        )  # drop reasoning blocks (qwen3.x etc. emit them)
+        text = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")  # first non-empty line
     except Exception as exc:
         # Fail honest: no fabricated motion. Fall back to the grounded author for this beat.
         print(f"  [llm] endpoint failed ({exc!r}); using the grounded author this beat", flush=True)
@@ -228,11 +269,17 @@ def llm_author(endpoint: str, model: str, caps: dict, beat: int) -> dict:
     clean, dropped = sanitize_perform(text, caps)
     if dropped:
         print(f"  [llm] dropped tags for roles the model lacks: {', '.join(dropped)}", flush=True)
-    return {"name": "llm", "speech": clean, "commands": [{"action": "perform", "text": clean}],
-            "verify": "reply", "expect": "applied the authored tags"}
+    return {
+        "name": "llm",
+        "speech": clean,
+        "commands": [{"action": "perform", "text": clean}],
+        "verify": "reply",
+        "expect": "applied the authored tags",
+    }
 
 
 # --------------------------------------------------------------------------- the loop
+
 
 async def run(uri: str, beats: int, interval: float, author, settle: float = 0.6) -> int:
     async with Bus(uri) as bus:
@@ -243,19 +290,25 @@ async def run(uri: str, beats: int, interval: float, author, settle: float = 0.6
             return 2
         flex = caps.get("flexRoles") or []
         fr = ((caps.get("channels") or {}).get("fingers") or {}).get("R") or []
-        print(f"brain: connected. body can drive {len(caps['roles'])} roles, "
-              f"{len(flex)} flex-able limbs, {len(fr)} right-hand fingers.")
+        print(
+            f"brain: connected. body can drive {len(caps['roles'])} roles, "
+            f"{len(flex)} flex-able limbs, {len(fr)} right-hand fingers."
+        )
         print(f"       flex limbs: {', '.join(flex) if flex else '(none)'}")
 
         moved = 0
         for beat in range(beats):
             b = author(caps, beat)
-            print(f"\n[beat {beat + 1}/{beats}] {b['name']}: \"{_ascii(b['speech'])}\"")
+            print(f'\n[beat {beat + 1}/{beats}] {b["name"]}: "{_ascii(b["speech"])}"')
 
-            before = await bus.request({"action": "query", "what": b["verify"]}) if b["verify"] in ("joints", "where") else None
+            before = (
+                await bus.request({"action": "query", "what": b["verify"]})
+                if b["verify"] in ("joints", "where")
+                else None
+            )
             reply = None
             for cmd in b["commands"]:
-                reply = await bus.request(cmd)                    # reqId -> the body returns what it actually did
+                reply = await bus.request(cmd)  # reqId -> the body returns what it actually did
             await asyncio.sleep(settle)
 
             if b["verify"] in ("joints", "where"):
@@ -266,8 +319,10 @@ async def run(uri: str, beats: int, interval: float, author, settle: float = 0.6
                     delta = _motion_delta(before, after)
                     ok = delta > 1e-4
                     moved += ok
-                    print(f"  verify[{b['verify']}]: motion delta {delta:.4f} -> "
-                          f"{'MOVED (' + b['expect'] + ')' if ok else 'no measurable change in tracked joints'}")
+                    print(
+                        f"  verify[{b['verify']}]: motion delta {delta:.4f} -> "
+                        f"{'MOVED (' + b['expect'] + ')' if ok else 'no measurable change in tracked joints'}"
+                    )
             elif reply is None:
                 print("  verify[reply]: NO REPLY from the body -> UNVERIFIED")
             else:
@@ -275,12 +330,15 @@ async def run(uri: str, beats: int, interval: float, author, settle: float = 0.6
                 performed = reply.get("performed") if isinstance(reply, dict) else None
                 spoke = reply.get("say") if isinstance(reply, dict) else None
                 applied = isinstance(performed, list) and any(
-                    not str(x).startswith(("skip", "look-skip", "conjure-skip")) for x in performed)
+                    not str(x).startswith(("skip", "look-skip", "conjure-skip")) for x in performed
+                )
                 moved += applied
                 detail = json.dumps(performed) if performed is not None else json.dumps(reply)
-                print(f"  verify[reply]: body performed {detail}"
-                      + (f' (says: "{_ascii(spoke)}")' if spoke else "")
-                      + f" -> {'APPLIED (' + b['expect'] + ')' if applied else 'no tag applied (honest no-op)'}")
+                print(
+                    f"  verify[reply]: body performed {detail}"
+                    + (f' (says: "{_ascii(spoke)}")' if spoke else "")
+                    + f" -> {'APPLIED (' + b['expect'] + ')' if applied else 'no tag applied (honest no-op)'}"
+                )
 
             if beat < beats - 1:
                 await asyncio.sleep(max(0.0, interval - settle))
@@ -294,7 +352,9 @@ def main() -> int:
     ap.add_argument("--uri", default=URI, help="avatar bus websocket (default %(default)s)")
     ap.add_argument("--beats", type=int, default=5, help="how many decide->act->verify beats to run")
     ap.add_argument("--interval", type=float, default=2.5, help="seconds between beats")
-    ap.add_argument("--llm", default=None, help="OpenAI-compatible endpoint to author lines (e.g. http://127.0.0.1:11434/v1)")
+    ap.add_argument(
+        "--llm", default=None, help="OpenAI-compatible endpoint to author lines (e.g. http://127.0.0.1:11434/v1)"
+    )
     ap.add_argument("--model", default=None, help="model name for --llm")
     args = ap.parse_args()
 
@@ -302,6 +362,7 @@ def main() -> int:
         if not args.model:
             print("brain: --llm needs --model", file=sys.stderr)
             return 1
+
         def author(caps, beat):
             return llm_author(args.llm, args.model, caps, beat)
     else:

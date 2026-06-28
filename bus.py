@@ -16,6 +16,7 @@ Run standalone (the desktop overlay's Start-Avatar.ps1 launches it for you)::
 
     python mods/avatar/bus.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ import websockets
 
 HOST, PORT = "127.0.0.1", 8765
 CLIENTS: set = set()
-_CLOSING: set = set()   # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
+_CLOSING: set = set()  # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
 
 # Local-trust boundary (CSWSH gate). Native clients (the overlay, avbus.py, modkit) send NO Origin
 # header; Electron's file-loaded page sends "file://" or the opaque "null". A web page the user happens
@@ -45,15 +46,15 @@ async def _handler(ws) -> None:
             try:
                 cmd = json.loads(raw)
             except Exception:
-                continue                       # ignore non-JSON
+                continue  # ignore non-JSON
             if not isinstance(cmd, dict):
-                continue                       # ignore non-objects; relay any dict — commands
-                                               # AND replies (two-way: the overlay answers a
-                                               # {"action":"query",...} with {"type":"reply",...})
+                continue  # ignore non-objects; relay any dict — commands
+                # AND replies (two-way: the overlay answers a
+                # {"action":"query",...} with {"type":"reply",...})
             data = json.dumps(cmd)
             for c in list(CLIENTS):
                 if c is ws:
-                    continue                   # don't echo back to the producer
+                    continue  # don't echo back to the producer
                 try:
                     # 1s cap: one stuck consumer (frozen renderer, full TCP buffer) must not
                     # head-of-line-block every other producer/consumer on the hub forever.
@@ -64,12 +65,12 @@ async def _handler(ws) -> None:
                     # believes it's connected and never auto-reconnects (silently severed).
                     try:
                         t = asyncio.ensure_future(c.close())
-                        _CLOSING.add(t)                    # keep a ref (else the loop may drop the task)
+                        _CLOSING.add(t)  # keep a ref (else the loop may drop the task)
                         t.add_done_callback(_CLOSING.discard)
                     except Exception:
                         pass
     except Exception:
-        pass                                   # a dropped client must not crash the hub
+        pass  # a dropped client must not crash the hub
     finally:
         CLIENTS.discard(ws)
         print(f"avatar bus: client left ({len(CLIENTS)} now)", file=sys.stderr, flush=True)
@@ -87,7 +88,7 @@ def serve(host: str = HOST, port: int = PORT):
 async def main(host: str = HOST, port: int = PORT) -> None:
     async with serve(host, port):
         print(f"avatar bus: relaying on ws://{host}:{port}", file=sys.stderr, flush=True)
-        await asyncio.Future()                 # run forever
+        await asyncio.Future()  # run forever
 
 
 if __name__ == "__main__":
@@ -98,5 +99,8 @@ if __name__ == "__main__":
     except OSError as exc:
         # Port already bound — another bus already owns it (e.g. a double launch).
         # That's fine: the existing hub serves everyone. Exit quietly, no traceback.
-        print(f"avatar bus: {HOST}:{PORT} already in use ({exc}); "
-              f"another instance is serving - exiting.", file=sys.stderr, flush=True)
+        print(
+            f"avatar bus: {HOST}:{PORT} already in use ({exc}); another instance is serving - exiting.",
+            file=sys.stderr,
+            flush=True,
+        )

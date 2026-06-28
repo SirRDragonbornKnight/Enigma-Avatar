@@ -13,6 +13,7 @@ Install once (no admin):  python -m pip install --user kokoro
     python mods/avatar/speak.py --voice af_bella --speed 1.05 "a different voice"
     python mods/avatar/speak.py --no-send "just synthesize, don't play"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,8 +36,8 @@ def _load_local_tts():
         raise RuntimeError(f"voice mod not found at {VOICE_MOD}")
     spec = importlib.util.spec_from_file_location("_enigma_voice_mod", VOICE_MOD)
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod   # MUST register before exec, or voice.py's @dataclass fails
-    spec.loader.exec_module(mod)   # (dataclasses resolves types via sys.modules[cls.__module__])
+    sys.modules[spec.name] = mod  # MUST register before exec, or voice.py's @dataclass fails
+    spec.loader.exec_module(mod)  # (dataclasses resolves types via sys.modules[cls.__module__])
     return mod.LocalTTS
 
 
@@ -45,8 +46,8 @@ def synth(text: str, voice: str = "af_heart", speed: float = 1.0) -> Path:
     tts = LocalTTS(voice=voice, speed=speed)
     if not tts.load():
         raise RuntimeError(
-            "Kokoro TTS unavailable - install it (no fallback by design): "
-            "python -m pip install --user kokoro")
+            "Kokoro TTS unavailable - install it (no fallback by design): python -m pip install --user kokoro"
+        )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"speak_{int(time.time() * 1000)}.wav"
     path = tts.generate_to_file(text, out_path=out)
@@ -57,6 +58,7 @@ def synth(text: str, voice: str = "af_heart", speed: float = 1.0) -> Path:
 
 async def _send_say(url: str) -> None:
     import websockets
+
     async with websockets.connect(URI, open_timeout=3) as ws:
         await ws.send(json.dumps({"action": "say", "url": url}))
 
@@ -78,12 +80,11 @@ def main(argv: list[str]) -> int:
     if args.no_send:
         return 0
     try:
-        asyncio.run(_send_say(wav.as_uri()))   # file:///C:/…/speak_123.wav
+        asyncio.run(_send_say(wav.as_uri()))  # file:///C:/…/speak_123.wav
         print(f"sent: say -> {wav.as_uri()}")
         return 0
     except Exception as exc:
-        print(f"could not reach the avatar bus at {URI} "
-              f"(is the overlay / bus.py running?): {exc}", file=sys.stderr)
+        print(f"could not reach the avatar bus at {URI} (is the overlay / bus.py running?): {exc}", file=sys.stderr)
         return 2
 
 

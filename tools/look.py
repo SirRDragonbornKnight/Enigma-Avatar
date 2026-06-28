@@ -12,6 +12,7 @@ lands at %TEMP%\\<name> so the caller can read it back; --angles adds 3/4 + side
 
 Requires the overlay running (Start-Avatar.ps1). Throwaway/operational, not shipped behavior.
 """
+
 from __future__ import annotations
 import argparse, asyncio, json, os, sys, tempfile
 import websockets
@@ -38,7 +39,7 @@ async def _req(ws, cmd, rid, timeout=2.0):
 
 async def _snap(ws, name):
     await ws.send(json.dumps({"action": "snap", "name": name}))
-    await asyncio.sleep(0.9)                       # let the capture write
+    await asyncio.sleep(0.9)  # let the capture write
     return os.path.join(tempfile.gettempdir(), os.path.basename(name))
 
 
@@ -51,19 +52,23 @@ def _summary(state):
     if not state:
         return "  (no state reply - is the overlay up?)"
     L = state.get("layers")
-    lay = (", ".join(L) if isinstance(L, list) else "n/a (reload the overlay for live layers)")
-    return _asc(f"  dims (w x h): {state.get('dims')}   pos: {state.get('pos')}   size: {state.get('size')}\n"
-                f"  active layers: [{lay}]\n"
-                f"  facial: {(state.get('facial') or {}).get('info')}\n"
-                f"  toggles: {state.get('toggles')}")
+    lay = ", ".join(L) if isinstance(L, list) else "n/a (reload the overlay for live layers)"
+    return _asc(
+        f"  dims (w x h): {state.get('dims')}   pos: {state.get('pos')}   size: {state.get('size')}\n"
+        f"  active layers: [{lay}]\n"
+        f"  facial: {(state.get('facial') or {}).get('info')}\n"
+        f"  toggles: {state.get('toggles')}"
+    )
 
 
 async def go(args):
     paths = []
     async with websockets.connect(URI, open_timeout=4) as ws:
         if args.do:
-            await ws.send(args.do if args.do.strip().startswith("{") else json.dumps({"action": "perform", "text": args.do}))
-            await asyncio.sleep(0.8)               # let env-in / the move settle before we look
+            await ws.send(
+                args.do if args.do.strip().startswith("{") else json.dumps({"action": "perform", "text": args.do})
+            )
+            await asyncio.sleep(0.8)  # let env-in / the move settle before we look
         state = await _req(ws, {"action": "query", "what": "state"}, "state")
         stance = await _req(ws, {"action": "query", "what": "stance"}, "stance", timeout=1.5)
         base, _, ext = args.name.rpartition(".")
@@ -76,10 +81,14 @@ async def go(args):
             base_rot = saved if isinstance(saved, dict) else {"x": 0, "y": 0, "z": 0}
             gx, gy, gz = base_rot.get("x", 0), base_rot.get("y", 0), base_rot.get("z", 0)
             for label, yaw in (("34", 40), ("side", 90)):
-                await ws.send(json.dumps({"action": "rotate", "x": gx, "y": gy + yaw, "z": gz}))  # add yaw, keep her pitch/roll
+                await ws.send(
+                    json.dumps({"action": "rotate", "x": gx, "y": gy + yaw, "z": gz})
+                )  # add yaw, keep her pitch/roll
                 await asyncio.sleep(0.5)
                 paths.append(await _snap(ws, f"{base}_{label}.{ext}"))
-            await ws.send(json.dumps({"action": "rotate", "x": gx, "y": gy, "z": gz}))   # restore her ORIGINAL facing (rotate persists, so do not assume front)
+            await ws.send(
+                json.dumps({"action": "rotate", "x": gx, "y": gy, "z": gz})
+            )  # restore her ORIGINAL facing (rotate persists, so do not assume front)
             await asyncio.sleep(0.3)
     print("SNAPS (read these):")
     for p in paths:

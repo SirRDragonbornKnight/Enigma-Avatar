@@ -28,6 +28,7 @@ Notes:
     those are reported so you can convert or ignore them.
   * Prints the mesh path to register; ``--register`` writes it into ``models.json``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,6 +62,7 @@ def _real_ext(data: bytes, fallback: str) -> str:
         return ".bmp"
     return fallback
 
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(HERE, "models")
 
@@ -87,7 +89,7 @@ def _entries(pkg_path: str):
                 raw = tar.extractfile(m)
                 if raw is not None:
                     text = raw.read().decode("utf-8", "replace").splitlines()
-                    slot["pathname"] = (text[0].strip() if text else "")
+                    slot["pathname"] = text[0].strip() if text else ""
             elif leaf == "asset":
                 slot["asset"] = m
         for guid, slot in guids.items():
@@ -126,12 +128,12 @@ def extract_model(pkg_path: str, out_dir: str) -> dict:
 
     written: list[str] = []
     collisions: list[str] = []
-    renamed: dict[str, str] = {}   # original basename -> written basename (corrected extension)
-    seen: dict[str, str] = {}      # written basename -> source pathname (first wins)
+    renamed: dict[str, str] = {}  # original basename -> written basename (corrected extension)
+    seen: dict[str, str] = {}  # written basename -> source pathname (first wins)
     tex_set = {t[0] for t in textures}
     for base, data, pn in meshes + textures:
         final = base
-        if base in tex_set:                            # fix mislabeled texture extensions
+        if base in tex_set:  # fix mislabeled texture extensions
             ext = os.path.splitext(base)[1].lower()
             real = _real_ext(data, ext)
             if real != ext:
@@ -144,7 +146,7 @@ def extract_model(pkg_path: str, out_dir: str) -> dict:
         with open(os.path.join(out_dir, final), "wb") as f:
             f.write(data)
         written.append(final)
-        if final != base:                              # drop a stale wrong-extension copy from a prior import
+        if final != base:  # drop a stale wrong-extension copy from a prior import
             stale = os.path.join(out_dir, base)
             if os.path.exists(stale):
                 try:
@@ -193,7 +195,7 @@ def _register(name: str, mesh_rel: str) -> None:
         manifest = {}
     models = manifest.setdefault("models", [])
     models[:] = [m for m in models if isinstance(m, dict) and m.get("id") != name]
-    models.append({"id": name, "label": name, "url": mesh_rel})   # label = the file's own name
+    models.append({"id": name, "label": name, "url": mesh_rel})  # label = the file's own name
     with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     print(f"registered '{name}' -> {mesh_rel} in {path}")
@@ -250,7 +252,7 @@ def build_material_map(pkg_path: str, fbx_bytes: bytes, rename: dict | None = No
     rename = rename or {}
     guid_base, mats = _package_materials(pkg_path)
 
-    def res(guid):                       # texture guid -> final (corrected-extension) basename
+    def res(guid):  # texture guid -> final (corrected-extension) basename
         b = guid_base.get(guid)
         return rename.get(b, b) if b else None
 
