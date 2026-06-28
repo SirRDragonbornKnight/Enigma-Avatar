@@ -413,6 +413,64 @@ export function createUI(api) {
     d.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;";
     return d;
   };
+  // Collapsible Settings section: a divider, a clickable caret+label header, and a box that
+  // `fill(box)` populates (or `onOpen(box)` renders lazily, for the IPC-backed repair panel). ONE
+  // source of truth for the ~6 sections that each hand-rolled this boilerplate -- one such copy
+  // drifted into a shipped "can't find the body-suit toggle" regression (see the _partsOpen note).
+  // open()/set() read+persist the section's expand flag across panel re-opens. `right` is an optional
+  // header control (e.g. the Colors "Reset" button) that must NOT toggle the section when clicked.
+  function collapsible(parent, opts) {
+    const {
+      label,
+      open,
+      set,
+      fill,
+      onOpen,
+      right = null,
+      headOpacity = ".7",
+      caretSize = "9px",
+      brighten = false,
+    } = opts;
+    parent.appendChild(divider());
+    const ch = document.createElement("div");
+    ch.style.cssText =
+      `opacity:${headOpacity};font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;` +
+      (brighten ? "user-select:none;" : "");
+    const caret = document.createElement("span");
+    caret.textContent = open() ? "▾" : "▸";
+    caret.style.fontSize = caretSize;
+    const lbl = document.createElement("span");
+    lbl.textContent = label;
+    ch.append(caret, lbl);
+    if (right) {
+      lbl.style.flex = "1";
+      ch.appendChild(right);
+    }
+    parent.appendChild(ch);
+    const box = document.createElement("div");
+    box.style.display = open() ? "block" : "none";
+    parent.appendChild(box);
+    ch.onclick = (e) => {
+      if (right && (e.target === right || right.contains(e.target))) return; // a header control isn't a toggle
+      e.stopPropagation();
+      const nowOpen = box.style.display === "none";
+      set(nowOpen);
+      box.style.display = nowOpen ? "block" : "none";
+      caret.textContent = nowOpen ? "▾" : "▸";
+      if (nowOpen && onOpen) onOpen(box);
+    };
+    if (brighten) {
+      ch.onmouseenter = () => {
+        ch.style.opacity = "1";
+      };
+      ch.onmouseleave = () => {
+        ch.style.opacity = headOpacity;
+      };
+    }
+    if (fill) fill(box);
+    if (open() && onOpen) onOpen(box);
+    return box;
+  }
   // Make a floating panel draggable by its header (the Settings / model gallery open centered and
   // used to be pinned there — now you can move them out of the way). Header buttons still work.
   function dragByHeader(panel, handle, onMove) {
@@ -586,34 +644,24 @@ export function createUI(api) {
     // per-area jiggle above. Tuned live (type the value) + saved into this avatar's profile.
     {
       const sp = () => profileFor(curKey).spring || {};
-      body.appendChild(divider());
-      const ch = document.createElement("div");
-      ch.style.cssText =
-        "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
-      const caret = document.createElement("span");
-      caret.textContent = _advOpen ? "▾" : "▸";
-      caret.style.fontSize = "9px";
-      const lbl = document.createElement("span");
-      lbl.textContent = "Advanced physics (global feel)";
-      ch.append(caret, lbl);
-      body.appendChild(ch);
-      const advBox = document.createElement("div");
-      advBox.style.display = _advOpen ? "block" : "none";
-      body.appendChild(advBox);
-      ch.onclick = (e) => {
-        e.stopPropagation();
-        _advOpen = advBox.style.display === "none";
-        advBox.style.display = _advOpen ? "block" : "none";
-        caret.textContent = _advOpen ? "▾" : "▸";
-      };
-      const springNum = (label, key, min, max, step, dflt) =>
-        advBox.appendChild(
-          sRow(label, numInput(sp()[key] ?? dflt, { min, max, step, onChange: (v) => api.springTune({ [key]: v }) }))
-        );
-      springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
-      springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
-      springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
-      // (the "Hair breeze" knob died with the idle system, 2026-06-12 — ambient wind was self-generated motion)
+      collapsible(body, {
+        label: "Advanced physics (global feel)",
+        open: () => _advOpen,
+        set: (v) => (_advOpen = v),
+        fill: (advBox) => {
+          const springNum = (label, key, min, max, step, dflt) =>
+            advBox.appendChild(
+              sRow(
+                label,
+                numInput(sp()[key] ?? dflt, { min, max, step, onChange: (v) => api.springTune({ [key]: v }) })
+              )
+            );
+          springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
+          springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
+          springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
+          // (the "Hair breeze" knob died with the idle system, 2026-06-12 — ambient wind was self-generated motion)
+        },
+      });
     }
 
     // Colors — recolor each material by its STABLE INDEX. Names are unreliable (a model can have
@@ -622,21 +670,6 @@ export function createUI(api) {
     // code or use the swatch; "Reset" restores every part's original loaded color.
     const mats = api.materials ? api.materials() : [];
     if (mats.length) {
-      const cr = document.createElement("div");
-      cr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;";
-      body.appendChild(cr);
-      // Collapsible — a model like grace_howard has many materials; collapse by default
-      // when there are more than a handful. The expand state persists across re-opens.
-      const open0 = _colorsOpen || mats.length <= 6;
-      const ch = document.createElement("div");
-      ch.style.cssText =
-        "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
-      const caret = document.createElement("span");
-      caret.textContent = open0 ? "▾" : "▸";
-      caret.style.fontSize = "9px";
-      const lbl = document.createElement("span");
-      lbl.textContent = `Colors — by part index (${mats.length})`;
-      lbl.style.flex = "1";
       const reset = document.createElement("button");
       reset.textContent = "Reset";
       reset.title = "restore every part's original loaded color";
@@ -647,56 +680,55 @@ export function createUI(api) {
         if (api.resetColors) api.resetColors();
         buildSettings();
       };
-      ch.append(caret, lbl, reset);
-      body.appendChild(ch);
-      const colorBox = document.createElement("div");
-      colorBox.style.display = open0 ? "block" : "none";
-      body.appendChild(colorBox);
-      ch.onclick = (e) => {
-        if (e.target === reset) return;
-        e.stopPropagation();
-        _colorsOpen = colorBox.style.display === "none";
-        colorBox.style.display = _colorsOpen ? "block" : "none";
-        caret.textContent = _colorsOpen ? "▾" : "▸";
-      };
-      for (const mat of mats) {
-        const hex0 = mat.hex || "#ffffff";
-        const c = document.createElement("input");
-        c.type = "color";
-        c.value = hex0;
-        c.style.cssText =
-          "width:30px;height:24px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:4px;background:transparent;cursor:pointer;flex:0 0 auto;";
-        const t = document.createElement("input");
-        t.type = "text";
-        t.value = hex0;
-        t.spellcheck = false;
-        t.maxLength = 7;
-        t.placeholder = "#rrggbb";
-        t.style.cssText =
-          "width:80px;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 5px;font:12px ui-monospace,Consolas,monospace;";
-        // accept "#rrggbb" or "rrggbb"; ignore partial/invalid input so typing doesn't flicker
-        const apply = (raw) => {
-          const s = String(raw).trim();
-          if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return;
-          const hex = s[0] === "#" ? s : "#" + s;
-          c.value = hex;
-          t.value = hex;
-          api.recolor(mat.index, hex);
-        };
-        c.oninput = (e) => {
-          e.stopPropagation();
-          apply(c.value);
-        };
-        t.oninput = (e) => {
-          e.stopPropagation();
-          apply(t.value);
-        };
-        const wrap = document.createElement("div");
-        wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:0 0 auto;";
-        wrap.append(c, t);
-        const label = `#${mat.index}` + (mat.name ? " · " + mat.name : "") + (mat.mesh ? "  (" + mat.mesh + ")" : "");
-        colorBox.appendChild(sRow(label, wrap));
-      }
+      // Collapsible — a model like grace_howard has many materials; collapse by default when
+      // there are more than a handful (the expand state persists across re-opens).
+      collapsible(body, {
+        label: `Colors — by part index (${mats.length})`,
+        open: () => _colorsOpen || mats.length <= 6,
+        set: (v) => (_colorsOpen = v),
+        right: reset,
+        fill: (colorBox) => {
+          for (const mat of mats) {
+            const hex0 = mat.hex || "#ffffff";
+            const c = document.createElement("input");
+            c.type = "color";
+            c.value = hex0;
+            c.style.cssText =
+              "width:30px;height:24px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:4px;background:transparent;cursor:pointer;flex:0 0 auto;";
+            const t = document.createElement("input");
+            t.type = "text";
+            t.value = hex0;
+            t.spellcheck = false;
+            t.maxLength = 7;
+            t.placeholder = "#rrggbb";
+            t.style.cssText =
+              "width:80px;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 5px;font:12px ui-monospace,Consolas,monospace;";
+            // accept "#rrggbb" or "rrggbb"; ignore partial/invalid input so typing doesn't flicker
+            const apply = (raw) => {
+              const s = String(raw).trim();
+              if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return;
+              const hex = s[0] === "#" ? s : "#" + s;
+              c.value = hex;
+              t.value = hex;
+              api.recolor(mat.index, hex);
+            };
+            c.oninput = (e) => {
+              e.stopPropagation();
+              apply(c.value);
+            };
+            t.oninput = (e) => {
+              e.stopPropagation();
+              apply(t.value);
+            };
+            const wrap = document.createElement("div");
+            wrap.style.cssText = "display:flex;gap:6px;align-items:center;flex:0 0 auto;";
+            wrap.append(c, t);
+            const label =
+              `#${mat.index}` + (mat.name ? " · " + mat.name : "") + (mat.mesh ? "  (" + mat.mesh + ")" : "");
+            colorBox.appendChild(sRow(label, wrap));
+          }
+        },
+      });
     }
 
     // Parts (meshes) — show/hide each sub-object BY INDEX (clothing variants, hide-able body parts).
@@ -706,128 +738,111 @@ export function createUI(api) {
     // legible name). Both saved per avatar. Addressed by #index (the only reliable handle).
     const parts = api.meshes ? api.meshes() : [];
     if (parts.length >= 1) {
-      body.appendChild(divider());
-      const ch = document.createElement("div");
-      ch.style.cssText =
-        "opacity:.85;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;";
       // DEFAULT OPEN — it used to auto-collapse on models with >8 parts, and the tiny dim header didn't
       // read as clickable, so the user couldn't find the body-suit toggle at all ("part toggle is not
       // accessible"). The list is the point of this section; the caret stays for collapsing it.
-      const open0 = _partsOpen !== false;
-      const caret = document.createElement("span");
-      caret.textContent = open0 ? "▾" : "▸";
-      caret.style.fontSize = "10px";
-      const lbl = document.createElement("span");
-      lbl.textContent = `Parts — show / hide / rename (${parts.length})`;
-      ch.append(caret, lbl);
-      body.appendChild(ch);
-      const box = document.createElement("div");
-      box.style.display = open0 ? "block" : "none";
-      body.appendChild(box);
-      ch.onclick = (e) => {
-        e.stopPropagation();
-        _partsOpen = box.style.display === "none";
-        box.style.display = _partsOpen ? "block" : "none";
-        caret.textContent = _partsOpen ? "▾" : "▸";
-      };
-      ch.onmouseenter = () => {
-        ch.style.opacity = "1";
-      };
-      ch.onmouseleave = () => {
-        ch.style.opacity = ".85";
-      };
-      // OUTFITS (2026-06-12): one-click looks — a named snapshot of which parts are hidden. Tick the
-      // parts into a look below, type a name, Enter; "Wear" swaps the whole look at once. Saved per avatar.
-      if (api.outfits) {
-        const bar = document.createElement("div");
-        bar.style.cssText = "display:flex;gap:5px;align-items:center;margin:2px 0 6px;flex-wrap:wrap;";
-        const BTN2 =
-          "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:2px 7px;cursor:pointer;";
-        const sel = document.createElement("select");
-        sel.style.cssText =
-          "background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:12px system-ui;padding:2px 4px;max-width:108px;";
-        const names = api.outfits();
-        if (!names.length) {
-          const o = document.createElement("option");
-          o.textContent = "(no outfits)";
-          sel.appendChild(o);
-          sel.disabled = true;
-        } else
-          for (const n of names) {
-            const o = document.createElement("option");
-            o.value = n;
-            o.textContent = n;
-            sel.appendChild(o);
+      collapsible(body, {
+        label: `Parts — show / hide / rename (${parts.length})`,
+        open: () => _partsOpen !== false,
+        set: (v) => (_partsOpen = v),
+        headOpacity: ".85",
+        caretSize: "10px",
+        brighten: true,
+        fill: (box) => {
+          // OUTFITS (2026-06-12): one-click looks — a named snapshot of which parts are hidden. Tick the
+          // parts into a look below, type a name, Enter; "Wear" swaps the whole look at once. Saved per avatar.
+          if (api.outfits) {
+            const bar = document.createElement("div");
+            bar.style.cssText = "display:flex;gap:5px;align-items:center;margin:2px 0 6px;flex-wrap:wrap;";
+            const BTN2 =
+              "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:2px 7px;cursor:pointer;";
+            const sel = document.createElement("select");
+            sel.style.cssText =
+              "background:rgba(255,255,255,.08);color:#eee;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:12px system-ui;padding:2px 4px;max-width:108px;";
+            const names = api.outfits();
+            if (!names.length) {
+              const o = document.createElement("option");
+              o.textContent = "(no outfits)";
+              sel.appendChild(o);
+              sel.disabled = true;
+            } else
+              for (const n of names) {
+                const o = document.createElement("option");
+                o.value = n;
+                o.textContent = n;
+                sel.appendChild(o);
+              }
+            const wear = document.createElement("button");
+            wear.textContent = "Wear";
+            wear.style.cssText = BTN2;
+            wear.disabled = !names.length;
+            wear.onclick = (e) => {
+              e.stopPropagation();
+              if (api.wearOutfit && sel.value) {
+                api.wearOutfit(sel.value);
+                buildSettings();
+              }
+            };
+            const del = document.createElement("button");
+            del.textContent = "✕";
+            del.title = "delete this outfit";
+            del.style.cssText = BTN2;
+            del.disabled = !names.length;
+            del.onclick = (e) => {
+              e.stopPropagation();
+              if (api.deleteOutfit && sel.value) {
+                api.deleteOutfit(sel.value);
+                buildSettings();
+              }
+            };
+            const nameIn = document.createElement("input");
+            nameIn.type = "text";
+            nameIn.placeholder = "save current as… ⏎";
+            nameIn.spellcheck = false;
+            nameIn.style.cssText =
+              "background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;width:118px;";
+            nameIn.onkeydown = (e) => {
+              e.stopPropagation();
+              if (e.key === "Enter" && nameIn.value.trim() && api.saveOutfit) {
+                api.saveOutfit(nameIn.value.trim());
+                buildSettings();
+              }
+            };
+            bar.append(sel, wear, del, nameIn);
+            box.appendChild(bar);
           }
-        const wear = document.createElement("button");
-        wear.textContent = "Wear";
-        wear.style.cssText = BTN2;
-        wear.disabled = !names.length;
-        wear.onclick = (e) => {
-          e.stopPropagation();
-          if (api.wearOutfit && sel.value) {
-            api.wearOutfit(sel.value);
-            buildSettings();
+          for (const p of parts) {
+            const row = document.createElement("div");
+            row.style.cssText = "display:flex;align-items:center;gap:7px;padding:4px 0;";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = p.visible;
+            cb.title = "show / hide this part";
+            cb.onchange = (e) => {
+              e.stopPropagation();
+              api.setMeshVisible(p.index, cb.checked);
+            };
+            const idx = document.createElement("span");
+            idx.textContent = "#" + p.index;
+            idx.style.cssText = "opacity:.5;font:11px ui-monospace,Consolas,monospace;flex:0 0 auto;";
+            const nm = document.createElement("input");
+            nm.type = "text";
+            nm.value = p.label || "";
+            nm.placeholder = p.name || "part " + p.index;
+            nm.spellcheck = false;
+            nm.title = "rename this part" + (p.name ? " (file name: " + p.name + ")" : "");
+            nm.style.cssText =
+              "flex:1;min-width:0;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
+            nm.onkeydown = (e) => e.stopPropagation(); // typing here must not trigger the global 1-9 / h / b hotkeys
+            nm.onchange = (e) => {
+              e.stopPropagation();
+              if (api.setMeshLabel) api.setMeshLabel(p.index, nm.value);
+            };
+            row.append(cb, idx, nm);
+            box.appendChild(row);
           }
-        };
-        const del = document.createElement("button");
-        del.textContent = "✕";
-        del.title = "delete this outfit";
-        del.style.cssText = BTN2;
-        del.disabled = !names.length;
-        del.onclick = (e) => {
-          e.stopPropagation();
-          if (api.deleteOutfit && sel.value) {
-            api.deleteOutfit(sel.value);
-            buildSettings();
-          }
-        };
-        const nameIn = document.createElement("input");
-        nameIn.type = "text";
-        nameIn.placeholder = "save current as… ⏎";
-        nameIn.spellcheck = false;
-        nameIn.style.cssText =
-          "background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;width:118px;";
-        nameIn.onkeydown = (e) => {
-          e.stopPropagation();
-          if (e.key === "Enter" && nameIn.value.trim() && api.saveOutfit) {
-            api.saveOutfit(nameIn.value.trim());
-            buildSettings();
-          }
-        };
-        bar.append(sel, wear, del, nameIn);
-        box.appendChild(bar);
-      }
-      for (const p of parts) {
-        const row = document.createElement("div");
-        row.style.cssText = "display:flex;align-items:center;gap:7px;padding:4px 0;";
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = p.visible;
-        cb.title = "show / hide this part";
-        cb.onchange = (e) => {
-          e.stopPropagation();
-          api.setMeshVisible(p.index, cb.checked);
-        };
-        const idx = document.createElement("span");
-        idx.textContent = "#" + p.index;
-        idx.style.cssText = "opacity:.5;font:11px ui-monospace,Consolas,monospace;flex:0 0 auto;";
-        const nm = document.createElement("input");
-        nm.type = "text";
-        nm.value = p.label || "";
-        nm.placeholder = p.name || "part " + p.index;
-        nm.spellcheck = false;
-        nm.title = "rename this part" + (p.name ? " (file name: " + p.name + ")" : "");
-        nm.style.cssText =
-          "flex:1;min-width:0;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
-        nm.onkeydown = (e) => e.stopPropagation(); // typing here must not trigger the global 1-9 / h / b hotkeys
-        nm.onchange = (e) => {
-          e.stopPropagation();
-          if (api.setMeshLabel) api.setMeshLabel(p.index, nm.value);
-        };
-        row.append(cb, idx, nm);
-        box.appendChild(row);
-      }
+        },
+      });
     }
 
     // Bones — NAME the rig (saved per avatar). Rig names are soup ("HairBoneL006_0524"); a label
@@ -841,143 +856,124 @@ export function createUI(api) {
       // checkbox reveals the helper soup when it's genuinely needed.
       const hasW = bones.some((b) => b.deforms != null);
       const realCount = hasW ? bones.filter((b) => b.deforms || b.role || b.label).length : bones.length;
-      body.appendChild(divider());
-      const open0 = _bonesOpen === true; // default CLOSED — huge lists; deliberate section
-      const ch = document.createElement("div");
-      ch.style.cssText =
-        "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;";
-      const caret = document.createElement("span");
-      caret.textContent = open0 ? "▾" : "▸";
-      caret.style.fontSize = "9px";
-      const lbl = document.createElement("span");
-      lbl.textContent = hasW
-        ? `Bones — name them (${realCount} real of ${bones.length})`
-        : `Bones — name them (${bones.length})`;
-      ch.append(caret, lbl);
-      body.appendChild(ch);
-      const bbox = document.createElement("div");
-      bbox.style.display = open0 ? "block" : "none";
-      body.appendChild(bbox);
-      ch.onclick = (e) => {
-        e.stopPropagation();
-        _bonesOpen = bbox.style.display === "none";
-        bbox.style.display = _bonesOpen ? "block" : "none";
-        caret.textContent = _bonesOpen ? "▾" : "▸";
-      };
-      ch.onmouseenter = () => {
-        ch.style.opacity = "1";
-      };
-      ch.onmouseleave = () => {
-        ch.style.opacity = ".7";
-      };
-      const filt = document.createElement("input");
-      filt.type = "text";
-      filt.placeholder = "filter bones (name / label / role)…";
-      filt.spellcheck = false;
-      filt.style.cssText =
-        "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
-      filt.onkeydown = (e) => e.stopPropagation(); // typing must not trigger global hotkeys
-      // IDENTIFY bones (user 2026-06-12): Pick = the next click ON HER selects the nearest bone
-      // into the filter; hovering/clicking a row's raw name flashes a pink marker on that bone.
-      let showAll = false,
-        allCb = null;
-      if (api.pickBone) {
-        const pk = document.createElement("button");
-        const IDLE_TXT = "Pick a bone — click a spot on her body";
-        pk.textContent = IDLE_TXT;
-        pk.style.cssText =
-          "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:2px 0 4px;display:block;";
-        pk.onclick = (e) => {
-          e.stopPropagation();
-          pk.textContent = "…now click her (anywhere else cancels)";
-          api.pickBone((name) => {
-            filt.value = name;
-            showAll = true;
-            if (allCb) allCb.checked = true;
-            render();
+      collapsible(body, {
+        label: hasW
+          ? `Bones — name them (${realCount} real of ${bones.length})`
+          : `Bones — name them (${bones.length})`,
+        open: () => _bonesOpen === true, // default CLOSED — huge lists; deliberate section
+        set: (v) => (_bonesOpen = v),
+        brighten: true,
+        fill: (bbox) => {
+          const filt = document.createElement("input");
+          filt.type = "text";
+          filt.placeholder = "filter bones (name / label / role)…";
+          filt.spellcheck = false;
+          filt.style.cssText =
+            "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
+          filt.onkeydown = (e) => e.stopPropagation(); // typing must not trigger global hotkeys
+          // IDENTIFY bones (user 2026-06-12): Pick = the next click ON HER selects the nearest bone
+          // into the filter; hovering/clicking a row's raw name flashes a pink marker on that bone.
+          let showAll = false,
+            allCb = null;
+          if (api.pickBone) {
+            const pk = document.createElement("button");
+            const IDLE_TXT = "Pick a bone — click a spot on her body";
             pk.textContent = IDLE_TXT;
-          }); // a picked helper bone must be visible in the list
-        };
-        bbox.appendChild(pk);
-      }
-      const list = document.createElement("div");
-      const CAP = 30;
-      let allRow = null;
-      if (hasW && realCount < bones.length) {
-        // the helper-soup toggle (only when weights distinguish real from soup)
-        allRow = document.createElement("label");
-        allRow.style.cssText =
-          "display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7;margin:0 0 4px;cursor:pointer;";
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        allCb = cb;
-        cb.onchange = (e) => {
-          e.stopPropagation();
-          showAll = cb.checked;
-          render();
-        };
-        const t = document.createElement("span");
-        t.textContent = `show ${bones.length - realCount} helper bones (deform nothing)`;
-        allRow.append(cb, t);
-      }
-      const render = () => {
-        list.innerHTML = "";
-        const q = filt.value.trim().toLowerCase();
-        const base = hasW && !showAll ? bones.filter((b) => b.deforms || b.role || b.label) : bones; // default: only bones that move mesh / hold a role / are named
-        const hits = base.filter(
-          (b) =>
-            !q ||
-            b.name.toLowerCase().includes(q) ||
-            (b.label || "").toLowerCase().includes(q) ||
-            (b.role || "").toLowerCase().includes(q)
-        );
-        for (const b of hits.slice(0, CAP)) {
-          const row = document.createElement("div");
-          row.style.cssText = "display:flex;align-items:center;gap:7px;padding:3px 0;";
-          const nm = document.createElement("input");
-          nm.type = "text";
-          nm.value = b.label || "";
-          nm.placeholder = "name it…";
-          nm.spellcheck = false;
-          nm.title = "your name for this bone (raw: " + b.name + ")";
-          nm.style.cssText =
-            "width:108px;flex:0 0 auto;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
-          nm.onkeydown = (e) => e.stopPropagation();
-          nm.onchange = (e) => {
-            e.stopPropagation();
-            if (api.setBoneLabel) api.setBoneLabel(b.name, nm.value);
-            b.label = nm.value.trim() || null;
-          };
-          const raw = document.createElement("span");
-          raw.textContent = b.name + (b.role ? "  ·  " + b.role : "");
-          raw.style.cssText =
-            "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;";
-          raw.title = b.name + " — hover/click: show this bone on her";
-          if (api.highlightBone) {
-            // identify: light the bone up on her body
-            raw.onmouseenter = () => api.highlightBone(b.name, 1.2);
-            raw.onclick = (e) => {
+            pk.style.cssText =
+              "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:2px 0 4px;display:block;";
+            pk.onclick = (e) => {
               e.stopPropagation();
-              api.highlightBone(b.name, 3);
+              pk.textContent = "…now click her (anywhere else cancels)";
+              api.pickBone((name) => {
+                filt.value = name;
+                showAll = true;
+                if (allCb) allCb.checked = true;
+                render();
+                pk.textContent = IDLE_TXT;
+              }); // a picked helper bone must be visible in the list
             };
+            bbox.appendChild(pk);
           }
-          row.append(nm, raw);
-          list.appendChild(row);
-        }
-        if (hits.length > CAP) {
-          const more = document.createElement("div");
-          more.textContent = `…${hits.length - CAP} more — type to filter`;
-          more.style.cssText = "opacity:.45;font-size:11px;padding:2px 0;";
-          list.appendChild(more);
-        }
-      };
-      filt.oninput = (e) => {
-        e.stopPropagation();
-        render();
-      };
-      if (allRow) bbox.append(filt, allRow, list);
-      else bbox.append(filt, list);
-      render();
+          const list = document.createElement("div");
+          const CAP = 30;
+          let allRow = null;
+          if (hasW && realCount < bones.length) {
+            // the helper-soup toggle (only when weights distinguish real from soup)
+            allRow = document.createElement("label");
+            allRow.style.cssText =
+              "display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7;margin:0 0 4px;cursor:pointer;";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            allCb = cb;
+            cb.onchange = (e) => {
+              e.stopPropagation();
+              showAll = cb.checked;
+              render();
+            };
+            const t = document.createElement("span");
+            t.textContent = `show ${bones.length - realCount} helper bones (deform nothing)`;
+            allRow.append(cb, t);
+          }
+          const render = () => {
+            list.innerHTML = "";
+            const q = filt.value.trim().toLowerCase();
+            const base = hasW && !showAll ? bones.filter((b) => b.deforms || b.role || b.label) : bones; // default: only bones that move mesh / hold a role / are named
+            const hits = base.filter(
+              (b) =>
+                !q ||
+                b.name.toLowerCase().includes(q) ||
+                (b.label || "").toLowerCase().includes(q) ||
+                (b.role || "").toLowerCase().includes(q)
+            );
+            for (const b of hits.slice(0, CAP)) {
+              const row = document.createElement("div");
+              row.style.cssText = "display:flex;align-items:center;gap:7px;padding:3px 0;";
+              const nm = document.createElement("input");
+              nm.type = "text";
+              nm.value = b.label || "";
+              nm.placeholder = "name it…";
+              nm.spellcheck = false;
+              nm.title = "your name for this bone (raw: " + b.name + ")";
+              nm.style.cssText =
+                "width:108px;flex:0 0 auto;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:2px 5px;font:12px system-ui;";
+              nm.onkeydown = (e) => e.stopPropagation();
+              nm.onchange = (e) => {
+                e.stopPropagation();
+                if (api.setBoneLabel) api.setBoneLabel(b.name, nm.value);
+                b.label = nm.value.trim() || null;
+              };
+              const raw = document.createElement("span");
+              raw.textContent = b.name + (b.role ? "  ·  " + b.role : "");
+              raw.style.cssText =
+                "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;";
+              raw.title = b.name + " — hover/click: show this bone on her";
+              if (api.highlightBone) {
+                // identify: light the bone up on her body
+                raw.onmouseenter = () => api.highlightBone(b.name, 1.2);
+                raw.onclick = (e) => {
+                  e.stopPropagation();
+                  api.highlightBone(b.name, 3);
+                };
+              }
+              row.append(nm, raw);
+              list.appendChild(row);
+            }
+            if (hits.length > CAP) {
+              const more = document.createElement("div");
+              more.textContent = `…${hits.length - CAP} more — type to filter`;
+              more.style.cssText = "opacity:.45;font-size:11px;padding:2px 0;";
+              list.appendChild(more);
+            }
+          };
+          filt.oninput = (e) => {
+            e.stopPropagation();
+            render();
+          };
+          if (allRow) bbox.append(filt, allRow, list);
+          else bbox.append(filt, list);
+          render();
+        },
+      });
     }
 
     // Shapes / morphs — the model's OWN shape keys (facial expressions, body toggles like "show X").
@@ -985,46 +981,32 @@ export function createUI(api) {
     // how a VRChat-style avatar's "extra settings" survive a GLB export (makiro ships 19).
     const morphs = api.morphs ? api.morphs() : [];
     if (morphs.length) {
-      body.appendChild(divider());
-      const open0 = _morphsOpen || morphs.length <= 6;
-      const ch = document.createElement("div");
-      ch.style.cssText =
-        "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
-      const caret = document.createElement("span");
-      caret.textContent = open0 ? "▾" : "▸";
-      caret.style.fontSize = "9px";
-      const lbl = document.createElement("span");
-      lbl.textContent = `Shapes / morphs (${morphs.length})`;
-      ch.append(caret, lbl);
-      body.appendChild(ch);
-      const mbox = document.createElement("div");
-      mbox.style.display = open0 ? "block" : "none";
-      body.appendChild(mbox);
-      ch.onclick = (e) => {
-        e.stopPropagation();
-        _morphsOpen = mbox.style.display === "none";
-        mbox.style.display = _morphsOpen ? "block" : "none";
-        caret.textContent = _morphsOpen ? "▾" : "▸";
-      };
-      for (const mph of morphs) {
-        const tag = "#" + mph.index + (mph.name ? " · " + mph.name : "");
-        if (mph.auto) {
-          // this morph is auto-driven by lip-sync/blink → a slider here would just snap back; label it instead
-          const r = document.createElement("div");
-          r.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 0;opacity:.5;";
-          const l = document.createElement("span");
-          l.textContent = tag;
-          l.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-          const b = document.createElement("span");
-          b.textContent = "auto · lip-sync";
-          b.style.cssText =
-            "font-size:10px;border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:0 5px;flex:0 0 auto;";
-          r.append(l, b);
-          mbox.appendChild(r);
-        } else {
-          mbox.appendChild(weightRow(tag, mph.value, (v) => api.setMorphValue(mph.index, v), 1));
-        }
-      }
+      collapsible(body, {
+        label: `Shapes / morphs (${morphs.length})`,
+        open: () => _morphsOpen || morphs.length <= 6,
+        set: (v) => (_morphsOpen = v),
+        fill: (mbox) => {
+          for (const mph of morphs) {
+            const tag = "#" + mph.index + (mph.name ? " · " + mph.name : "");
+            if (mph.auto) {
+              // this morph is auto-driven by lip-sync/blink → a slider here would just snap back; label it instead
+              const r = document.createElement("div");
+              r.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 0;opacity:.5;";
+              const l = document.createElement("span");
+              l.textContent = tag;
+              l.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+              const b = document.createElement("span");
+              b.textContent = "auto · lip-sync";
+              b.style.cssText =
+                "font-size:10px;border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:0 5px;flex:0 0 auto;";
+              r.append(l, b);
+              mbox.appendChild(r);
+            } else {
+              mbox.appendChild(weightRow(tag, mph.value, (v) => api.setMorphValue(mph.index, v), 1));
+            }
+          }
+        },
+      });
     }
 
     const hr = document.createElement("div");
@@ -1069,28 +1051,12 @@ export function createUI(api) {
     if (api.repairModel && api.getCurKey) {
       const curId = (/\/models\/([^/]+)\//.exec(api.getCurKey() || "") || [])[1];
       if (curId) {
-        body.appendChild(divider());
-        const ch = document.createElement("div");
-        ch.style.cssText =
-          "opacity:.7;font-size:11px;margin-bottom:2px;cursor:pointer;display:flex;align-items:center;gap:6px;";
-        const caret = document.createElement("span");
-        caret.textContent = _repairOpen ? "▾" : "▸";
-        caret.style.fontSize = "9px";
-        const lbl = document.createElement("span");
-        lbl.textContent = "Model repair (fix the rig / bone names)";
-        ch.append(caret, lbl);
-        body.appendChild(ch);
-        const box = document.createElement("div");
-        box.style.display = _repairOpen ? "block" : "none";
-        body.appendChild(box);
-        ch.onclick = (e) => {
-          e.stopPropagation();
-          _repairOpen = box.style.display === "none";
-          box.style.display = _repairOpen ? "block" : "none";
-          caret.textContent = _repairOpen ? "▾" : "▸";
-          if (_repairOpen) renderRepair(box, curId);
-        };
-        if (_repairOpen) renderRepair(box, curId);
+        collapsible(body, {
+          label: "Model repair (fix the rig / bone names)",
+          open: () => _repairOpen,
+          set: (v) => (_repairOpen = v),
+          onOpen: (box) => renderRepair(box, curId),
+        });
       }
     }
 
