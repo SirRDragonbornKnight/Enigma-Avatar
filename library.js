@@ -31,7 +31,10 @@ const slug = (s) =>
 const title = (s) => s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 // a usable model id is a single clean path segment — reject separators / .. / empties (the renderer
 // supplies ids, so this is the path-traversal backstop for delete + thumbnail writes).
-const safeId = (id) => typeof id === "string" && id.length > 0 && id === path.basename(id) && !id.includes("..");
+// Also reject SKIP_DIR names (_trash / _thumbs / dotfolders): real model ids never start with `_`/`.`
+// (slug() strips leading underscores/dots), so a mutating op must never address an internal dir.
+const safeId = (id) =>
+  typeof id === "string" && id.length > 0 && id === path.basename(id) && !id.includes("..") && !SKIP_DIR(id);
 // build a relative model URL with each path segment percent-encoded (spaces / # / unicode safe)
 const modelUrl = (id, mesh) => `./models/${encodeURIComponent(id)}/${encodeURIComponent(mesh)}`;
 const thumbUrl = (id) => `./models/${encodeURIComponent(id)}/.thumb.png`;

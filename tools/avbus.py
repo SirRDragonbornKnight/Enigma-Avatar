@@ -13,6 +13,11 @@ import websockets
 
 
 async def main():
+    if len(sys.argv) < 2:
+        print(
+            'usage: python tools/avbus.py \'[{"action":"query","what":"regions","reqId":1}]\'  (or a path to a .json file)'
+        )
+        return
     arg = sys.argv[1]
     if os.path.isfile(arg):  # a .json file of commands (avoids shell quoting hell)
         with open(arg, encoding="utf-8-sig") as f:  # utf-8-sig tolerates the BOM PowerShell writes
@@ -54,4 +59,5 @@ async def main():
             print(json.dumps(results.get(c["reqId"], "NO REPLY"))[:2400])
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

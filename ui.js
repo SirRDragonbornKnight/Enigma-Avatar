@@ -328,7 +328,8 @@ export function createUI(api) {
     r.oninput = (e) => {
       e.stopPropagation();
       const v = parseFloat(r.value);
-      if (!Number.isNaN(v)) opts.onChange(v);
+      // Number.isFinite (not !isNaN) so "1e999"/Infinity is rejected too, not just NaN/"".
+      if (Number.isFinite(v)) opts.onChange(v);
     };
     return r;
   };

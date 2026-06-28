@@ -284,6 +284,11 @@ function makeWindow(display, isBrain, peerCount) {
   // churn). A re-assert tick below bumps her back above late-created topmost windows.
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Defense-in-depth: the renderer only ever loads the local index.html. Deny any navigation away
+  // and any new-window/popup — a crafted model asset must not be able to drive the overlay off-page
+  // or spawn a window. (No-op in normal use; closes a renderer-compromise escalation path.)
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (e) => e.preventDefault());
   win.loadFile(path.join(__dirname, "index.html"));
   // PERSISTENT listener (not .once): a reload (tray "Reload avatar" / the render-process-gone
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
@@ -555,7 +560,7 @@ function applyTopmost() {
 }
 // Gentle re-assert tick — only runs the work while NOT yielding to a fullscreen app (no point fighting
 // the z-order of a game we're deliberately sitting behind). Edges are handled instantly by the watcher.
-setInterval(() => {
+let _topmostTimer = setInterval(() => {
   if (!_fsActive) applyTopmost();
 }, 4000);
 function buildTrayMenu() {
@@ -1004,6 +1009,10 @@ app.on("before-quit", () => {
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   if (_dragTimer) clearInterval(_dragTimer);
+  if (_topmostTimer) {
+    clearInterval(_topmostTimer);
+    _topmostTimer = null;
+  }
   if (_stopFsWatch) {
     try {
       _stopFsWatch();

@@ -182,6 +182,7 @@ export function createPhysics({ scene, loadAsset }) {
   }
 
   const _q = new THREE.Quaternion();
+  const _off = new THREE.Vector3(); // scratch for the center-offset rotate (hoisted out of the per-prop loop)
   function step(dt) {
     if (!world || !props.length) return false;
     world.timestep = Math.min(0.05, Math.max(1 / 240, dt > 0 ? dt : 1 / 240)); // NaN/<=0 dt -> floor, never propagate a NaN timestep into world.step() (one bad frame NaNs every prop)
@@ -194,7 +195,7 @@ export function createPhysics({ scene, loadAsset }) {
       _q.set(rq.x, rq.y, rq.z, rq.w);
       p.obj.quaternion.copy(_q);
       p.obj.position.set(t.x, t.y, t.z);
-      if (off) p.obj.position.sub(off.clone().applyQuaternion(_q));
+      if (off) p.obj.position.sub(_off.copy(off).applyQuaternion(_q));
       if (!p.body.isSleeping()) awake = true;
     }
     return awake; // keep the frame rate up only while something moves

@@ -103,9 +103,18 @@ def _entries(pkg_path: str):
 
 
 def extract_tree(pkg_path: str, out_dir: str) -> int:
+    # The `pathname` comes from UNTRUSTED package content, so it can carry `..` segments or an
+    # absolute path (e.g. "C:/Windows/..."). Contain every write under out_dir (zip-slip guard);
+    # skip and warn on anything that escapes rather than writing outside the output tree.
     n = 0
+    out_root = os.path.realpath(out_dir)
     for pathname, data in _entries(pkg_path):
-        dest = os.path.join(out_dir, pathname.replace("\\", "/"))
+        rel = pathname.replace("\\", "/").lstrip("/")
+        rel = os.path.splitdrive(rel)[1].lstrip("/")  # drop a leading drive letter (C:/...) on Windows
+        dest = os.path.realpath(os.path.join(out_root, rel))
+        if os.path.commonpath([out_root, dest]) != out_root:
+            print(f"skip (path escapes output dir): {pathname}", file=sys.stderr)
+            continue
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
             f.write(data)

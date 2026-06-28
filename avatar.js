@@ -2287,8 +2287,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         rr = Math.max(0.1, (modelDims.w || 1.5) * sizeScale * 0.28);
       physics.setAvatar({ x: pos.x, y: pos.y + hW * 0.5 + _motionY, halfH: Math.max(0.1, hW * 0.5 - rr), r: rr }); // capsule spanning feet→head, centred mid-body
       if (physics.step(dt)) wake(0.5); // hold full frame rate while something is in flight
-      if (conjurer.step(dt)) wake(0.5); // P3: keep the frame rate up while a conjured prop pops / glides
     }
+    // P3: advance conjured props (pop-in / glide / hover / timed-dismiss) UNCONDITIONALLY. This was
+    // wrongly nested in the `physics.count() > 0` guard, so a conjured prop never animated unless a
+    // rapier ball happened to be in flight — it spawned invisible (scale ~0) and stayed frozen.
+    // step() early-outs cheaply when there are no props.
+    if (conjurer.step(dt)) wake(0.5);
     renderer.render(scene, camera);
     if (_peerCount > 0 && window.avatarIPC?.sendPose) window.avatarIPC.sendPose(serializePose()); // → main → peer windows mirror this exact pose (skip entirely on single-monitor)
     if (_peerCount > 0 && window.avatarIPC?.sendProps) {

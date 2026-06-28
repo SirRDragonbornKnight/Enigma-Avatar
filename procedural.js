@@ -691,7 +691,16 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         _le.set(v0.p, v0.y, v0.r, "XYZ");
         b.quaternion.multiply(_lq.setFromEuler(_le));
       } else {
-        v0.p = v0.y = v0.r = 0;
+        // No parts on this role THIS frame (e.g. a parts layer dropped while a flex layer stays).
+        // Ease the residual to 0 at the speed limit instead of snapping — same velocity-continuity
+        // the dedicated release loop below gives a fully-cleared role (#28).
+        v0.p = _vclamp(v0.p, 0, maxStep);
+        v0.y = _vclamp(v0.y, 0, maxStep);
+        v0.r = _vclamp(v0.r, 0, maxStep);
+        if (v0.p || v0.y || v0.r) {
+          _le.set(v0.p, v0.y, v0.r, "XYZ");
+          b.quaternion.multiply(_lq.setFromEuler(_le));
+        }
       }
       if (e.hasFlex) {
         const ax = flexAxis[role];
@@ -710,7 +719,18 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
           v0.abd = 0;
         }
       } else {
-        v0.ang = v0.abd = 0;
+        // Likewise ease residual flex/abduction to 0 rather than snapping (mirrors the release loop).
+        v0.ang = _vclamp(v0.ang, 0, maxStep);
+        v0.abd = _vclamp(v0.abd, 0, maxStep);
+        const ax = flexAxis[role];
+        if (v0.ang) {
+          if (ax) b.quaternion.multiply(_lq.setFromAxisAngle(ax, FSIGN * v0.ang));
+          else {
+            _le.set(v0.ang, 0, 0, "XYZ");
+            b.quaternion.multiply(_lq.setFromEuler(_le));
+          }
+        }
+        if (v0.abd && ax && abductAxis[role]) b.quaternion.multiply(_lq.setFromAxisAngle(abductAxis[role], v0.abd));
       }
       _vstate.set(role, v0);
     }

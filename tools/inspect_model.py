@@ -11,9 +11,16 @@ def load_gltf_json(path):
             magic, ver, length = struct.unpack("<III", f.read(12))
             if magic != 0x46546C67:
                 raise SystemExit("not a glb: " + path)
-            clen, ctype = struct.unpack("<II", f.read(8))
-            data = f.read(clen)
-            return json.loads(data.decode("utf-8", "replace"))
+            # Walk chunks and take the JSON one (type 0x4E4F534A) instead of assuming it is first --
+            # a spec-valid GLB may place another chunk ahead of it (audit_faces.py loops the same way).
+            while True:
+                hdr = f.read(8)
+                if len(hdr) < 8:
+                    raise SystemExit("no JSON chunk in glb: " + path)
+                clen, ctype = struct.unpack("<II", hdr)
+                data = f.read(clen)
+                if ctype == 0x4E4F534A:  # "JSON"
+                    return json.loads(data.decode("utf-8", "replace"))
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
