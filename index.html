@@ -2,6 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!--
+      Content-Security-Policy: the renderer parses UNTRUSTED model files. This blocks every REMOTE
+      origin (no http(s)/remote-ws), so a crafted model can't phone home or pull remote code/scripts;
+      only LOCAL schemes are allowed. Carve-outs are load-bearing, do not remove without checking:
+        - 'wasm-unsafe-eval'  -> Rapier physics compiles WebAssembly
+        - 'unsafe-inline' (script) -> the inline <script type="importmap"> below needs it
+        - blob:/data:         -> three.js textures, Draco/KTX2 worker decoders, Kokoro TTS audio
+        - ws://127.0.0.1:8765 -> the local AI control bus (the ONLY network endpoint permitted)
+      VERIFY after changing: launch the overlay, load a model + conjure/throw a prop + speak; watch
+      the devtools console for "Refused to ... Content Security Policy" and widen the matching
+      directive (local schemes only) if anything is blocked.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: blob: data:; script-src 'self' file: blob: 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' file: blob: data: ws://127.0.0.1:8765; img-src 'self' file: blob: data:; media-src 'self' file: blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Enigma Avatar</title>
     <style>

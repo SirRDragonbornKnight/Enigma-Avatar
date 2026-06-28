@@ -275,6 +275,11 @@ function makeWindow(display, isBrain, peerCount) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // OS-level renderer sandbox. The renderer parses UNTRUSTED model files (FBX/glTF) through
+      // three.js loaders; the sandbox confines a renderer-side exploit (no fs / no process spawn).
+      // Safe here because preload only uses contextBridge/ipcRenderer (no Node-only requires), which
+      // work under the sandbox. Does NOT touch the main-process click-through/panic logic.
+      sandbox: true,
       autoplayPolicy: "no-user-gesture-required",
       backgroundThrottling: false,
     },
