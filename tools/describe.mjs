@@ -21,7 +21,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   readGltfJson, buildSnapshot, runCascade,
-  discoverModels, urlKeyFor, MODELS,
+  discoverModels, urlKeyFor,
 } from "./rig_report.mjs";
 import { ROLES } from "../rig.js";
 
@@ -114,7 +114,7 @@ function deriveType(snap, cascade, health) {
 // What this model can actually be driven to DO. Motion is composed from PRIMITIVES (pose/flex
 // layers + per-finger curl) — there is NO emote/gesture catalog — so this reports the drivable
 // CHANNELS by resolved role, not a fixed action list. Final FEEL still needs a live look (STATUS.md).
-function supportedActions(cascade, face, mats, springs) {
+function supportedActions(cascade, face, mats, _springs) {
   const r = new Set(cascade.matched);
   const motion = {
     poseRoles: cascade.matched.slice(),                 // drive any of these via `pose` / `layer` motion layers

@@ -97,3 +97,15 @@ test("bus gate: allowRemote:true is an explicit opt-in that bypasses the gate", 
   loadAsset("http://ok.test/x.obj", () => {}, (e) => { if (/remote URL load blocked/i.test(String(e.message || e))) blocked = true; }, { allowRemote: true });
   assert.ok(!blocked, "allowRemote:true bypasses the remote gate");
 });
+
+// AUDIT 2026-06-26: the raw-string regex check was bypassable. The browser URL parser STRIPS ASCII
+// tab/newline/CR from anywhere in a URL and TRIMS leading control+space before fetching, so " https://"
+// or "ht\ttps://" passed the guard yet still got FETCHED. loadAsset now normalizes first.
+test("bus gate: remote urls smuggled via leading whitespace / embedded tab|newline are STILL blocked", () => {
+  for (const u of [" https://evil.test/x.glb", "\thttps://evil.test/x.vrm", "https\t://evil.test/x.glb", "ht\ttps://evil.test/x.glb", "\n https://evil.test/x.gltf"]) {
+    let err = null, ok = false;
+    loadAsset(u, () => { ok = true; }, (e) => { err = e; });
+    assert.ok(err && /remote URL load blocked/i.test(String(err.message || err)), `blocked smuggled ${JSON.stringify(u)}`);
+    assert.ok(!ok, "onOk did not fire for a smuggled remote url");
+  }
+});

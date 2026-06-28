@@ -1654,7 +1654,8 @@ const EnigmaAvatar = {
   lookMode: (m) => setLookMode(m), getLookMode: () => lookMode, hasEyes: () => hasEyes(),   // head / eyes / both
   eyeTune: (p) => Object.assign(eyeCfg, p),                              // adjust eye-look feel live (gain/flip/max — flip if eyes point wrong). Global now; not persisted per-model.
   lookAt: (px, py) => {   // force gaze at a screen point (AI / test). #18: opens a short forced channel so it drives even with cursor-follow off, and reports whether the gaze ACTUALLY drove.
-    cursor.x = px == null ? innerWidth / 2 : px; cursor.y = py == null ? innerHeight / 2 : py;
+    cursor.x = (px == null || !Number.isFinite(+px)) ? innerWidth / 2 : +px;   // coerce: a bus lookAt with NaN/Infinity/string must not poison the look smoother (would freeze cursor-look until reload)
+    cursor.y = (py == null || !Number.isFinite(+py)) ? innerHeight / 2 : +py;
     cursor.seen = true; _cursorIdle = 0; _forceLookUntil = performance.now() + 1200; wake(2);
     const drove = !!(proc && proc.setLook);   // a model with no head/eye look channel can't gaze — say so honestly instead of faking success
     return { lookAt: [Math.round(cursor.x), Math.round(cursor.y)], drove, channel: lookMode };
@@ -1960,7 +1961,7 @@ const relayFlags = {};
 {
   const _setFlag = relayed("setFlag");
   for (const k of ["springOn", "lookOn", "facialOn", "locked"])
-    Object.defineProperty(relayFlags, k, { get: () => flags[k], set: (v) => _setFlag(k, v) });
+    Object.defineProperty(relayFlags, k, { get: () => flags[k], set: (v) => { _setFlag(k, v); } });
 }
 
 // --- UI: right-click menu + Settings dialog (DOM built in ui.js) -------------

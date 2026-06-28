@@ -46,7 +46,7 @@ def report_animations(g):
     anims = g.get("animations") or []
     print("\n== ANIMATIONS:", len(anims))
     if not anims:
-        print("  (none baked in — body is posed by OUR procedural rig only)")
+        print("  (none baked in -- body is posed by OUR procedural rig only)")
         return
     for ai, a in enumerate(anims):
         chans = a.get("channels") or []
@@ -78,7 +78,7 @@ def report_animations(g):
         nm = a.get("name", f"<anim {ai}>")
         print(f"  anim[{ai}] \"{nm}\"  ~{dur:.2f}s  channels={len(chans)}  paths={paths}  bones_animated={len(targets)}")
         if weights_anim:
-            print(f"       *** MORPH-WEIGHT animation present (baked FACIAL/blendshape motion) ***")
+            print("       *** MORPH-WEIGHT animation present (baked FACIAL/blendshape motion) ***")
         if face_targets:
             print(f"       face/head bones animated ({len(face_targets)}): {sorted(face_targets)[:12]}")
 
@@ -144,7 +144,7 @@ def main(path):
     ext = g.get("extensions") or {}
     for key in ("VRM", "VRMC_vrm", "VRMC_springBone", "VRMC_vrm_animation"):
         if key in ext:
-            print(f"\n== EXTENSION {key} — keys:", list(ext[key].keys()))
+            print(f"\n== EXTENSION {key} -- keys:", list(ext[key].keys()))
             blob = json.dumps(ext[key])
             print(f"   (size {len(blob)} chars)")
             v = ext[key]

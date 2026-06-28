@@ -10,6 +10,10 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
   const items = new Map();      // id -> rec
   let _n = 0;
   const POP = 0.35;             // pop-in / poof-out duration (s)
+  // Boundary guard: a bus message (or an AI tag) is untrusted input. A non-finite coordinate
+  // (NaN from a stringly value, or Infinity) lerped into obj.position propagates through three.js
+  // and blanks/explodes the prop. Coerce every coordinate to a finite number where it ENTERS here.
+  const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 
   function spawn(url, opts = {}) {
     const id = String(opts.id || ("conj" + (++_n)));
@@ -21,8 +25,8 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
       dur: +opts.dur > 0 ? +opts.dur : 0,              // 0 = stay until dismissed
       size: +opts.size > 0 ? +opts.size : 0.5,
       bone: opts.bone || null,
-      amp: opts.float != null ? +opts.float : 0.04,
-      home: new THREE.Vector3(+at.x || 0, +at.y || 0, +at.z || 0),
+      amp: fin(opts.float, 0.04),
+      home: new THREE.Vector3(fin(at.x), fin(at.y), fin(at.z)),
       from: null, to: null, moveT: 0, moveDur: 0, dismiss: 0,
     };
     items.set(id, rec);
@@ -45,9 +49,9 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
     const rec = items.get(id); if (!rec || !rec.obj || !target) return false;
     rec.from = rec.obj.position.clone();
     rec.to = new THREE.Vector3(
-      target.x != null ? +target.x : rec.obj.position.x,
-      target.y != null ? +target.y : rec.obj.position.y,
-      target.z != null ? +target.z : rec.obj.position.z,   // omitted z keeps current depth (don't teleport to 0)
+      fin(target.x, rec.obj.position.x),
+      fin(target.y, rec.obj.position.y),
+      fin(target.z, rec.obj.position.z),   // omitted/garbage axis keeps current value (don't teleport to 0 or NaN)
     );
     rec.moveT = 0; rec.moveDur = +opts.dur > 0 ? +opts.dur : 0.8;
     return true;

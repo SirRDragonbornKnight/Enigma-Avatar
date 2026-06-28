@@ -15,7 +15,6 @@
 // state) the very same frame wipes the pose back to rest — so the test fails without #1.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as THREE from "three";
 import { buildProceduralRig } from "../procedural.js";
 import { fullBiped } from "./fixtures.js";
 import { stepProcVrmFrame } from "../avatar.js";

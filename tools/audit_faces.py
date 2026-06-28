@@ -208,7 +208,7 @@ def mine_weight_tracks(g, bufs):
             if tracks:
                 out.append({"anim": anim.get("name", f"<anim {ai}>"), "mesh": mesh_i,
                             "meshName": g["meshes"][mesh_i].get("name", ""), "dur": round(dur, 2),
-                            "keyframes": int(len(times)), "tracks": tracks})
+                            "keyframes": len(times), "tracks": tracks})
     return out
 
 # ---------- per-model audit ----------

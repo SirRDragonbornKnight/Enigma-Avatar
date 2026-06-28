@@ -30,6 +30,17 @@ let windows = [];                 // [{ displayId, win, bounds, isBrain }] — b
 let tray = null;
 let forceInteractive = false;
 let _forceThrough = false;   // PANIC: force EVERY window click-through so the desktop is always reclaimable (Ctrl+Shift+Alt+C)
+// STICKY view-only lock (set by env at launch): she renders but NEVER captures a click on ANY monitor.
+// Unlike the _forceThrough panic latch, this is NOT cleared by bringToDisplay/monitor moves — so a
+// safe over-a-fullscreen-game test stays click-through even as she's hopped between screens.
+const LOCK_THROUGH = process.env.ENIGMA_AVATAR_CLICKTHROUGH === "1";
+// YIELD-TO-FULLSCREEN: true while a real fullscreen app (game / video / presentation) owns the
+// screen. While set, every window drops always-on-top AND passes all clicks through, so she never
+// evicts an exclusive-fullscreen game from the foreground (the "avatar takes over / I get alt-tabbed
+// out of my game" bug). Driven by foreground.watch() below; honest no-op if detection is unavailable.
+let _fsActive = false;
+let _stopFsWatch = null;     // stop fn for the fullscreen-state poll (cleared on quit)
+const foreground = require("./foreground");
 // The avatar's single source-of-truth position, in virtual-desktop DIP. Every window
 // renders her relative to its own display origin. Initialised onto the primary at launch.
 let gPos = { x: 0, y: 0 };
@@ -133,7 +144,7 @@ function applyInteractive() {
   try { cursorDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id; } catch {}
   for (const w of liveWindows()) {
     let interactive;
-    if (_forceThrough) interactive = false;                              // PANIC override: every window click-through, no matter what (reclaim the desktop)
+    if (_forceThrough || LOCK_THROUGH || _fsActive) interactive = false; // PANIC override / sticky view-only lock / fullscreen-app present: every window click-through, no matter what (reclaim the desktop / never touch a fullscreen game)
     else if (_drag) interactive = w.win.webContents.id === _drag.winId;   // dragging → the GRAB window only, full-window, until release
     else {
       const over = _overByWin.get(w.win.webContents.id) || false;
@@ -165,7 +176,7 @@ function startDrag(winId, grabX, grabY, spin) {
       // A motionless held cursor never trips this (distance stays 0, however long the hold).
       const dx = c.x - _drag.beatCur.x, dy = c.y - _drag.beatCur.y;
       if (dx * dx + dy * dy > 48 * 48 && Date.now() - _drag.beatAt > 1200) {
-        console.error("[main] drag watchdog: grab window went silent while the cursor kept moving — capture lost, dropping her here");
+        console.error("[main] drag watchdog: grab window went silent while the cursor kept moving -- capture lost, dropping her here");
         endDrag();
       }
     } catch {}
@@ -185,6 +196,7 @@ function makeWindow(display, isBrain, peerCount) {
     x: b.x, y: b.y, width: b.width, height: b.height,
     transparent: true, frame: false, resizable: false, movable: false,
     skipTaskbar: true, hasShadow: false, alwaysOnTop: true, fullscreenable: false,
+    show: false,          // NEVER steal focus on launch (default show:true ACTIVATES the new window -> yanks the user out of a fullscreen game). Shown via showInactive() once loaded.
     focusable: isBrain,   // the brain hosts the Settings UI (text inputs need focus); peers never steal focus
     // backgroundThrottling:false is ESSENTIAL for a transparent always-on-top overlay: without it
     // Chromium pauses requestAnimationFrame (our render loop / compositor heartbeat) whenever the
@@ -202,6 +214,7 @@ function makeWindow(display, isBrain, peerCount) {
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
   // sits blank forever, never knowing its role (the audited "reload bricks every window" bug).
   win.webContents.on("did-finish-load", () => {
+    try { if (!win.isVisible()) win.showInactive(); } catch {}   // reveal WITHOUT activating — keeps the user's game/app in the foreground (paired with show:false above)
     try {
       win.webContents.send("avatar:init", { isBrain, displayId: display.id, winId: win.webContents.id, origin: { x: b.x, y: b.y }, bounds: { width: b.width, height: b.height }, peerCount: peerCount || 0 });
       const dh = displayForGlobalPos(), dHere = dh.bounds, wah = dh.workArea || dHere;   // her LIVE display, not this window's (a reload must not teach the window a stale "current display")
@@ -344,22 +357,34 @@ function bringToDisplay(displayId) {
   endDrag();
   _forceThrough = false;   // an explicit "bring her here" is the discoverable recovery from a latched panic click-through
   setGlobalPos(b.x + b.width / 2, b.y + b.height * 0.62);
-  for (const w of liveWindows()) { try { if (w.win.isMinimized()) w.win.restore(); w.win.setAlwaysOnTop(true, "screen-saver"); } catch {} }
+  for (const w of liveWindows()) { try { if (w.win.isMinimized()) w.win.restore(); } catch {} }
+  applyTopmost();   // re-assert top — but respects _fsActive, so this never re-evicts a fullscreen game
   refreshTrayMenu();
 }
 function recoverToPrimary() { bringToDisplay(primaryDisplay().id); }
-// TOPMOST RE-ASSERT — Windows orders topmost windows by recency, so any topmost window created
-// AFTER her (overlays, OSDs, some apps) sits above her, and focus churn can silently demote the
-// level ("why is it not showing as the top window at all times", 2026-06-11). A gentle tick keeps
-// every overlay window on top without ever stealing focus (moveTop doesn't focus).
-setInterval(() => {
+// TOPMOST POLICY — two opposite jobs, both handled here:
+//  - NORMAL desktop: keep every overlay window on top. Windows orders topmost windows by recency, so
+//    a topmost window created AFTER her (overlays, OSDs, some apps) sits above her, and focus churn can
+//    silently demote the level ("why is it not showing as the top window at all times", 2026-06-11), so
+//    we re-assert. moveTop() reorders without stealing focus.
+//  - FULLSCREEN app present (_fsActive): DROP always-on-top so we don't evict an exclusive-fullscreen
+//    game from the foreground. This is the fix for "the avatar takes over and I have to alt-tab back".
+// Called on every fullscreen-state edge (foreground.watch) and on a gentle tick while NOT yielding.
+function applyTopmost() {
   for (const w of liveWindows()) {
     try {
-      if (!w.win.isAlwaysOnTop()) w.win.setAlwaysOnTop(true, "screen-saver");
-      w.win.moveTop();
+      if (_fsActive) {
+        if (w.win.isAlwaysOnTop()) w.win.setAlwaysOnTop(false);   // yield: let the fullscreen app keep the screen
+      } else {
+        if (!w.win.isAlwaysOnTop()) w.win.setAlwaysOnTop(true, "screen-saver");
+        w.win.moveTop();
+      }
     } catch {}
   }
-}, 4000);
+}
+// Gentle re-assert tick — only runs the work while NOT yielding to a fullscreen app (no point fighting
+// the z-order of a game we're deliberately sitting behind). Edges are handled instantly by the watcher.
+setInterval(() => { if (!_fsActive) applyTopmost(); }, 4000);
 function buildTrayMenu() {
   const prim = primaryDisplay().id;
   const list = displays()
@@ -397,6 +422,20 @@ function init() {
   try { app.setAppUserModelId("com.enigma.avatar"); } catch {}   // stable identity → tray balloons + correct grouping
   createWindowSet();
   createTray();
+
+  // Yield to fullscreen apps: drop always-on-top + force click-through whenever a game/video/presentation
+  // owns the screen, and reclaim the top the moment it's gone. Fires only on the state edge; no-op (and
+  // already logged) if detection is unavailable, in which case she keeps the old always-on-top behavior.
+  if (foreground.available) {
+    _stopFsWatch = foreground.watch((fs) => {
+      _fsActive = fs;
+      console.error("[main] fullscreen app " + (fs ? "detected - overlay yielding (drop always-on-top, pass clicks through)" : "gone - overlay reclaiming top"));
+      applyTopmost();
+      applyInteractive();
+    });
+  } else {
+    console.error("[main] fullscreen-yield disabled - overlay may sit over fullscreen games (Ctrl+Shift+Alt+C still force-reclaims the desktop)");
+  }
 
   // Click-through hit reports (per window) → arbiter. {over, uiOpen} — uiOpen counts as "over"
   // (an open menu/Settings must keep receiving clicks even off the silhouette) AND makes a PEER
@@ -459,7 +498,7 @@ function init() {
   // Brain → peers: live physics-prop transforms (the ball), so it renders on whatever monitor she's on.
   ipcMain.on("avatar:props", (e, buf) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id) toPeers("avatar:props", buf); });
   // Brain → peers: mirror the model the brain just loaded/switched to.
-  ipcMain.on("avatar:modelLoaded", (e, url) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id && url) { currentModelUrl = url; endDrag(); console.error("[main] brain loaded " + url + " → relaying to " + (liveWindows().length - 1) + " peer(s)"); toPeers("avatar:model", url); } });   // endDrag: a model switch must never leave her glued to the cursor (a switch mid-grab left _drag chasing the OS cursor forever)
+  ipcMain.on("avatar:modelLoaded", (e, url) => { const b = brainEntry(); if (b && b.win.webContents.id === e.sender.id && url) { currentModelUrl = url; endDrag(); console.error("[main] brain loaded " + url + " -> relaying to " + (liveWindows().length - 1) + " peer(s)"); toPeers("avatar:model", url); } });   // endDrag: a model switch must never leave her glued to the cursor (a switch mid-grab left _drag chasing the OS cursor forever)
   // Peer cursor → brain (throttled at the sender): the brain runs cursor-look but only its own
   // display delivers pointermove — without this she only watches the cursor on the primary monitor.
   ipcMain.on("avatar:cursor", (e, p) => {
@@ -571,18 +610,21 @@ function init() {
   // All hotkey→renderer calls go through the brain. A pre-load / mid-reload keypress must not raise an
   // unhandled rejection (the brain simply isn't there to act yet).
   const runJS = (code) => { const b = brainWin(); if (b) try { b.webContents.executeJavaScript(code)?.catch?.(() => {}); } catch {} };
-  globalShortcut.register("CommandOrControl+Shift+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+C", () => { _forceThrough = !_forceThrough; if (_forceThrough) endDrag(); console.error("[main] force click-through " + (_forceThrough ? "ON - desktop reclaimed (drag dropped, avatar ignores all clicks)" : "OFF - avatar grabbable again")); applyInteractive(); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+Q", () => { console.error("[main] quit via Ctrl+Alt+Q"); app.quit(); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
-  globalShortcut.register("CommandOrControl+Shift+Alt+-", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));
+  // register + WARN if the OS rejects a combo (another app owns it) — a silently-dead panic key is the
+  // failure we must never ship blind. The C (force click-through) and Q (quit) keys are load-bearing.
+  const reg = (accel, cb) => { if (!globalShortcut.register(accel, cb)) console.error(`[main] hotkey ${accel} FAILED to register (already taken by another app) -- that shortcut is DEAD`); };
+  reg("CommandOrControl+Shift+Alt+A", () => { forceInteractive = !forceInteractive; applyInteractive(); });
+  reg("CommandOrControl+Shift+Alt+C", () => { _forceThrough = !_forceThrough; if (_forceThrough) endDrag(); console.error("[main] force click-through " + (_forceThrough ? "ON - desktop reclaimed (drag dropped, avatar ignores all clicks)" : "OFF - avatar grabbable again")); applyInteractive(); });
+  reg("CommandOrControl+Shift+Alt+Q", () => { console.error("[main] quit via Ctrl+Alt+Q"); app.quit(); });
+  reg("CommandOrControl+Shift+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
+  reg("CommandOrControl+Shift+Alt+-", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()/1.15)"));
   // glide across the screen (works even while click-through — global). Routed through main (it owns position).
-  globalShortcut.register("CommandOrControl+Shift+Alt+Left", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x - 0.33 * d.width, gPos.y); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+Right", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x + 0.33 * d.width, gPos.y); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+Up", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y - 0.2 * d.height); });
-  globalShortcut.register("CommandOrControl+Shift+Alt+Down", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y + 0.2 * d.height); });
+  reg("CommandOrControl+Shift+Alt+Left", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x - 0.33 * d.width, gPos.y); });
+  reg("CommandOrControl+Shift+Alt+Right", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x + 0.33 * d.width, gPos.y); });
+  reg("CommandOrControl+Shift+Alt+Up", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y - 0.2 * d.height); });
+  reg("CommandOrControl+Shift+Alt+Down", () => { const d = displayForGlobalPos().bounds; setGlobalPos(gPos.x, gPos.y + 0.2 * d.height); });
   // Hop her to the next monitor (left→right order).
-  globalShortcut.register("CommandOrControl+Shift+Alt+M", () => {
+  reg("CommandOrControl+Shift+Alt+M", () => {
     const list = displays().slice().sort((a, b) => a.bounds.x - b.bounds.x);
     if (list.length < 2) return;
     const here = displayForGlobalPos().id;
@@ -614,13 +656,13 @@ if (!app.requestSingleInstanceLock()) {
 // these one-liners tell the NEXT investigation whether it was the hotkey/tray/a window closing, or
 // something else entirely (a bare exit with none of these logged = external kill / OS shutdown).
 app.on("before-quit", () => { _quitting = true; console.error("[main] before-quit (uptime " + (process.uptime() | 0) + "s)"); });
-app.on("will-quit", () => { globalShortcut.unregisterAll(); if (_dragTimer) clearInterval(_dragTimer); try { if (tray && !tray.isDestroyed()) tray.destroy(); } catch {} tray = null; });
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (_dragTimer) clearInterval(_dragTimer); if (_stopFsWatch) { try { _stopFsWatch(); } catch {} _stopFsWatch = null; } try { if (tray && !tray.isDestroyed()) tray.destroy(); } catch {} tray = null; });
 app.on("window-all-closed", () => {
   // CRITICAL guard: rebuildWindowSet passes through a zero-window state for ~60ms on EVERY
   // display add/remove/metrics change (monitor sleep, DPI change, resolution switch). Without
   // this check that fired window-all-closed → quit — the app silently killed ITSELF on any
   // display event (the long-unexplained "died cleanly unattended, exit 0" mystery).
   if (_rebuilding) { console.error("[main] window-all-closed during rebuild — continuing"); return; }
-  console.error("[main] window-all-closed → quit");
+  console.error("[main] window-all-closed -> quit");
   app.quit();
 });

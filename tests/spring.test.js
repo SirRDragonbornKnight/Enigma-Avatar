@@ -59,6 +59,19 @@ test("GEOMETRIC-fallback chain does NOT sag under gravity at rest (no self-gener
   }
 });
 
+test("constructor regionWeight from a saved blob is CLAMPED to 0..2 (audit 2026-06-26)", () => {
+  // setParams clamps per-region weights, but a saved/hand-edited profiles.json blob reaches the
+  // CONSTRUCTOR spread directly — an out-of-range weight there used to bypass the 0..2 slider clamp
+  // and drive a verlet instability (near-zero stiffness = permanently floppy). clampParams now covers it.
+  const wOf = (rw, region) => {
+    const r = buildSpringBones(hairRig(), { regionWeight: rw }).regions().find((x) => x.region === region);
+    return r && r.weight;
+  };
+  assert.equal(wOf({ hair: 1e9 }, "hair"), 2, "huge weight clamped to 2");
+  assert.equal(wOf({ tail: -5 }, "tail"), 0, "negative weight clamped to 0");
+  assert.equal(wOf({ hair: NaN }, "hair"), 1, "non-finite weight -> default 1");
+});
+
 test("impulse() kicks only the matching region's bones, then settles; unknown region returns false", () => {
   const findTail = (m) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === "Tail") b = o; }); return b; };
   const steps = (s, n) => { for (let i = 0; i < n; i++) s.update(1 / 60); };

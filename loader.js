@@ -31,23 +31,37 @@ const extOf = (url) => { const u = url.split(/[?#]/)[0].toLowerCase(); const i =
 // authored ONLY in spec-gloss (common in Sketchfab rips — e.g. Toy Chica: all 14
 // materials, no metallic-roughness fallback) renders flat GREY: its base colour and
 // diffuse texture live under that extension and the core loader ignores them. This
-// minimal compat plugin re-binds diffuseFactor → material colour and diffuseTexture →
-// material.map (glossiness → roughness approx). Harmless for models that don't use it.
+// minimal compat plugin re-binds the DIFFUSE side (diffuseFactor → colour, diffuseTexture
+// → map, glossinessFactor → roughness approx) so the model is COLOURED, not grey. It does
+// NOT transcode the specular side (see the NOTE in the body) — highlights are approximate.
+// Harmless for models that don't use the extension.
 function specGlossCompat(parser) {
   const NAME = "KHR_materials_pbrSpecularGlossiness";
   return {
     name: NAME,                                              // exact name → also silences the "Unknown extension" warning
     extendMaterialParams(materialIndex, materialParams) {
-      const sg = parser.json.materials?.[materialIndex]?.extensions?.[NAME];
+      const mat = parser.json.materials?.[materialIndex];
+      const sg = mat?.extensions?.[NAME];
       if (!sg) return Promise.resolve();
       const pending = [];
       if (Array.isArray(sg.diffuseFactor)) {
         materialParams.color = new THREE.Color().setRGB(sg.diffuseFactor[0], sg.diffuseFactor[1], sg.diffuseFactor[2], THREE.LinearSRGBColorSpace);
-        if (sg.diffuseFactor[3] != null) materialParams.opacity = sg.diffuseFactor[3];
+        // diffuseFactor[3] is the base alpha. The core loader sets `transparent` from alphaMode but
+        // takes opacity from the (absent) metallic-roughness baseColor, so a translucent spec-gloss
+        // material would otherwise render fully OPAQUE. Supply opacity, and only force the transparent
+        // pass when the author actually asked for blending (so an OPAQUE material isn't mis-sorted).
+        if (sg.diffuseFactor[3] != null && mat.alphaMode && mat.alphaMode !== "OPAQUE") {
+          materialParams.opacity = sg.diffuseFactor[3];
+          if (mat.alphaMode === "BLEND") materialParams.transparent = true;
+        }
       }
       materialParams.metalness = 0;                          // spec-gloss is non-metal by construction
       materialParams.roughness = sg.glossinessFactor != null ? 1 - sg.glossinessFactor : 0.6;
       if (sg.diffuseTexture) pending.push(parser.assignTexture(materialParams, "map", sg.diffuseTexture, THREE.SRGBColorSpace));
+      // NOTE: specularFactor and specularGlossinessTexture are NOT converted — MeshStandardMaterial has
+      // no specular-colour input, and the spec-gloss texture packs glossiness in its ALPHA channel (a
+      // faithful map would need an offscreen channel-swap into a roughnessMap). Base colour + diffuse
+      // map (the flat-grey fix) are exact; per-texel glossiness/specular tint is the remaining gap.
       return Promise.all(pending);
     },
   };
@@ -57,6 +71,12 @@ function specGlossCompat(parser) {
 // opts: { kind, resourceDir, blobMap } — all optional; blobMap resolves multi-file
 // drag-drop refs by basename. No module-level load state → no cross-load races.
 export function loadAsset(url, onOk, onErr, opts = {}) {
+  // Normalize EXACTLY as the browser URL parser will, BEFORE any guard runs: it strips ASCII tab/newline/
+  // CR from anywhere in the URL and trims leading/trailing C0-control+space. Checking the raw string would
+  // let " https://evil/x.glb" or "ht\ttps://..." slip past the remote block and still get FETCHED (what we
+  // CHECK must equal what the loader LOADS). Harmless for file://, blob:, data:, and local paths.
+  // eslint-disable-next-line no-control-regex -- deliberately strips C0 control chars so what we CHECK equals what we LOAD (security)
+  url = String(url).replace(/[\t\n\r]/g, "").replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
   // SECURITY: the bus is the driver and any local process can send {action:"load",url}. Block REMOTE
   // fetch by default — a bus message must not make the overlay pull an arbitrary http(s) URL. Local
   // paths, file://, blob:, data: all pass, so the external models dir (C:\Users\SirKn\3d Avatar\

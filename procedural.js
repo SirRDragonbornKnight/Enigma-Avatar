@@ -517,7 +517,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // finger grip while carried. No idle, no canned gestures/expressions, no clip playback — every
   // deliberate move is AI-authored through the compositor (the gesture catalog / root-motion / clip
   // playback / body expressions were PURGED 2026-06-25, user order "purge means purge"). =====
-  function update(dt, walk = false, opts = {}) {
+  function update(dt, _walk = false, opts = {}) {
     _additive = !!opts.additive;
 
     // Additive mode (something external owns the base pose): apply ONLY the AI motion layers on top.

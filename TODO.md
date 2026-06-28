@@ -2,24 +2,68 @@
 **Authoritative pending list. READ THIS before any avatar work so nothing gets missed.**
 
 ## LIVE BACKLOG (genuinely open -- start here)
-Everything above the "DONE / HISTORY LOG" line below is resolved. The real open work is short:
-- [ ] **FEEL TUNING by the user's eye on the live overlay.** Motion amplitude/choreography; the
-  velocity-clamp's effect on co-speech snappiness vs the Filian target (the co-speech head wiggle
-  is now rate-limited to the head's `speed_limit`); jaw axis/sign (`facialTune`) + lip-sync gain.
-  Headless tests can't judge feel; software WebGL can't render skinned meshes -- drive the live
-  overlay + `EnigmaAvatar.snap()`.
-- [ ] **P4 "the brain"** -- the LLM that authors the tag/pose streams over the bus, intentionally
-  designed WITH the user (NOT pre-spec'd). The bus + `perform`/`pose` path is built & tested; Enigma
-  is still pretraining.
-- [ ] **A nicer / "cuter" no-model placeholder.** Today the no-model state is just an inert
-  `NoModelMarker` + an ASCII DOM hint ("No model loaded - right-click and choose Add model..."). A
-  styled placeholder is a future item (per the user; do NOT re-add a self-made character without a call).
-- [ ] **Model-zoo stragglers** (measure each with `node tools/rig_report.mjs <model>`, confirm the
-  swing live): lolbit/mangle arm recovery (+mangle hips/chest) via a cascade-tier improvement;
-  grace_howard needs a **UTF-8 bone-name re-export** before the name tier can bite (its names are
-  baked-in `U+FFFD` mojibake).
-- See section **F** below for the longer-tail tech-debt / test-gap residue, and **D/E** for the
-  bigger embodiment + physics vision items.
+**Reconciled against the code 2026-06-26 (doc-vs-code audit, 3 agents).** The lettered sections (A-F)
+and audit blocks below are kept for their detail but are HISTORY -- many of their `[ ]` items are in
+fact DONE (recorded in the DONE batches above / the HISTORY LOG below). This bucketed list is the
+canonical "what is actually open." Code is in good shape: no dead code, no stubs, no unwired actions.
+
+**AUDIT 2026-06-26 (trust-nothing, 4 agents).** Session changes audited CLEAN. Real defects found + FIXED:
+remote-URL block bypass via leading-whitespace/embedded-tab (`loader.js`, test-pinned); bus `lookAt`
+non-finite coords froze cursor-look (`avatar.js`); spring CONSTRUCTOR `regionWeight` bypassed the 0..2
+clamp (`spring.js`, test-pinned); panic/quit hotkeys registered without checking success (`main.js`, now
+logs a dead key). Lower-severity items left open are in the buckets below (H1 re-arbitration, tar-slip)
+or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-window reload,
+`verify:"where"` mouse false-positive, name-tier center-role drop when the sole center bone is side-tagged.
+
+### 1) Needs the live overlay + real models (cannot be judged from code/tests)
+- [ ] **FEEL TUNING by the user's eye.** Motion amplitude/choreography; the velocity-clamp vs Filian
+  snappiness (co-speech head wiggle is rate-limited to the head's `speed_limit`); jaw axis/sign
+  (`facialTune`) + lip-sync gain. Headless tests can't judge feel; software WebGL can't render skinned
+  meshes -- drive the live overlay + `EnigmaAvatar.snap()`.
+- [ ] **Model-zoo stragglers** (`node tools/rig_report.mjs <model>`, confirm the swing live): lolbit/
+  mangle arm recovery (+mangle hips/chest) via a cascade-tier improvement; grace_howard needs a UTF-8
+  bone-name re-export (baked-in `U+FFFD` mojibake). Plus the user-input questions in section B (makiro
+  hair, "reversed bones", "some parts don't show") -- need the user to say WHICH model/part.
+
+### 2) Fixable now (small, code-only)
+- [ ] **(SAFETY) No periodic main-side re-arbitration** (`main.js` `applyInteractive` is event-driven only).
+  A *hung* renderer latched at `over:true` keeps capturing clicks over her footprint until the user hits
+  the panic key / tray (no auto self-heal). Add a periodic `applyInteractive()` (or a renderer-heartbeat ->
+  force-through) on the existing 4s topmost-reassert timer. Also clear the sender's `_overByWin` entry on
+  `render-process-gone`/reload so a reused webContents id can't keep a stale `true`.
+- [ ] **Spring verlet only PARTIALLY dt-normalized** -- gravity is dt-scaled (`spring.js`); inertia +
+  the stiffness pull are still frame-count-based. Normalize the rest for frame-rate independence.
+- [ ] **Folder rename renames only the manifest LABEL, not the on-disk folder** (`library.js`
+  `renameModel`, comment at its head). A true rename must migrate the folder/URL + the profile key.
+- [ ] **Click-through guard has no test.** The silhouette hit-test (`computeOver`/`overSilhouette`,
+  avatar.js) + `containsEvent` (ui.js) are safety-critical and untested -- needs the logic extracted
+  to be unit-testable headlessly. `dom.js` mock also omits `importDropped`/`setInteractive`.
+- [ ] **No speech bubble** for spoken lines (none in any source).
+- [ ] **Multi-mesh divergent-morph UI** + morph/lip-sync index collision -- only the bounded
+  "primary group" morph path exists (Low).
+
+### 3) The brain (P4) -- PARTIAL (ties to the 2026-06-26 deep-research)
+- [ ] The bus + `perform`/`pose`/verify path and `brain.py` are BUILT (capabilities->author->
+  verify-by-numbers loop; deterministic grounded author + optional `--llm`). OPEN: the persistent,
+  perception/memory-driven "mind" (event loop, conversation integration) and Enigma-as-author once it
+  finishes pretraining. Architecture decision pending the deep-research report.
+
+### 4) Deferred by design (bigger -- do NOT start without an explicit call)
+- [ ] Real physics engine (rigid/cloth/constraints) + boneless cloth (detail in section E below).
+- [ ] Sit-on-chair / throw-ball / embodied agent (needs physics + IK; IK was removed in the lean pass).
+- [ ] Clip retargeting / CC0 clip pack -- **SUPERSEDED by the lean pass** (primitives-only); do not
+  re-adopt authored clips without reversing that decision. VRM fast-paths (`vrm.lookAt`/VRMA) stay valid.
+- [ ] Wander behavior; outfit SWAP beyond mesh show/hide; "sleep when idle" deeper power toggle; a
+  nicer/"cuter" no-model placeholder (today: inert marker + ASCII hint -- do NOT self-author a character).
+
+### 5) Environment / housekeeping
+- [ ] **`BALL_URL` asset missing** from this checkout (`props/worn_baseball_ball/...glb`) -> conjure/
+  throw have nothing to render here; conjure already fails HONESTLY via `onMiss`. Stage the .glb (it
+  lives in the standalone mirror).
+- [ ] Orphan `profiles.json` keys for removed models (harmless stale tuning; could prune).
+- [ ] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree`** (`--tree` path only): `pathname` from
+  the package is joined to `out_dir` with no `..`/absolute containment check. The UI import path uses
+  `basename` and is safe; only a manual `--tree` on a malicious package is exposed. Add a containment assert.
 
 ## INTENT OVERHAUL -- audit #9 reconciliation (2026-06-26). FIXED + suite 186/0/11 + python 6/6 + node --check clean.
 **48 verified audit findings drove a large intent-based overhaul; the full JS suite went 148 -> 186 pass (0 fail, 11 skip). All of the below are DONE + verified; the tests now assert INTENT, not the old behavior.**
@@ -60,11 +104,11 @@ All P1s from the 2026-06-10 audit are FIXED + test-pinned: NSFW breeze leak (BRE
 - [x] **Multi-monitor — REWRITTEN 2026-06-10 (the "she vanishes between/across monitors" bug, killed at the root).** Abandoned moving ONE window across displays (unwinnable: Chromium never recomposites a transparent surface on a cross-display `setBounds` — electron#33103/#40515; the 2-step-hop + `forceRecomposite` were tricks, and `forceRecomposite` was already DEAD code). New architecture = **ONE stationary overlay window PER display + a single GLOBAL position (virtual-desktop DIP) owned by main.** Every window renders her at its own display offset, so she spans bezels / crosses monitors with zero repaint tricks. The PRIMARY display's window is the **brain** (runs animation + the Settings/menu UI + the AI bus); the others are **peers** that mirror the brain's per-frame pose broadcast (`Float32Array`: root quat/scale + motionY + every bone quat + morph influences → main → peers) and support grab. **Drag is main-owned**: any window reports the grab (offset in DIP), main then follows the OS cursor (`getCursorScreenPoint`, works across every monitor) until release → seamless cross-monitor drag. Click-through arbiter in main keeps exactly ONE window interactive (the cursor's). Bus connects on the brain ONLY (else N windows execute every command N×). Tray "Bring to monitor" sets the global pos. **VERIFIED LIVE (3-monitor rig): she renders on the primary (brain) AND on a secondary monitor (peer mirror, same live idle pose); position math correct on all 3 windows (centred where she is, GPU-clipped off-screen where she isn't = the spanning behaviour); single bus owner; suite 102/0.** The one real bug found+fixed in testing: `myBounds.w`→`.width` field mismatch (init payload is `{width,height}`) was rendering her ~1000× off-screen on every window — now locked by a `mathutil` unit test (DIP↔local-px round-trip + mixed-DPI + the field-name regression). Files: `main.js` (window-set manager), `avatar.js` (global-pos render + animator/peer split + pose serialize/apply + drag), `preload.js` (IPC), `mathutil.js` (`dipToLocalPx`/`localPxToDip`). ⚠️ **USER must still confirm on their actual screen: slow drag left→right across all 3 monitors stays visible, and parking her straddling a bezel shows both halves.** v1 LIMITATIONS (deferred): live material recolor/mesh-hide on the peer half updates only on reload (pose+morphs DO stream live); full right-click menu/Settings only on the primary window (drag works everywhere); spring Verlet velocity isn't transferred on the rare mid-drag animator handoff (no visible seam in practice). Old `placeOnDisplay`/`forceRecomposite`/drag-hop machinery deleted.
 - [ ] **Reversed bones on some rigs?** — user mentioned bones “reversed or something”; verify per-rig (the head-look pitch was one such; check others).
 - [x] **VRM models: `vrm.update()` STOMPS the procedural pose — FIXED 2026-06-26 (intent overhaul).** `vrm.humanoid.autoUpdateHumanBones=false` is set at load so `vrm.update()` no longer copies the rest-pose humanoid bones back over the AI pose every frame; the compositor now drives VRM bodies. Pinned by `tests/vrm_order.test.js`. (Was: latent, no VRM in the library — but it was a first-class rig tier producing ZERO visible motion on any `.vrm`.)
-- [ ] **Global hotkeys ≡ AltGr on non-US layouts** (audit 2026-06-09, pre-existing): Windows treats Ctrl+Alt+<key> as AltGr+<key>, so e.g. on QWERTZ typing `@` (AltGr+Q) QUITS the avatar system-wide; the whole Ctrl+Alt family (A/Q/M/J/F/=/−/arrows) shadows AltGr typing. Works-on-any-device risk for EU layouts. Fix options: switch to Ctrl+Shift+Alt, or make hotkeys configurable, or guard with a layout check. (LOW here — US layout — but real for shipping.)
+- [x] **Global hotkeys ≡ AltGr on non-US layouts — DONE** (verified 2026-06-26): every shortcut is now `CommandOrControl+Shift+Alt+...` (`main.js:574-585`); no `Ctrl+Alt+` family remains, so AltGr typing on EU layouts no longer triggers them.
 
 ## A2. MODEL VARIANTS / OUTFITS — how they work + how to activate (2026-06-09, user ask)
 **Mal0's "different looks" are MESH TOGGLES, not morphs** (she has 0 shape keys). Parts list (already labeled): 9="body suit" (the jumpsuit), 10="skin" (the FULL detailed body underneath — hence her 47 NSFW jiggle bones: breast 8 / butt 6 / genital 33, weighted 0.5 in her profile). **ACTIVATE: Settings → Parts → uncheck "body suit"** (or bus/AI `setMesh {index:9,on:false}`; MCP avatar_command setMesh after the Desktop restart). Round-trip VERIFIED live; persists per model (profiles hiddenMeshes) across restarts. Same pattern applies to any model whose variants are separate meshes — check the Parts list first, then morphs (query meshes / morphs).
-- [ ] **"Outfits" preset UI** — one-click looks (e.g. "Dressed" / "Undressed" / custom sets of mesh-visibility states) instead of per-part checkboxes; save named presets per model in the profile.
+- [x] **"Outfits" preset UI — DONE** (verified 2026-06-26): named mesh-visibility presets per model — `outfitNames`/`saveOutfit`/`wearOutfit`/`deleteOutfit` (`avatar.js`), Settings UI (`ui.js`), bus `outfit` action, `query outfits`; persists per model.
 - [ ] **Clothes jiggle ("clothes may need more weights"):** Mal0's suit has NO cloth bones (no cloth region) — it's skinned to the BODY bones, so it already follows the breast/butt spring weights (raise those and the suit moves too). INDEPENDENT cloth sway/sag needs the cloth/soft-body solver from the physics-engine item (§E) — same blocker as boneless-cloth. For models that DO have cloth bones, the existing cloth region slider covers it.
 
 ## B. NEEDS USER INPUT (ask, don’t guess)

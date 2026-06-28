@@ -26,6 +26,13 @@ import websockets
 
 HOST, PORT = "127.0.0.1", 8765
 CLIENTS: set = set()
+_CLOSING: set = set()   # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
+
+# Local-trust boundary (CSWSH gate). Native clients (the overlay, avbus.py, modkit) send NO Origin
+# header; Electron's file-loaded page sends "file://" or the opaque "null". A web page the user happens
+# to visit sends its http(s) origin -> refuse it at the handshake. Keep this list tight: anything that
+# allow-lists an http(s) origin re-opens cross-site WebSocket hijacking. (Regression-tested.)
+ALLOWED_ORIGINS = [None, "file://", "null"]
 
 
 async def _handler(ws) -> None:
@@ -56,7 +63,9 @@ async def _handler(ws) -> None:
                     # CLOSE it too — a merely-discarded socket stays open, so the overlay still
                     # believes it's connected and never auto-reconnects (silently severed).
                     try:
-                        asyncio.ensure_future(c.close())
+                        t = asyncio.ensure_future(c.close())
+                        _CLOSING.add(t)                    # keep a ref (else the loop may drop the task)
+                        t.add_done_callback(_CLOSING.discard)
                     except Exception:
                         pass
     except Exception:
@@ -66,13 +75,17 @@ async def _handler(ws) -> None:
         print(f"avatar bus: client left ({len(CLIENTS)} now)", file=sys.stderr, flush=True)
 
 
+def serve(host: str = HOST, port: int = PORT):
+    """The origin-gated relay server. Single source of truth for the handshake config so a test
+    can exercise the REAL server (not a copy) — see tests/test_avatar_bus.py. A drive-by site could
+    otherwise puppet the avatar (load arbitrary models, toggle meshes, read query replies) through
+    ws://127.0.0.1; binding to localhost stops the network, not the browser. Returns the serve()
+    async context manager."""
+    return websockets.serve(_handler, host, port, origins=ALLOWED_ORIGINS)
+
+
 async def main(host: str = HOST, port: int = PORT) -> None:
-    # Local-trust boundary: native clients (the overlay, avbus.py, modkit) send NO Origin header,
-    # and Electron's file-loaded page sends "file://" (or the opaque "null"). A web page the user
-    # happens to visit sends its http(s) origin — refuse those at the handshake (HTTP 403), or any
-    # drive-by site could puppet the avatar (load arbitrary models, toggle meshes, read query
-    # replies) through ws://127.0.0.1. Binding to localhost stops the network, not the browser.
-    async with websockets.serve(_handler, host, port, origins=[None, "file://", "null"]):
+    async with serve(host, port):
         print(f"avatar bus: relaying on ws://{host}:{port}", file=sys.stderr, flush=True)
         await asyncio.Future()                 # run forever
 

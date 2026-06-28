@@ -29,6 +29,18 @@ export function buildSpringBones(model, opts = {}) {
   const { exclude = new Set(), regionWeight = {}, neverExtra = null, ...paramOpts } = opts;
   const P = { stiffness: 0.14, drag: 0.5, gravity: -3.0, regionWeight: { ...regionWeight }, ...paramOpts };
   if (!P.regionWeight) P.regionWeight = {};
+  // The scalar knobs may arrive from a saved/hand-edited blob (via paramOpts here, or setParams later).
+  // Clamp them to STABLE ranges: a too-stiff pull-to-rest overshoots and DIVERGES, and the per-bone NaN
+  // reset only catches a full blow-up, not the visible jitter just below it. Non-finite -> safe default.
+  // [lo, hi, default]; drag is re-clamped downstream in regionFeel too, this guards the input itself.
+  const PLIM = { stiffness: [0, 1, 0.14], drag: [0, 1, 0.5], gravity: [-50, 50, -3.0] };
+  const clampParams = () => {
+    for (const k in PLIM) { const [lo, hi, def] = PLIM[k]; const v = +P[k]; P[k] = isFinite(v) ? (v < lo ? lo : v > hi ? hi : v) : def; }
+    // regionWeight too: a saved/hand-edited profile blob reaches HERE (the constructor spread) without
+    // passing through setParams, so clamp every per-region weight to the 0..2 slider range (non-finite -> 1).
+    for (const k in P.regionWeight) { const w = +P.regionWeight[k]; P.regionWeight[k] = isFinite(w) ? (w < 0 ? 0 : w > 2 ? 2 : w) : 1; }
+  };
+  clampParams();
   const springNever = new Set(neverExtra || []);
   const items = [];
   const seen = new Set();
@@ -171,7 +183,7 @@ export function buildSpringBones(model, opts = {}) {
     count: items.length,
     names: items.map((i) => i.bone.name),
     update,
-    setParams: (p) => { if (!p) return; if (p.regionWeight) { for (const k in p.regionWeight) { const w = +p.regionWeight[k]; if (isFinite(w)) P.regionWeight[k] = w < 0 ? 0 : w > 2 ? 2 : w; } const { regionWeight, ...rest } = p; Object.assign(P, rest); } else Object.assign(P, p); },   // merge + CLAMP region weights (a saved/hand-edited blob must not bypass the 0..2 slider clamp and drive a verlet instability), and never REPLACE the per-region map
+    setParams: (p) => { if (!p) return; const { regionWeight, ...rest } = p; if (regionWeight) for (const k in regionWeight) { const w = +regionWeight[k]; if (isFinite(w)) P.regionWeight[k] = w < 0 ? 0 : w > 2 ? 2 : w; } Object.assign(P, rest); clampParams(); },   // merge, then CLAMP: region weights to the 0..2 slider range (never REPLACE the per-region map) AND the scalar knobs to stable ranges, so a saved/hand-edited blob can't bypass the sliders and drive a verlet instability
     regions, setRegionWeight,
     impulse,                                          // commanded kick (AI bus 'impulse' action)
   };

@@ -182,7 +182,11 @@ def _register(name: str, mesh_rel: str) -> None:
     """Append/update an entry in models.json so the overlay lists this model."""
     path = os.path.join(HERE, "models.json")
     try:
-        manifest = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                manifest = json.load(f)
+        else:
+            manifest = {}
     except Exception:
         manifest = {}
     if not isinstance(manifest, dict):
@@ -325,7 +329,8 @@ def main(argv: list[str]) -> int:
         # FBX carries no embedded textures (Unity binds them via .mat) → emit a
         # sidecar so the overlay re-attaches them by material name.
         try:
-            fbx_bytes = open(os.path.join(out, info["primary"]), "rb").read()
+            with open(os.path.join(out, info["primary"]), "rb") as f:
+                fbx_bytes = f.read()
             mat_map, guessed = build_material_map(pkg, fbx_bytes, info.get("renamed"))
             if mat_map:
                 with open(os.path.join(out, "materials.json"), "w", encoding="utf-8") as f:

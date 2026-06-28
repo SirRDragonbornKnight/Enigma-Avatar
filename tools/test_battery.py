@@ -7,7 +7,7 @@
 Usage:  python tools/test_battery.py [models|behavior|all]   (default all)
 Report: prints a table + writes %TEMP%/avatar_battery_report.json
 """
-import asyncio, hashlib, json, os, sys, tempfile, time
+import asyncio, hashlib, json, sys, tempfile, time
 from pathlib import Path
 import websockets
 
