@@ -3,7 +3,7 @@ the on-screen avatar: Enigma / Odysseus (any LLM that speaks the JSON action
 protocol) or the ``say.py`` CLI.
 
 It is a dumb hub on ``ws://127.0.0.1:8765``. The avatar
-(``mods/avatar/avatar.js`` → ``EnigmaAvatar.connect()``) joins as a *consumer*;
+(``enigma-avatar/avatar.js`` → ``EnigmaAvatar.connect()``) joins as a *consumer*;
 *producers* connect, send one JSON command, and the hub relays it to every
 connected avatar. Commands are exactly the objects ``avatar.js`` ``handleCommand``
 understands, e.g.::
@@ -14,7 +14,7 @@ understands, e.g.::
 
 Run standalone (the desktop overlay's Start-Avatar.ps1 launches it for you)::
 
-    python mods/avatar/bus.py
+    python enigma-avatar/bus.py
 """
 
 from __future__ import annotations

@@ -3693,5 +3693,5 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
 
   // The AI bus connection (EnigmaAvatar.connect) is started in maybeStart() — and ONLY on the brain
-  // window, so a multi-monitor set doesn't execute every bus command once per window. See mods/avatar/bus.py.
+  // window, so a multi-monitor set doesn't execute every bus command once per window. See enigma-avatar/bus.py.
 } // end browser-runtime bootstrap (skipped under node --test; see the import-safety guard at the top)

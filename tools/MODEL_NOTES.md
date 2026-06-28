@@ -112,7 +112,7 @@ arm-hang/IK/clap on all of them.
 9. Zero-weight share; texture budget + largest file; file-size-vs-texture gap (= geometry density → load hitch).
 10. After load: **`query roles`/`query model` on the LIVE overlay — static describe is a preview and can disagree (mal0's head)**.
 
-## Tools (kept under mods/avatar/tools/)
+## Tools (kept under enigma-avatar/tools/)
 
 - `inspect_model.py <file.glb…>` — offline dump of a model's extensions / nodes / meshes / morphs.
 - `avbus.py <cmds.json>` — drive / query the LIVE overlay over the bus (regions, morphs, weights,

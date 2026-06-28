@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveNames, resolveGeometry, resolveBetween, ROLES } from "../rig.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const MOD = path.resolve(HERE, ".."); // mods/avatar
+export const MOD = path.resolve(HERE, ".."); // enigma-avatar
 export const MODELS = path.join(MOD, "models");
 
 // ── glTF / GLB → JSON (the JSON chunk holds every node transform we need) ──────

@@ -144,7 +144,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
 
 ## Tests
 
-- **`npm test`** (in `mods/avatar/`) runs the Node unit tests in `tests/`: the rig cascade (name /
+- **`npm test`** (in `enigma-avatar/`) runs the Node unit tests in `tests/`: the rig cascade (name /
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
   no longer stomps the AI pose). The suite asserts INTENT, not current behavior. Current count:

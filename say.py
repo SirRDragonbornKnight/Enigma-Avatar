@@ -1,17 +1,17 @@
-"""say.py - fire one command at the avatar bus (mods/avatar/bus.py).
+"""say.py - fire one command at the avatar bus (enigma-avatar/bus.py).
 
-    python mods/avatar/say.py model mal0          # switch model (roxanne / toothless / glados / mal0 / spyro / ...)
-    python mods/avatar/say.py default             # show the zero-asset procedural placeholder (works with no model installed)
-    python mods/avatar/say.py size 0.8            # resize
-    python mods/avatar/say.py move 300 400        # move to screen x,y (pixels)
-    python mods/avatar/say.py goto center         # ease to a named anchor (center / topleft / cursor / ...)
-    python mods/avatar/say.py monitor next        # hop the overlay to the next monitor (or `monitor 1`)
-    python mods/avatar/say.py look 800 400        # aim her gaze at a screen point
-    python mods/avatar/say.py fingers R 1         # curl the right hand to a fist (0 = open, `none` = release to grip)
-    python mods/avatar/say.py perform "Hi! [pose:right_arm=1.0]"   # drive motion from inline-tagged speech (the AI's channel)
-    python mods/avatar/say.py say file:///C:/tmp/speech.wav        # play a WAV + lip-sync the jaw/mouth
-    python mods/avatar/say.py snap                # capture her to a transparent PNG to inspect
-    python mods/avatar/say.py --raw '{"action":"pose","flex":{"right_arm":[1.0]},"dur":2}'   # any handleCommand action
+    python enigma-avatar/say.py model mal0          # switch model (roxanne / toothless / glados / mal0 / spyro / ...)
+    python enigma-avatar/say.py default             # show the zero-asset procedural placeholder (works with no model installed)
+    python enigma-avatar/say.py size 0.8            # resize
+    python enigma-avatar/say.py move 300 400        # move to screen x,y (pixels)
+    python enigma-avatar/say.py goto center         # ease to a named anchor (center / topleft / cursor / ...)
+    python enigma-avatar/say.py monitor next        # hop the overlay to the next monitor (or `monitor 1`)
+    python enigma-avatar/say.py look 800 400        # aim her gaze at a screen point
+    python enigma-avatar/say.py fingers R 1         # curl the right hand to a fist (0 = open, `none` = release to grip)
+    python enigma-avatar/say.py perform "Hi! [pose:right_arm=1.0]"   # drive motion from inline-tagged speech (the AI's channel)
+    python enigma-avatar/say.py say file:///C:/tmp/speech.wav        # play a WAV + lip-sync the jaw/mouth
+    python enigma-avatar/say.py snap                # capture her to a transparent PNG to inspect
+    python enigma-avatar/say.py --raw '{"action":"pose","flex":{"right_arm":[1.0]},"dur":2}'   # any handleCommand action
 
 Motion is composed from PRIMITIVES - there is no emote/gesture catalog. The avatar moves
 via `pose` / `layer` motion layers + per-finger `fingers`, or via `perform` (inline-tagged

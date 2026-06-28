@@ -1,6 +1,6 @@
 """brain.py - the avatar's autonomous DRIVER loop (the "mind" that moves the body).
 
-The body (the mods/avatar overlay) is deliberately dumb: it composites the motion layers it
+The body (the enigma-avatar overlay) is deliberately dumb: it composites the motion layers it
 is told to apply over the local bus. brain.py is the loop that decides WHAT to do and proves
 it landed:
 
@@ -19,9 +19,9 @@ OpenAI-compatible endpoint to let a model write the perform-tagged lines instead
 validated against the LIVE capabilities before they reach the body, so it can never drive a limb
 the model does not have.
 
-  python mods/avatar/brain.py                                  # deterministic loop (overlay + bus must be up)
-  python mods/avatar/brain.py --beats 6 --interval 2.5
-  python mods/avatar/brain.py --llm http://127.0.0.1:11434/v1 --model qwen3.6:unsloth
+  python enigma-avatar/brain.py                                  # deterministic loop (overlay + bus must be up)
+  python enigma-avatar/brain.py --beats 6 --interval 2.5
+  python enigma-avatar/brain.py --llm http://127.0.0.1:11434/v1 --model qwen3.6:unsloth
 
 Output is ASCII only (the Windows cp1252 console cannot print unicode).
 """
@@ -286,7 +286,7 @@ async def run(uri: str, beats: int, interval: float, author, settle: float = 0.6
         caps = await bus.request({"action": "capabilities"})
         if not caps or not caps.get("roles"):
             print("brain: the body reports NO drivable rig (no model loaded, or a static model).")
-            print("       Load a model first:  python mods/avatar/say.py model <name>")
+            print("       Load a model first:  python enigma-avatar/say.py model <name>")
             return 2
         flex = caps.get("flexRoles") or []
         fr = ((caps.get("channels") or {}).get("fingers") or {}).get("R") or []

@@ -9,9 +9,9 @@ mouth visemes from the signal's loudness (see avatar.js `speak`).
 NO fallback TTS — if Kokoro isn't installed this fails loudly (by design).
 Install once (no admin):  python -m pip install --user kokoro
 
-    python mods/avatar/speak.py "hello, I am Enigma"
-    python mods/avatar/speak.py --voice af_bella --speed 1.05 "a different voice"
-    python mods/avatar/speak.py --no-send "just synthesize, don't play"
+    python enigma-avatar/speak.py "hello, I am Enigma"
+    python enigma-avatar/speak.py --voice af_bella --speed 1.05 "a different voice"
+    python enigma-avatar/speak.py --no-send "just synthesize, don't play"
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VOICE_MOD = HERE.parent / "voice" / "voice.py"
+VOICE_MOD = HERE.parent / "mods" / "voice" / "voice.py"  # avatar lives at repo root now; voice mod stays under mods/
 OUT_DIR = HERE / "outputs"
 URI = "ws://127.0.0.1:8765"
 
