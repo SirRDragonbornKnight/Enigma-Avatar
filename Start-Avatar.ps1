@@ -17,7 +17,7 @@ $electron = Join-Path $PSScriptRoot "node_modules\electron\dist\electron.exe"
 if (-not (Test-Path $electron)) {
   # One-time install: find ANY usable npm (portable Node, repo tools, or PATH).
   $npm = $null
-  foreach ($dir in @("$env:LOCALAPPDATA\node-portable", (Join-Path $PSScriptRoot "..\..\tools\node"))) {
+  foreach ($dir in @("$env:LOCALAPPDATA\node-portable", (Join-Path $PSScriptRoot "..\tools\node"))) {
     if (Test-Path (Join-Path $dir "npm.cmd")) { $npm = Join-Path $dir "npm.cmd"; $env:Path = "$dir;" + $env:Path; break }
   }
   if (-not $npm) { $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source }
