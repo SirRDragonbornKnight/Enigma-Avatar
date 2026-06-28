@@ -7,7 +7,12 @@ import { createVoice } from "../voice.js";
 
 test("bus gate: voice.speak BLOCKS remote http(s) audio urls (honest status, no fetch)", async () => {
   let status = null;
-  const v = createVoice({ getFacial: () => null, setStatus: (m) => { status = m; } });
+  const v = createVoice({
+    getFacial: () => null,
+    setStatus: (m) => {
+      status = m;
+    },
+  });
   await v.speak("https://evil.test/a.wav");
   assert.match(String(status), /say blocked: remote/i, "https say blocked with an honest status");
   status = null;

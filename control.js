@@ -15,7 +15,7 @@ export function parseControlTags(text) {
       tags.push({ type: type.toLowerCase(), arg: arg == null ? null : String(arg).trim() });
       return "";
     })
-    .replace(/[ \t]{2,}/g, " ")     // collapse the double-spaces a removed mid-sentence tag leaves
+    .replace(/[ \t]{2,}/g, " ") // collapse the double-spaces a removed mid-sentence tag leaves
     .replace(/\s+([,.!?;:])/g, "$1") // tidy " ." left when a tag preceded punctuation
     .trim();
   return { clean, tags };
@@ -58,6 +58,6 @@ function parsePoseValue(v) {
 export function resolvePropName(name, assets = {}) {
   const k = String(name == null ? "" : name).trim();
   if (!k) return null;
-  if (/^[\w-]+$/.test(k)) return assets[k.toLowerCase()] || null;   // bare token -> known-asset map
-  return k;                                                          // looks like a path/URL -> use as-is
+  if (/^[\w-]+$/.test(k)) return assets[k.toLowerCase()] || null; // bare token -> known-asset map
+  return k; // looks like a path/URL -> use as-is
 }

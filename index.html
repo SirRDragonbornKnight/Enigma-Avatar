@@ -1,45 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Enigma Avatar</title>
-<style>
-  /* Transparent everything — in Electron the OS window is transparent too, so
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enigma Avatar</title>
+    <style>
+      /* Transparent everything — in Electron the OS window is transparent too, so
      the avatar appears to stand directly on your desktop. In a browser you'll
      just see it over the page background. */
-  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
-  /* The only DOM chrome the overlay keeps: a small status line, hidden by default.
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      /* The only DOM chrome the overlay keeps: a small status line, hidden by default.
      The real UI — the right-click menu + Settings — is built in JS (ui.js). */
-  #ui {
-    position: fixed; left: 10px; top: 10px; z-index: 10;
-    font: 12px/1.4 system-ui, sans-serif; color: #ffd479;
-    background: rgba(0,0,0,.55); padding: 8px 10px; border-radius: 8px;
-    max-width: 320px; user-select: none;
-  }
-  #status { white-space: pre-wrap; }
-  #ui.hidden { display: none; }
-</style>
-<!-- Three.js + addons + VRM, vendored LOCALLY (node_modules) — NO CDN, so the
+      #ui {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        z-index: 10;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+        color: #ffd479;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 8px 10px;
+        border-radius: 8px;
+        max-width: 320px;
+        user-select: none;
+      }
+      #status {
+        white-space: pre-wrap;
+      }
+      #ui.hidden {
+        display: none;
+      }
+    </style>
+    <!-- Three.js + addons + VRM, vendored LOCALLY (node_modules) — NO CDN, so the
      overlay works fully offline and never phones home (privacy: it's a black box).
      Run `npm install` once (Start-Avatar.ps1 does this) to populate node_modules. -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "./node_modules/three/build/three.module.js",
-    "three/addons/": "./node_modules/three/examples/jsm/",
-    "@pixiv/three-vrm": "./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
-    "@dimforge/rapier3d-compat": "./node_modules/@dimforge/rapier3d-compat/rapier.mjs"
-  }
-}
-</script>
-</head>
-<body>
-  <!-- Minimal info panel: just a status line, hidden by default (toggle via "H" or
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js",
+          "three/addons/": "./node_modules/three/examples/jsm/",
+          "@pixiv/three-vrm": "./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+          "@dimforge/rapier3d-compat": "./node_modules/@dimforge/rapier3d-compat/rapier.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- Minimal info panel: just a status line, hidden by default (toggle via "H" or
        Settings → Show info panel). The file <input> is gone — add models via the
        right-click menu's "Add model…" or by dragging a file onto the overlay
        (drag-drop is handled in avatar.js; no DOM element needed). -->
-  <div id="ui" class="hidden"><div id="status">starting…</div></div>
-  <script type="module" src="./avatar.js"></script>
-</body>
+    <div id="ui" class="hidden"><div id="status">starting…</div></div>
+    <script type="module" src="./avatar.js"></script>
+  </body>
 </html>

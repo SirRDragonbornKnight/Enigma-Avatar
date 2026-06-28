@@ -22,8 +22,12 @@ const MESH_EXT = new Set([".glb", ".gltf", ".vrm", ".fbx"]);
 // NO bundled built-in models — the shipped repo must NOT reference third-party / copyrighted
 // avatars. Every model is just a user-supplied folder under models/; the launch default is the
 // procedural avatar (default_avatar.js) until a bespoke 3D avatar is made. Every model is deletable.
-const SKIP_DIR = (n) => n.startsWith(".") || n.startsWith("_");                 // _trash, _thumbs, dotfolders
-const slug = (s) => ((s || "model").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^[_.]+|[_.]+$/g, "").toLowerCase() || "model");
+const SKIP_DIR = (n) => n.startsWith(".") || n.startsWith("_"); // _trash, _thumbs, dotfolders
+const slug = (s) =>
+  (s || "model")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^[_.]+|[_.]+$/g, "")
+    .toLowerCase() || "model";
 const title = (s) => s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 // a usable model id is a single clean path segment — reject separators / .. / empties (the renderer
 // supplies ids, so this is the path-traversal backstop for delete + thumbnail writes).
@@ -33,18 +37,34 @@ const modelUrl = (id, mesh) => `./models/${encodeURIComponent(id)}/${encodeURICo
 const thumbUrl = (id) => `./models/${encodeURIComponent(id)}/.thumb.png`;
 
 function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = __dirname } = {}) {
-  function readManifest() { try { const m = JSON.parse(fs.readFileSync(manifestPath, "utf8")); return m && typeof m === "object" ? m : {}; } catch { return {}; } }
-  function writeManifest(m) { fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2)); }
+  function readManifest() {
+    try {
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      return m && typeof m === "object" ? m : {};
+    } catch {
+      return {};
+    }
+  }
+  function writeManifest(m) {
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+  }
 
   // The mesh inside a model folder: prefer scene.*, else <folder>.*, else the first mesh found.
   function meshInDir(dir) {
-    let files; try { files = fs.readdirSync(dir); } catch { return null; }
+    let files;
+    try {
+      files = fs.readdirSync(dir);
+    } catch {
+      return null;
+    }
     const meshes = files.filter((f) => MESH_EXT.has(path.extname(f).toLowerCase()));
     if (!meshes.length) return null;
     const base = path.basename(dir).toLowerCase();
-    return meshes.find((f) => f.toLowerCase().startsWith("scene."))
-        || meshes.find((f) => path.basename(f, path.extname(f)).toLowerCase() === base)
-        || meshes[0];
+    return (
+      meshes.find((f) => f.toLowerCase().startsWith("scene.")) ||
+      meshes.find((f) => path.basename(f, path.extname(f)).toLowerCase() === base) ||
+      meshes[0]
+    );
   }
 
   // Scan models/ — the FOLDER is the library (no models.json drift). Each subfolder holding a mesh
@@ -52,15 +72,21 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
   function discoverModels() {
     const labels = {};
     const m = readManifest();
-    for (const e of (m.models || [])) if (e && e.id) labels[e.id] = e.label;
+    for (const e of m.models || []) if (e && e.id) labels[e.id] = e.label;
     let dirs = [];
-    try { dirs = fs.readdirSync(modelsDir, { withFileTypes: true }).filter((d) => d.isDirectory() && !SKIP_DIR(d.name)).map((d) => d.name); } catch {}
+    try {
+      dirs = fs
+        .readdirSync(modelsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !SKIP_DIR(d.name))
+        .map((d) => d.name);
+    } catch {}
     const out = [];
     for (const id of dirs) {
       const mesh = meshInDir(path.join(modelsDir, id));
       if (!mesh) continue;
       out.push({
-        id, builtin: false,
+        id,
+        builtin: false,
         label: labels[id] || title(id),
         url: modelUrl(id, mesh),
         thumb: fs.existsSync(path.join(modelsDir, id, ".thumb.png")) ? thumbUrl(id) : null,
@@ -88,7 +114,10 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
     const models = Array.isArray(m.models) ? m.models : [];
     const ex = models.find((x) => x && x.id === id);
     let url = ex ? ex.url : undefined;
-    if (!url) { const mesh = meshInDir(path.join(modelsDir, id)); if (mesh) url = modelUrl(id, mesh); }
+    if (!url) {
+      const mesh = meshInDir(path.join(modelsDir, id));
+      if (mesh) url = modelUrl(id, mesh);
+    }
     m.models = models.filter((x) => x && x.id !== id).concat([{ id, label: name, url }]);
     writeManifest(m);
     return { ok: true, id, label: name };
@@ -98,7 +127,10 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
   // happens to share a generic name (scene.glb).
   function freeSlug(base) {
     if (!fs.existsSync(path.join(modelsDir, base))) return base;
-    for (let i = 2; i < 1000; i++) { const c = `${base}_${i}`; if (!fs.existsSync(path.join(modelsDir, c))) return c; }
+    for (let i = 2; i < 1000; i++) {
+      const c = `${base}_${i}`;
+      if (!fs.existsSync(path.join(modelsDir, c))) return c;
+    }
     return `${base}_${Date.now()}`;
   }
 
@@ -111,23 +143,39 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
       const base = slug(path.basename(pkg, path.extname(pkg)));
       if (!runPython) return { error: "unitypackage import unavailable here" };
       const r = runPython([path.join(scriptDir, "import_unitypackage.py"), pkg, "--name", base, "--register"]);
-      if (r.status !== 0) return { error: "unitypackage import failed: " + (r.stderr || r.stdout || "").trim().split("\n").pop() };
+      if (r.status !== 0)
+        return { error: "unitypackage import failed: " + (r.stderr || r.stdout || "").trim().split("\n").pop() };
       const mesh = meshInDir(path.join(modelsDir, base));
-      if (mesh && opts.move !== false) { try { if (!path.resolve(pkg).toLowerCase().startsWith(path.resolve(modelsDir).toLowerCase())) fs.rmSync(pkg, { force: true }); } catch {} }   // moved into models/ → drop the source package
-      return mesh ? { id: base, label: title(base), url: modelUrl(base, mesh), moved: true } : { error: "imported, but no mesh found" };
+      if (mesh && opts.move !== false) {
+        try {
+          if (!path.resolve(pkg).toLowerCase().startsWith(path.resolve(modelsDir).toLowerCase()))
+            fs.rmSync(pkg, { force: true });
+        } catch {}
+      } // moved into models/ → drop the source package
+      return mesh
+        ? { id: base, label: title(base), url: modelUrl(base, mesh), moved: true }
+        : { error: "imported, but no mesh found" };
     }
     const mesh = files.find((f) => typeof f === "string" && MESH_EXT.has(path.extname(f).toLowerCase()));
     if (!mesh) return { error: "no .glb/.gltf/.vrm/.fbx among the files" };
     const stem = path.basename(mesh, path.extname(mesh));
-    const name = freeSlug(slug(stem));                       // never a built-in, never an existing folder
+    const name = freeSlug(slug(stem)); // never a built-in, never an existing folder
     const dest = path.join(modelsDir, name);
     try {
       fs.mkdirSync(dest, { recursive: true });
-      for (const f of files) { try { fs.copyFileSync(f, path.join(dest, path.basename(f))); } catch {} }
-    } catch (e) { return { error: "copy failed: " + (e && e.message) }; }
+      for (const f of files) {
+        try {
+          fs.copyFileSync(f, path.join(dest, path.basename(f)));
+        } catch {}
+      }
+    } catch (e) {
+      return { error: "copy failed: " + (e && e.message) };
+    }
     // the mesh itself MUST have landed — otherwise we'd register a model that can't load
     if (!fs.existsSync(path.join(dest, path.basename(mesh)))) {
-      try { fs.rmSync(dest, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(dest, { recursive: true, force: true });
+      } catch {}
       return { error: "the model file failed to copy" };
     }
     const url = modelUrl(name, path.basename(mesh));
@@ -142,9 +190,25 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
       const home = path.resolve(modelsDir).toLowerCase();
       const bases = files.map((f) => path.basename(f));
       const noDupes = bases.every((b, i) => bases.indexOf(b) === i);
-      const allCopied = noDupes && files.every((f) => { try { const d = path.join(dest, path.basename(f)); return fs.existsSync(d) && fs.statSync(d).size === fs.statSync(f).size; } catch { return false; } });
+      const allCopied =
+        noDupes &&
+        files.every((f) => {
+          try {
+            const d = path.join(dest, path.basename(f));
+            return fs.existsSync(d) && fs.statSync(d).size === fs.statSync(f).size;
+          } catch {
+            return false;
+          }
+        });
       if (allCopied) {
-        for (const f of files) { try { if (!path.resolve(f).toLowerCase().startsWith(home)) { fs.rmSync(f, { force: true }); moved = true; } } catch {} }
+        for (const f of files) {
+          try {
+            if (!path.resolve(f).toLowerCase().startsWith(home)) {
+              fs.rmSync(f, { force: true });
+              moved = true;
+            }
+          } catch {}
+        }
       }
     }
     return { id: name, label: stem, url, moved };
@@ -160,19 +224,39 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
     let trashed = false;
     try {
       if (fs.existsSync(dir)) {
-        const trash = path.join(modelsDir, "_trash"); fs.mkdirSync(trash, { recursive: true });
+        const trash = path.join(modelsDir, "_trash");
+        fs.mkdirSync(trash, { recursive: true });
         let dst = path.join(trash, id);
-        if (fs.existsSync(dst)) dst = path.join(trash, `${id}_${Date.now()}`);   // don't clobber a prior trashed copy
-        fs.renameSync(dir, dst);                                                 // throws (EPERM) if still in use → surfaced below
+        if (fs.existsSync(dst)) dst = path.join(trash, `${id}_${Date.now()}`); // don't clobber a prior trashed copy
+        fs.renameSync(dir, dst); // throws (EPERM) if still in use → surfaced below
         trashed = true;
       }
       const m = readManifest();
-      if (Array.isArray(m.models)) { m.models = m.models.filter((x) => x && x.id !== id); writeManifest(m); }
+      if (Array.isArray(m.models)) {
+        m.models = m.models.filter((x) => x && x.id !== id);
+        writeManifest(m);
+      }
       return { ok: true, id, trashed };
-    } catch (e) { return { error: String((e && e.message) || e) }; }
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
   }
 
-  return { meshInDir, discoverModels, registerModel, renameModel, importFiles, removeModel, freeSlug, safeId, slug, title, modelUrl, thumbUrl, MESH_EXT };
+  return {
+    meshInDir,
+    discoverModels,
+    registerModel,
+    renameModel,
+    importFiles,
+    removeModel,
+    freeSlug,
+    safeId,
+    slug,
+    title,
+    modelUrl,
+    thumbUrl,
+    MESH_EXT,
+  };
 }
 
 module.exports = { createLibrary, MESH_EXT, SKIP_DIR, slug, title, safeId, modelUrl, thumbUrl };

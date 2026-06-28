@@ -16,17 +16,20 @@ export const REGIONS = [
   // distinct NSFW areas get their OWN region (→ their own weight slider) — Mal0 carries all three as
   // separate chains (Pussy*, AssHole*, DE-Dick*) and lumping them under one "genital" weight meant the
   // user couldn't tune/disable them individually ("we are missing a few weights").
-  ["dick",      /penis|dick|sheath|(?<!top[_ ]{0,2})(?<!hair[_ ]{0,2})(?<!rope[_ ]{0,2})(?<!bow[_ ]{0,2})(?<!braid[_ ]{0,2})(?<!bun[_ ]{0,2})knot|testicl|scrotum|futa|(?<![a-z])cock(?!pit|tail|atoo|le|er)/i],   // NO "bulge": muscle/eye correctives (Bicep_Bulge, EyeBulge) are far commoner than NSFW bulge bones (audit regression)
-  ["anus",      /asshole|anus|(?<![a-z])anal(?!og|y)/i],
-  ["genital",   /pussy|vagin|genital|crotch|vulva|(?<![a-z])clit(?!ell)|groin/i],
-  ["breast",    /breast|boob|bust|oppai|nipple|titty|(?<![a-z])tits?(?![a-z])/i],
-  ["butt",      /butt(?!on|er)|glute|booty|(?<![a-z])ass(?![a-z])/i],
-  ["belly",     /belly|tummy|stomach|abdomen/i],
-  ["hair",      /hair|ponytail|twintail|pigtail|bangs?|fringe|ahoge|strand|braid/i],
-  ["tail",      /tail/i],
-  ["ear",       /(?<![a-z])ear(?!t|l)|(?<=left)ear|(?<=right)ear|(?<=(?<![a-z])h)ear(?!t|i|d|s)/i],   // standalone (not Early), Left/Right-prefixed, or "Hear" (Mal0's spelling) — not Gear/Linear/heart/forearm/Hearing/Heard/Shears
-  ["wing",      /wing|fin(?!ger)/i],
-  ["cloth",     /cloth|skirt|dress|cape|cloak|scarf|frill|tassel|ribbon|coat|robe|sleeve|apron|kilt/i],
+  [
+    "dick",
+    /penis|dick|sheath|(?<!top[_ ]{0,2})(?<!hair[_ ]{0,2})(?<!rope[_ ]{0,2})(?<!bow[_ ]{0,2})(?<!braid[_ ]{0,2})(?<!bun[_ ]{0,2})knot|testicl|scrotum|futa|(?<![a-z])cock(?!pit|tail|atoo|le|er)/i,
+  ], // NO "bulge": muscle/eye correctives (Bicep_Bulge, EyeBulge) are far commoner than NSFW bulge bones (audit regression)
+  ["anus", /asshole|anus|(?<![a-z])anal(?!og|y)/i],
+  ["genital", /pussy|vagin|genital|crotch|vulva|(?<![a-z])clit(?!ell)|groin/i],
+  ["breast", /breast|boob|bust|oppai|nipple|titty|(?<![a-z])tits?(?![a-z])/i],
+  ["butt", /butt(?!on|er)|glute|booty|(?<![a-z])ass(?![a-z])/i],
+  ["belly", /belly|tummy|stomach|abdomen/i],
+  ["hair", /hair|ponytail|twintail|pigtail|bangs?|fringe|ahoge|strand|braid/i],
+  ["tail", /tail/i],
+  ["ear", /(?<![a-z])ear(?!t|l)|(?<=left)ear|(?<=right)ear|(?<=(?<![a-z])h)ear(?!t|i|d|s)/i], // standalone (not Early), Left/Right-prefixed, or "Hear" (Mal0's spelling) — not Gear/Linear/heart/forearm/Hearing/Heard/Shears
+  ["wing", /wing|fin(?!ger)/i],
+  ["cloth", /cloth|skirt|dress|cape|cloak|scarf|frill|tassel|ribbon|coat|robe|sleeve|apron|kilt/i],
   ["accessory", /fluff|whisker|antenna|horn|chain|wire|cable|\brope\b|string/i],
 ];
 const GENERIC_JIGGLE = /jiggle|bounce|wobble|sway|dangle|soft|squish/i;

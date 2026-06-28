@@ -28,19 +28,25 @@ const angOff = (q, restQ) => 2 * Math.acos(Math.min(1, Math.abs(q.dot(restQ))));
 // (the #1 fix) it leaves the posed bones alone (a real VRM still steps its springs/look-at here).
 function makeStubVrm(model, trackedNames) {
   const tracked = [];
-  model.traverse((o) => { if (o.isBone && trackedNames.includes(o.name)) tracked.push({ bone: o, rest: o.quaternion.clone() }); });
+  model.traverse((o) => {
+    if (o.isBone && trackedNames.includes(o.name)) tracked.push({ bone: o, rest: o.quaternion.clone() });
+  });
   let copyBacks = 0;
   return {
     humanoid: {
-      autoUpdateHumanBones: true,                 // the unfixed default — onModelLoaded flips this to false (#1)
+      autoUpdateHumanBones: true, // the unfixed default — onModelLoaded flips this to false (#1)
       update() {
-        if (!this.autoUpdateHumanBones) return;   // #1 fix: do NOT copy rest-pose normalized bones back over the AI pose
-        for (const t of tracked) t.bone.quaternion.copy(t.rest);   // the copy-back that wipes the pose
+        if (!this.autoUpdateHumanBones) return; // #1 fix: do NOT copy rest-pose normalized bones back over the AI pose
+        for (const t of tracked) t.bone.quaternion.copy(t.rest); // the copy-back that wipes the pose
         copyBacks++;
       },
     },
-    update() { this.humanoid.update(); },         // vrm.update(dt) drives the humanoid (+ springs/look-at on a real one)
-    get copyBacks() { return copyBacks; },
+    update() {
+      this.humanoid.update();
+    }, // vrm.update(dt) drives the humanoid (+ springs/look-at on a real one)
+    get copyBacks() {
+      return copyBacks;
+    },
   };
 }
 
@@ -52,7 +58,7 @@ test("#1: with autoUpdateHumanBones OFF (the fix), the AI head/arm pose SURVIVES
   const restArm = bones.left_arm.quaternion.clone();
 
   const vrm = makeStubVrm(model, [bones.head.name, bones.left_arm.name]);
-  if (vrm?.humanoid) vrm.humanoid.autoUpdateHumanBones = false;   // EXACTLY what avatar.js onModelLoaded does at load (#1)
+  if (vrm?.humanoid) vrm.humanoid.autoUpdateHumanBones = false; // EXACTLY what avatar.js onModelLoaded does at load (#1)
 
   proc.setLayer("ai_pose", { parts: { head: [0.4, 0, 0] }, flex: { left_arm: [0.5, 0] } });
   // ONE animate-equivalent frame, in the real order (proc writes the pose, THEN vrm.update runs).

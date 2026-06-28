@@ -30,7 +30,11 @@ try {
     console.error("[foreground] not win32 - fullscreen yield disabled (overlay stays always-on-top)");
   }
 } catch (e) {
-  console.error("[foreground] fullscreen detection unavailable (" + (e && e.message) + ") - overlay will NOT yield to fullscreen apps");
+  console.error(
+    "[foreground] fullscreen detection unavailable (" +
+      (e && e.message) +
+      ") - overlay will NOT yield to fullscreen apps"
+  );
 }
 
 // QUNS_* states that mean "a fullscreen / presentation app owns the screen" -> the overlay must yield:
@@ -40,17 +44,19 @@ try {
 const FULLSCREEN_STATES = new Set([2, 3, 4, 7]);
 
 // Pure: does this QUNS_* enum value mean "yield to a fullscreen app"? (exported for tests)
-function isFullscreenState(n) { return FULLSCREEN_STATES.has(n); }
+function isFullscreenState(n) {
+  return FULLSCREEN_STATES.has(n);
+}
 
 function queryFullscreen() {
   if (!_available) return false;
   try {
     const out = [0];
-    const hr = _SHQuery(out);           // S_OK (0) on success; out[0] = QUNS_* enum
-    if (hr !== 0) return false;         // query failed -> assume normal so she stays visible/on-top
+    const hr = _SHQuery(out); // S_OK (0) on success; out[0] = QUNS_* enum
+    if (hr !== 0) return false; // query failed -> assume normal so she stays visible/on-top
     return isFullscreenState(out[0]);
   } catch {
-    return false;                       // any FFI hiccup -> treat as normal (never strand her hidden on a fluke)
+    return false; // any FFI hiccup -> treat as normal (never strand her hidden on a fluke)
   }
 }
 
@@ -58,7 +64,14 @@ function queryFullscreen() {
 // so the very first value always counts as an edge.
 function makeEdgeDetector(onChange) {
   let last = null;
-  return (v) => { if (v !== last) { last = v; try { onChange(v); } catch {} } };
+  return (v) => {
+    if (v !== last) {
+      last = v;
+      try {
+        onChange(v);
+      } catch {}
+    }
+  };
 }
 
 // Poll the OS fullscreen state and call onChange(bool) only on the transition edge. Returns a stop fn.
@@ -68,10 +81,22 @@ function watch(onChange, intervalMs = 1000, queryFn = queryFullscreen) {
   if (!_available) return () => {};
   const feed = makeEdgeDetector(onChange);
   const tick = () => feed(queryFn());
-  tick();                               // prime immediately (handles "a game is already fullscreen at launch")
+  tick(); // prime immediately (handles "a game is already fullscreen at launch")
   const t = setInterval(tick, intervalMs);
-  if (t.unref) t.unref();               // never keep the process alive just for this poll
-  return () => { try { clearInterval(t); } catch {} };
+  if (t.unref) t.unref(); // never keep the process alive just for this poll
+  return () => {
+    try {
+      clearInterval(t);
+    } catch {}
+  };
 }
 
-module.exports = { watch, queryFullscreen, isFullscreenState, makeEdgeDetector, get available() { return _available; } };
+module.exports = {
+  watch,
+  queryFullscreen,
+  isFullscreenState,
+  makeEdgeDetector,
+  get available() {
+    return _available;
+  },
+};

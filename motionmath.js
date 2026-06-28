@@ -11,15 +11,15 @@ export const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 
 // Pure (no three.js) so the SHAPE is unit-testable headless; avatar.js feeds it a smoothed envelope.
 export function coSpeechPose(t, rms) {
   const a = Math.max(0, Math.min(1, rms || 0));
-  if (a < 1e-3) return { parts: {}, flex: {} };       // silent -> emit nothing (deliberate stillness)
+  if (a < 1e-3) return { parts: {}, flex: {} }; // silent -> emit nothing (deliberate stillness)
   return {
     parts: {
-      head:  [Math.sin(t * 7.5) * 0.07 * a, Math.sin(t * 3.1) * 0.05 * a, 0],   // beat nod + slower yaw sway
-      chest: [Math.sin(t * 7.5) * 0.035 * a, 0, 0],                             // subtle chest pitch with the nod
+      head: [Math.sin(t * 7.5) * 0.07 * a, Math.sin(t * 3.1) * 0.05 * a, 0], // beat nod + slower yaw sway
+      chest: [Math.sin(t * 7.5) * 0.035 * a, 0, 0], // subtle chest pitch with the nod
     },
     flex: {
-      left_arm:  [Math.sin(t * 5.0) * 0.11 * a, 0],          // alternating arm emphasis...
-      right_arm: [Math.sin(t * 5.0 + 2.3) * 0.10 * a, 0],    // ...phase-offset, never mirrored
+      left_arm: [Math.sin(t * 5.0) * 0.11 * a, 0], // alternating arm emphasis...
+      right_arm: [Math.sin(t * 5.0 + 2.3) * 0.1 * a, 0], // ...phase-offset, never mirrored
     },
   };
 }
@@ -28,12 +28,15 @@ export function coSpeechPose(t, rms) {
 // (easeOutBack) so a conjured object pops into being. Use popScale(1-p) for the "poof out" dismiss.
 export function popScale(p) {
   const x = Math.max(0, Math.min(1, p));
-  const c1 = 1.70158, c3 = c1 + 1;
+  const c1 = 1.70158,
+    c3 = c1 + 1;
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 }
 
 // floatBob (P3 conjure): gentle vertical hover offset for a conjured object idling in the air.
-export function floatBob(t, amp = 0.04) { return Math.sin(t * 2.0) * amp; }
+export function floatBob(t, amp = 0.04) {
+  return Math.sin(t * 2.0) * amp;
+}
 
 // (The idle-v4 primitives — dampSpring / gradient noise / jittered timers — lived here, along with the
 //  gesture/clip shaping math (bell, jumpElevation). ALL deleted with the idle + gesture/clip purges.)

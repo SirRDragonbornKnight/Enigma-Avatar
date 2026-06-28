@@ -5,26 +5,56 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../rig.js";
 import { buildDefaultAvatar } from "../default_avatar.js";
-import { fullBiped, blenderBiped, opaqueBiped, opaqueBipedNoTips, gladosLike, quadruped, namedQuadruped, minimalNameBiped, fakeVrm, makeBone, underArmature } from "./fixtures.js";
+import {
+  fullBiped,
+  blenderBiped,
+  opaqueBiped,
+  opaqueBipedNoTips,
+  gladosLike,
+  quadruped,
+  namedQuadruped,
+  minimalNameBiped,
+  fakeVrm,
+  makeBone,
+  underArmature,
+} from "./fixtures.js";
 
 const NINETEEN = [
-  "chest", "head", "hips",
-  "left_arm", "left_foot", "left_forearm", "left_hand", "left_leg", "left_shin", "left_shoulder",
+  "chest",
+  "head",
+  "hips",
+  "left_arm",
+  "left_foot",
+  "left_forearm",
+  "left_hand",
+  "left_leg",
+  "left_shin",
+  "left_shoulder",
   "neck",
-  "right_arm", "right_foot", "right_forearm", "right_hand", "right_leg", "right_shin", "right_shoulder",
+  "right_arm",
+  "right_foot",
+  "right_forearm",
+  "right_hand",
+  "right_leg",
+  "right_shin",
+  "right_shoulder",
   "spine",
 ];
-const wpos = (bone) => { const v = new THREE.Vector3(); bone.getWorldPosition(v); return v; };
+const wpos = (bone) => {
+  const v = new THREE.Vector3();
+  bone.getWorldPosition(v);
+  return v;
+};
 
 // ── Tier 2: names ───────────────────────────────────────────────────────────────
 test("roleOfName — spot checks incl. the Armature / de-dotted guards", () => {
   assert.equal(roleOfName("Hips"), "hips");
-  assert.equal(roleOfName("Armature"), null);            // not an arm
-  assert.equal(roleOfName("forearm"), null);             // a limb with no side is rejected
+  assert.equal(roleOfName("Armature"), null); // not an arm
+  assert.equal(roleOfName("forearm"), null); // a limb with no side is rejected
   assert.equal(roleOfName("LeftForeArm"), "left_forearm");
-  assert.equal(roleOfName("upper_armL"), "left_arm");    // Blender ".L" de-dotted
+  assert.equal(roleOfName("upper_armL"), "left_arm"); // Blender ".L" de-dotted
   assert.equal(roleOfName("upper_armR"), "right_arm");
-  assert.equal(roleOfName("Bip_Pelvis_L"), null);        // sided center bone → rejected
+  assert.equal(roleOfName("Bip_Pelvis_L"), null); // sided center bone → rejected
 });
 
 test("name tier resolves a named biped to all 19 roles", () => {
@@ -89,32 +119,69 @@ test("a NAMED quadruped (FrontLeftLeg/BackLeftLeg/...) gets NO false arm/torso r
 // recovers it structurally (the bone between the resolved shoulder and forearm), no names needed.
 function jointStyleArmBiped() {
   // arm chain: Shoulder1 (clavicle) → Shoulder2 (UPPER ARM, joint-named) → Elbow → Wrist → tip
-  const arm = (pfx, sx) => makeBone(pfx + "Shoulder1", [sx * 0.05, 0.10, 0], [
-    makeBone(pfx + "Shoulder2", [sx * 0.13, 0, 0], [
-      makeBone(pfx + "Elbow", [sx * 0.26, 0, 0], [
-        makeBone(pfx + "Wrist", [sx * 0.22, 0, 0], [makeBone(pfx + "Wrist_end", [sx * 0.08, 0, 0])]),
-      ]),
-    ]),
-  ]);
-  const leg = (pfx, sx) => makeBone(pfx + "Thigh", [sx * 0.10, -0.05, 0], [
-    makeBone(pfx + "Knee", [0, -0.42, 0], [makeBone(pfx + "Ankle", [0, -0.42, 0], [makeBone(pfx + "Toe", [0, -0.05, 0.12])])]),
-  ]);
-  const hips = makeBone("Hips", [0, 1.0, 0], [
-    makeBone("Spine", [0, 0.12, 0], [
-      makeBone("Neck", [0, 0.30, 0], [makeBone("Head", [0, 0.12, 0], [makeBone("Head_end", [0, 0.18, 0])])]),
-      arm("Left", -1), arm("Right", +1),
-    ]),
-    leg("Left", -1), leg("Right", +1),
-  ]);
+  const arm = (pfx, sx) =>
+    makeBone(
+      pfx + "Shoulder1",
+      [sx * 0.05, 0.1, 0],
+      [
+        makeBone(
+          pfx + "Shoulder2",
+          [sx * 0.13, 0, 0],
+          [
+            makeBone(
+              pfx + "Elbow",
+              [sx * 0.26, 0, 0],
+              [makeBone(pfx + "Wrist", [sx * 0.22, 0, 0], [makeBone(pfx + "Wrist_end", [sx * 0.08, 0, 0])])]
+            ),
+          ]
+        ),
+      ]
+    );
+  const leg = (pfx, sx) =>
+    makeBone(
+      pfx + "Thigh",
+      [sx * 0.1, -0.05, 0],
+      [
+        makeBone(
+          pfx + "Knee",
+          [0, -0.42, 0],
+          [makeBone(pfx + "Ankle", [0, -0.42, 0], [makeBone(pfx + "Toe", [0, -0.05, 0.12])])]
+        ),
+      ]
+    );
+  const hips = makeBone(
+    "Hips",
+    [0, 1.0, 0],
+    [
+      makeBone(
+        "Spine",
+        [0, 0.12, 0],
+        [
+          makeBone("Neck", [0, 0.3, 0], [makeBone("Head", [0, 0.12, 0], [makeBone("Head_end", [0, 0.18, 0])])]),
+          arm("Left", -1),
+          arm("Right", +1),
+        ]
+      ),
+      leg("Left", -1),
+      leg("Right", +1),
+    ]
+  );
   return underArmature(hips);
 }
 
 test("between-repair: a joint-style 'shoulder' upper-arm resolves to left/right_arm (the correct bone)", () => {
   const r = resolveRig(jointStyleArmBiped());
-  assert.equal(r.roles.left_arm?.name, "LeftShoulder2", "the UPPER ARM (2nd shoulder) holds left_arm, not the clavicle");
+  assert.equal(
+    r.roles.left_arm?.name,
+    "LeftShoulder2",
+    "the UPPER ARM (2nd shoulder) holds left_arm, not the clavicle"
+  );
   assert.equal(r.roles.right_arm?.name, "RightShoulder2");
   assert.equal(r.roles.left_shoulder.name, "LeftShoulder1", "the clavicle keeps the shoulder role");
-  assert.ok(wpos(r.roles.left_arm).x < wpos(r.roles.left_shoulder).x, "upper arm is more −X (outboard) than the clavicle");
+  assert.ok(
+    wpos(r.roles.left_arm).x < wpos(r.roles.left_shoulder).x,
+    "upper arm is more −X (outboard) than the clavicle"
+  );
   assert.ok(wpos(r.roles.left_hand).x < wpos(r.roles.left_arm).x, "hand outboard of the upper arm");
 });
 
@@ -123,24 +190,51 @@ test("resolveBetween (in isolation): fills the middle joint from a shoulder+fore
   const idOf = (nm) => bones.findIndex((b) => b.name === nm);
   // simulate ONLY names resolving (clavicle=shoulder, elbow=forearm, wrist=hand) — geometry off
   const roleIds = {
-    left_shoulder: idOf("LeftShoulder1"), left_forearm: idOf("LeftElbow"), left_hand: idOf("LeftWrist"),
-    spine: idOf("Spine"), neck: idOf("Neck"),
+    left_shoulder: idOf("LeftShoulder1"),
+    left_forearm: idOf("LeftElbow"),
+    left_hand: idOf("LeftWrist"),
+    spine: idOf("Spine"),
+    neck: idOf("Neck"),
   };
   const source = {};
   resolveBetween(snap, roleIds, source);
-  assert.equal(bones[roleIds.left_arm].name, "LeftShoulder2", "between fills the upper arm = the bone between shoulder and forearm");
+  assert.equal(
+    bones[roleIds.left_arm].name,
+    "LeftShoulder2",
+    "between fills the upper arm = the bone between shoulder and forearm"
+  );
   assert.equal(source.left_arm, "between");
-  assert.ok(roleIds.chest == null, "chest stays empty here (Spine→Neck are directly linked, no middle bone — between never fabricates one)");
+  assert.ok(
+    roleIds.chest == null,
+    "chest stays empty here (Spine→Neck are directly linked, no middle bone — between never fabricates one)"
+  );
 });
 
 test("between-repair NEVER fabricates a middle bone when prox/dist are directly linked", () => {
   // shoulder → forearm directly (no upper-arm bone): left_arm must stay EMPTY, not alias the forearm
-  const arm = (pfx, sx) => makeBone(pfx + "Clavicle", [sx * 0.05, 0.10, 0], [
-    makeBone(pfx + "ForeArm", [sx * 0.26, 0, 0], [makeBone(pfx + "Hand", [sx * 0.22, 0, 0], [makeBone(pfx + "Hand_end", [sx * 0.08, 0, 0])])]),
-  ]);
-  const hips = makeBone("Hips", [0, 1.0, 0], [makeBone("Spine", [0, 0.12, 0], [
-    makeBone("Neck", [0, 0.30, 0], [makeBone("Head", [0, 0.12, 0])]), arm("Left", -1), arm("Right", +1),
-  ])]);
+  const arm = (pfx, sx) =>
+    makeBone(
+      pfx + "Clavicle",
+      [sx * 0.05, 0.1, 0],
+      [
+        makeBone(
+          pfx + "ForeArm",
+          [sx * 0.26, 0, 0],
+          [makeBone(pfx + "Hand", [sx * 0.22, 0, 0], [makeBone(pfx + "Hand_end", [sx * 0.08, 0, 0])])]
+        ),
+      ]
+    );
+  const hips = makeBone(
+    "Hips",
+    [0, 1.0, 0],
+    [
+      makeBone(
+        "Spine",
+        [0, 0.12, 0],
+        [makeBone("Neck", [0, 0.3, 0], [makeBone("Head", [0, 0.12, 0])]), arm("Left", -1), arm("Right", +1)]
+      ),
+    ]
+  );
   const r = resolveRig(underArmature(hips));
   assert.ok(r.roles.left_forearm, "forearm still resolves");
   assert.ok(!("left_arm" in r.roles), "no upper arm bone exists → left_arm stays empty (not aliased to the forearm)");

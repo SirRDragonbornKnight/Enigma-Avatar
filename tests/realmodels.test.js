@@ -50,7 +50,7 @@ const EXPECT = {
   glados: 2,
   grace_howard: 0,
   toothless: 0,
-  spyro: "static",   // no skin/joints → no bone snapshot at all
+  spyro: "static", // no skin/joints → no bone snapshot at all
 };
 
 const byDir = new Map(discover(MODELS).map((f) => [path.basename(path.dirname(f)), f]));
@@ -61,24 +61,39 @@ for (const [dir, expected] of Object.entries(EXPECT)) {
   test(`cascade: ${dir} -> ${expected} roles`, { skip: file ? false : "model not present (gitignored)" }, () => {
     const gltf = readGltfJson(file);
     const snap = buildSnapshot(gltf);
-    if (expected === "static") { assert.equal(snap.length, 0, `${dir} should have no joints`); return; }
+    if (expected === "static") {
+      assert.equal(snap.length, 0, `${dir} should have no joints`);
+      return;
+    }
     const r = runCascade(gltf, snap);
-    assert.equal(r.matched.length, expected, `${dir} resolved ${r.matched.length} roles (expected ${expected}); unresolved: ${r.unresolved.join(", ")}`);
+    assert.equal(
+      r.matched.length,
+      expected,
+      `${dir} resolved ${r.matched.length} roles (expected ${expected}); unresolved: ${r.unresolved.join(", ")}`
+    );
   });
 }
 
 // GUARD: an all-skip run must never masquerade as a pass. If the library has models present
 // but NONE of them are EXPECT keys, every case above skipped and asserted nothing — fail loudly
 // so a green report can't hide an empty/renamed/relocated library.
-test("library is covered (no silent all-skip)", { skip: byDir.size ? false : "no models present on this machine" }, () => {
-  assert.ok(
-    matchedKeys.length > 0,
-    `${byDir.size} model dir(s) present (${[...byDir.keys()].join(", ")}) but ZERO match an EXPECT key — ` +
-      `the cascade is untested here. Add the present model(s) to EXPECT (run 'node tools/rig_report.mjs').`,
-  );
-});
+test(
+  "library is covered (no silent all-skip)",
+  { skip: byDir.size ? false : "no models present on this machine" },
+  () => {
+    assert.ok(
+      matchedKeys.length > 0,
+      `${byDir.size} model dir(s) present (${[...byDir.keys()].join(", ")}) but ZERO match an EXPECT key — ` +
+        `the cascade is untested here. Add the present model(s) to EXPECT (run 'node tools/rig_report.mjs').`
+    );
+  }
+);
 
 // Sanity: report which models actually exercised the cascade (informational).
-test("at least one real model exercised the cascade", { skip: byDir.size ? false : "no models present on this machine" }, () => {
-  assert.ok(matchedKeys.length > 0, `covered: ${matchedKeys.join(", ") || "none"}`);
-});
+test(
+  "at least one real model exercised the cascade",
+  { skip: byDir.size ? false : "no models present on this machine" },
+  () => {
+    assert.ok(matchedKeys.length > 0, `covered: ${matchedKeys.join(", ") || "none"}`);
+  }
+);

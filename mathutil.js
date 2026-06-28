@@ -4,7 +4,9 @@
 // pick all lived inside three-importing modules and had no coverage.)
 
 // Normalize any angle to [0, 360). Handles negatives, NaN, strings, undefined.
-export function norm360(v) { return ((((+v || 0) % 360) + 360) % 360); }
+export function norm360(v) {
+  return (((+v || 0) % 360) + 360) % 360;
+}
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -20,8 +22,10 @@ export function rotFromProfile(p) {
 // What to persist for a rotation: the normalized {x,y,z}, or null if it's all-zero (→ caller deletes
 // the key so an untouched model doesn't bloat profiles.json). Caller also drops the legacy `yaw`.
 export function rotToSave(r) {
-  const x = norm360(r && r.x), y = norm360(r && r.y), z = norm360(r && r.z);
-  return (!x && !y && !z) ? null : { x, y, z };
+  const x = norm360(r && r.x),
+    y = norm360(r && r.y),
+    z = norm360(r && r.z);
+  return !x && !y && !z ? null : { x, y, z };
 }
 
 // Spring soft-body WEIGHT → physics feel. w: per-region jiggle weight (0=rigid/pinned, 1=default,
@@ -31,16 +35,16 @@ export function rotToSave(r) {
 //   damp   — for w<1, how far to lerp the tip back toward rest each frame (less jiggle)
 export function regionFeel(w, stiffness, drag, isGeo) {
   if (!(w > 0.001)) return { pin: true };
-  const bounce = w > 1 ? w : 1;                       // >1 → loosen stiffness + drag for a bouncier feel
-  const stiff = (isGeo ? 1.5 : 1) * stiffness / (0.4 + 0.6 * bounce);
+  const bounce = w > 1 ? w : 1; // >1 → loosen stiffness + drag for a bouncier feel
+  const stiff = ((isGeo ? 1.5 : 1) * stiffness) / (0.4 + 0.6 * bounce);
   const dragv = clamp(drag / bounce, 0.05, 0.95);
-  const damp = w < 1 ? 1 - w : 0;                     // w<1 → damp amplitude toward rest (0 at w≥1)
+  const damp = w < 1 ? 1 - w : 0; // w<1 → damp amplitude toward rest (0 at w≥1)
   return { pin: false, bounce, stiff, dragv, damp };
 }
 
 // Adaptive frame-rate pick: full rate when active; settle to IDLE, then REST after `restAfter`s idle.
 export function pickFps(active, restClock, ACTIVE, IDLE, REST, restAfter = 6) {
-  return active ? ACTIVE : (restClock > restAfter ? REST : IDLE);
+  return active ? ACTIVE : restClock > restAfter ? REST : IDLE;
 }
 
 // --- multi-window coordinate mapping (monitor rewrite) ----------------------

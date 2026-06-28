@@ -19,10 +19,7 @@
 // is the "scan before loading" path; the live overlay's self-report (future) is ground truth.
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  readGltfJson, buildSnapshot, runCascade,
-  discoverModels, urlKeyFor,
-} from "./rig_report.mjs";
+import { readGltfJson, buildSnapshot, runCascade, discoverModels, urlKeyFor } from "./rig_report.mjs";
 import { ROLES } from "../rig.js";
 
 const REPLACEMENT = "�"; // baked-in mojibake marker (lost Shift-JIS, etc.)
@@ -41,7 +38,7 @@ function materialList(gltf) {
     if (name != null) seen.set(name, (seen.get(name) || 0) + 1);
     return {
       index,
-      name,                                   // OPAQUE — for display only
+      name, // OPAQUE — for display only
       baseColor: pbr?.baseColorFactor ?? null,
       metallic: pbr ? (pbr.metallicFactor ?? 1) : null,
       roughness: pbr ? (pbr.roughnessFactor ?? 1) : null,
@@ -50,7 +47,13 @@ function materialList(gltf) {
     };
   });
   const duplicateNames = [...seen.values()].some((c) => c > 1);
-  return { count: list.length, recolorBy: "live avatar_status index (these static indices are a PREVIEW — the running overlay is the authority; see addressing)", duplicateNames, list };
+  return {
+    count: list.length,
+    recolorBy:
+      "live avatar_status index (these static indices are a PREVIEW — the running overlay is the authority; see addressing)",
+    duplicateNames,
+    list,
+  };
 }
 
 // Morph targets (blendshapes): per-mesh count + names if the exporter wrote them
@@ -65,7 +68,7 @@ function morphInfo(gltf) {
     if (!count) return;
     total += count;
     const names = Array.isArray(mesh.extras?.targetNames) ? mesh.extras.targetNames : null;
-    byMesh.push({ mesh: mi, count, names });   // names: OPAQUE or null
+    byMesh.push({ mesh: mi, count, names }); // names: OPAQUE or null
   });
   return { total, byMesh };
 }
@@ -75,9 +78,13 @@ function morphInfo(gltf) {
 function vrmExpressions(gltf) {
   const ex = gltf.extensions || {};
   const out = [];
-  const g0 = ex.VRM?.blendShapeMaster?.blendShapeGroups;      // VRM 0.x
-  if (Array.isArray(g0)) for (const g of g0) { const p = (g.presetName || g.name || "").toLowerCase(); if (p && p !== "unknown") out.push(p); }
-  const e1 = ex.VRMC_vrm?.expressions;                        // VRM 1.0
+  const g0 = ex.VRM?.blendShapeMaster?.blendShapeGroups; // VRM 0.x
+  if (Array.isArray(g0))
+    for (const g of g0) {
+      const p = (g.presetName || g.name || "").toLowerCase();
+      if (p && p !== "unknown") out.push(p);
+    }
+  const e1 = ex.VRMC_vrm?.expressions; // VRM 1.0
   if (e1?.preset) out.push(...Object.keys(e1.preset));
   if (e1?.custom) out.push(...Object.keys(e1.custom));
   return [...new Set(out)];
@@ -94,7 +101,10 @@ function springInfo(gltf, snap) {
   const vrmSpringGroups = vrm0 + vrm1;
   // name hints (LOW confidence — names are untrusted): bones that look dangly.
   const DANGLE = /hair|tail|skirt|cloth|ear|wire|string|ribbon|cloak|cape|antenna|fin|wing|breast|chain|rope|tassel/i;
-  const danglerNameHints = snap.filter((b) => DANGLE.test(b.name)).map((b) => b.name).slice(0, 24);
+  const danglerNameHints = snap
+    .filter((b) => DANGLE.test(b.name))
+    .map((b) => b.name)
+    .slice(0, 24);
   return { vrmSpringGroups, danglerNameHints, hasVrmSprings: vrmSpringGroups > 0 };
 }
 
@@ -107,7 +117,7 @@ function deriveType(snap, cascade, health) {
   const legs = r.has("left_leg") && r.has("right_leg");
   if (arms && legs) return "biped";
   if (r.has("head") && cascade.matched.length <= 3) return "head-only";
-  if (cascade.matched.length === 0) return "creature";   // bones but no humanoid roles (a dragon, etc.)
+  if (cascade.matched.length === 0) return "creature"; // bones but no humanoid roles (a dragon, etc.)
   return "partial-biped";
 }
 
@@ -117,11 +127,12 @@ function deriveType(snap, cascade, health) {
 function supportedActions(cascade, face, mats, _springs) {
   const r = new Set(cascade.matched);
   const motion = {
-    poseRoles: cascade.matched.slice(),                 // drive any of these via `pose` / `layer` motion layers
+    poseRoles: cascade.matched.slice(), // drive any of these via `pose` / `layer` motion layers
     look: r.has("head") ? "head + eyes track a screen point (lookAt)" : "no head role — no look",
-    fingers: (r.has("left_hand") || r.has("right_hand"))
-      ? "per-finger curl via `fingers` (if the resolved hand carries finger bones)"
-      : "no hand role — no finger control",
+    fingers:
+      r.has("left_hand") || r.has("right_hand")
+        ? "per-finger curl via `fingers` (if the resolved hand carries finger bones)"
+        : "no hand role — no finger control",
     "blink (eyes)": face.blink.viable
       ? `${face.blink.system} — lids close ONLY on a real blink event (speech onset / AI tag / held setBlink); no autonomous blinking`
       : "no blink channel — eyes stay open",
@@ -141,8 +152,11 @@ function supportedActions(cascade, face, mats, _springs) {
 export function profile(file) {
   const key = urlKeyFor(file);
   let gltf;
-  try { gltf = readGltfJson(file); }
-  catch (e) { return { model: key, error: e.message }; }
+  try {
+    gltf = readGltfJson(file);
+  } catch (e) {
+    return { model: key, error: e.message };
+  }
 
   const snap = buildSnapshot(gltf);
 
@@ -151,13 +165,23 @@ export function profile(file) {
   const corrupt = snap.filter((b) => b.name.includes(REPLACEMENT)).length;
   const notes = [];
   let ok = true;
-  if (snap.length && corrupt / snap.length > 0.1) { ok = false; notes.push(`${corrupt}/${snap.length} bone names are corrupted (U+FFFD mojibake) — the name tier can't address them; needs a UTF-8 re-export`); }
+  if (snap.length && corrupt / snap.length > 0.1) {
+    ok = false;
+    notes.push(
+      `${corrupt}/${snap.length} bone names are corrupted (U+FFFD mojibake) — the name tier can't address them; needs a UTF-8 re-export`
+    );
+  }
   const health = { ok, bones: snap.length, notes };
 
   if (!snap.length) {
-    return { model: key, file: path.basename(file), type: "static", health,
+    return {
+      model: key,
+      file: path.basename(file),
+      type: "static",
+      health,
       lacks: ["any rig — a static mesh (load/size/move only; no animation, gestures, or lip-sync)"],
-      note: "no skin/joints — a static mesh; load/size/move work, but nothing to animate or lip-sync" };
+      note: "no skin/joints — a static mesh; load/size/move work, but nothing to animate or lip-sync",
+    };
   }
 
   const cascade = runCascade(gltf, snap);
@@ -179,31 +203,65 @@ export function profile(file) {
   // (the engine's OPEN_RE) → jaw BONE by /jaw/ → morphs present but UNNAMED (the engine's
   // name picker finds nothing → it falls back to a geometric jaw-drop pick) → none.
   // Mirrors facial.js OPEN_RE verbatim (kept in sync by hand; facial.js doesn't export it).
-  const OPEN_RE = /jaw.?open|mouth.?open|mouthopen|(^|[._-])aa($|[._-])|vrc\.v_aa|viseme.?aa|fcl[._-]?mth[._-]?a$|(^|[._-])v[._-]open|あ/i;
+  const OPEN_RE =
+    /jaw.?open|mouth.?open|mouthopen|(^|[._-])aa($|[._-])|vrc\.v_aa|viseme.?aa|fcl[._-]?mth[._-]?a$|(^|[._-])v[._-]open|あ/i;
   const morphNames = morphs.byMesh.flatMap((m) => m.names || []);
   const namedMouthMorph = morphNames.some((n) => OPEN_RE.test(n));
   const jawBone = snap.some((b) => /jaw/i.test(b.name));
   let system, lipSyncViable, lipSyncNote;
-  if (vrmExpr.length) { system = "vrm-expressions"; lipSyncViable = true; lipSyncNote = "VRM 'aa' viseme + blink"; }
-  else if (namedMouthMorph) { system = "morph(named)"; lipSyncViable = true; lipSyncNote = "a morph target is named like a mouth-open shape — amplitude-driven"; }
-  else if (jawBone) { system = "jaw-bone"; lipSyncViable = true; lipSyncNote = "a /jaw/ bone flaps with audio amplitude"; }
-  else if (morphs.total > 0) { system = "morph(unnamed)"; lipSyncViable = false; lipSyncNote = `${morphs.total} morph targets exist but NONE are named like a mouth shape. The live engine runs GEOMETRIC jaw-drop detection at load to find the mouth automatically (name-free) — confirm on the live overlay.`; }
-  else { system = "none"; lipSyncViable = false; lipSyncNote = "no facial channel (no VRM expression, no mouth morph, no jaw bone) — speech plays, mouth stays still."; }
+  if (vrmExpr.length) {
+    system = "vrm-expressions";
+    lipSyncViable = true;
+    lipSyncNote = "VRM 'aa' viseme + blink";
+  } else if (namedMouthMorph) {
+    system = "morph(named)";
+    lipSyncViable = true;
+    lipSyncNote = "a morph target is named like a mouth-open shape — amplitude-driven";
+  } else if (jawBone) {
+    system = "jaw-bone";
+    lipSyncViable = true;
+    lipSyncNote = "a /jaw/ bone flaps with audio amplitude";
+  } else if (morphs.total > 0) {
+    system = "morph(unnamed)";
+    lipSyncViable = false;
+    lipSyncNote = `${morphs.total} morph targets exist but NONE are named like a mouth shape. The live engine runs GEOMETRIC jaw-drop detection at load to find the mouth automatically (name-free) — confirm on the live overlay.`;
+  } else {
+    system = "none";
+    lipSyncViable = false;
+    lipSyncNote =
+      "no facial channel (no VRM expression, no mouth morph, no jaw bone) — speech plays, mouth stays still.";
+  }
 
   // blink channel — MIRRORS facial.js's BLINK ladder (a SEPARATE channel from mouth since FACIAL v2:
   // VRM 'blink' preset -> named morph (BLINK_RE) -> eyelid BONES (LID_RE, no jaw needed) -> geometric.
   // Reported so the static profile is honest about a channel the engine drives. STRICT blink policy:
   // the engine fires blink ONLY on a real drive (speech onset / AI tag / held setBlink), never free-running.
-  const BLINK_RE = /blink|eyes?.?clos|wink|fcl[._-]?eye[._-]?close|まばたき|ウィンク/i;  // == facial.js
-  const LID_RE = /eye.?lid|eyelid|(^|[._-])lid($|[._-])|eye.?flap/i;                      // == facial.js (eye.?flap: glados' aperture flaps)
+  const BLINK_RE = /blink|eyes?.?clos|wink|fcl[._-]?eye[._-]?close|まばたき|ウィンク/i; // == facial.js
+  const LID_RE = /eye.?lid|eyelid|(^|[._-])lid($|[._-])|eye.?flap/i; // == facial.js (eye.?flap: glados' aperture flaps)
   const namedBlinkMorph = morphNames.some((n) => BLINK_RE.test(n));
   const lidBones = snap.filter((b) => LID_RE.test(b.name)).map((b) => b.name);
   let blinkSystem, blinkViable, blinkNote;
-  if (vrmExpr.includes("blink")) { blinkSystem = "vrm-expressions"; blinkViable = true; blinkNote = "VRM 'blink' preset — driven on a real blink event only (no autonomous blinking)."; }
-  else if (namedBlinkMorph) { blinkSystem = "morph(named)"; blinkViable = true; blinkNote = "a morph target is named like a blink/eyes-closed shape — driven on a real blink event only."; }
-  else if (lidBones.length) { blinkSystem = "lid-bones"; blinkViable = true; blinkNote = `${lidBones.length} eyelid bone(s) close on a real blink event only (no jaw required).`; }
-  else if (morphs.total > 0) { blinkSystem = "morph(unnamed)"; blinkViable = false; blinkNote = `${morphs.total} morph targets exist but NONE are named like a blink shape. The live engine runs GEOMETRIC eye-band detection at load to find an unnamed blink (name-free) — confirm on the live overlay.`; }
-  else { blinkSystem = "none"; blinkViable = false; blinkNote = "no blink channel (no VRM 'blink', no blink morph, no eyelid bone) — eyes stay open."; }
+  if (vrmExpr.includes("blink")) {
+    blinkSystem = "vrm-expressions";
+    blinkViable = true;
+    blinkNote = "VRM 'blink' preset — driven on a real blink event only (no autonomous blinking).";
+  } else if (namedBlinkMorph) {
+    blinkSystem = "morph(named)";
+    blinkViable = true;
+    blinkNote = "a morph target is named like a blink/eyes-closed shape — driven on a real blink event only.";
+  } else if (lidBones.length) {
+    blinkSystem = "lid-bones";
+    blinkViable = true;
+    blinkNote = `${lidBones.length} eyelid bone(s) close on a real blink event only (no jaw required).`;
+  } else if (morphs.total > 0) {
+    blinkSystem = "morph(unnamed)";
+    blinkViable = false;
+    blinkNote = `${morphs.total} morph targets exist but NONE are named like a blink shape. The live engine runs GEOMETRIC eye-band detection at load to find an unnamed blink (name-free) — confirm on the live overlay.`;
+  } else {
+    blinkSystem = "none";
+    blinkViable = false;
+    blinkNote = "no blink channel (no VRM 'blink', no blink morph, no eyelid bone) — eyes stay open.";
+  }
   const blink = { system: blinkSystem, viable: blinkViable, note: blinkNote, lidBones };
 
   const face = { system, lipSyncViable, lipSyncNote, vrmExpressions: vrmExpr, morphTargets: morphs, jawBone, blink };
@@ -215,7 +273,8 @@ export function profile(file) {
   const rset = new Set(cascade.matched);
   const lacks = [];
   if (face.system === "none") lacks.push("a mouth / lip-sync channel (no jaw bone, no mouth morph, no VRM expression)");
-  if (face.blink.system === "none") lacks.push("blink (eyes) — no eyelid bone, no blink morph, no VRM 'blink' (eyes stay open)");
+  if (face.blink.system === "none")
+    lacks.push("blink (eyes) — no eyelid bone, no blink morph, no VRM 'blink' (eyes stay open)");
   if (!rset.has("left_arm") && !rset.has("right_arm")) lacks.push("arms (no arm gestures)");
   if (!rset.has("left_leg") && !rset.has("right_leg")) lacks.push("legs");
   if (!rset.has("head")) lacks.push("a drivable head (no nod / shake / look)");
@@ -229,15 +288,19 @@ export function profile(file) {
       rolesResolved: cascade.matched.length,
       rolesTotal: ROLES.length,
       isVRM: cascade.isVRM,
-      bySource: cascade.bySource,             // how each role was found (vrm/name/geometry)
-      roles,                                  // role -> {bone(opaque), node, tier}
+      bySource: cascade.bySource, // how each role was found (vrm/name/geometry)
+      roles, // role -> {bone(opaque), node, tier}
       unresolved: cascade.unresolved,
     },
     face,
     materials: mats,
-    dynamics: { ...springs, note: "precise tail/hair/wire detection is confirmed by the live overlay; static hints are low-confidence" },
+    dynamics: {
+      ...springs,
+      note: "precise tail/hair/wire detection is confirmed by the live overlay; static hints are low-confidence",
+    },
     supported: supportedActions(cascade, face, mats, springs),
-    addressing: "Drive by ROLE, morph (mesh,index), and VRM PRESET. For MATERIAL recolor, get the index from the LIVE avatar_status (the running overlay is the authority — the material indices below are a static glTF-order PREVIEW that may not match the overlay's traversal order). The 'name'/'bone' strings are the model's own labels — display them if useful, but never match or branch on them; they differ across every model and can be corrupted.",
+    addressing:
+      "Drive by ROLE, morph (mesh,index), and VRM PRESET. For MATERIAL recolor, get the index from the LIVE avatar_status (the running overlay is the authority — the material indices below are a static glTF-order PREVIEW that may not match the overlay's traversal order). The 'name'/'bone' strings are the model's own labels — display them if useful, but never match or branch on them; they differ across every model and can be corrupted.",
   };
 }
 
@@ -266,8 +329,11 @@ function resolveTarget(arg) {
   const direct = path.resolve(arg);
   const all = discoverModels();
   if (all.some((f) => path.resolve(f) === direct)) return direct;
-  const byId = all.find((f) => path.basename(path.dirname(f)).toLowerCase() === arg.toLowerCase()
-    || path.basename(path.dirname(f)).toLowerCase().includes(arg.toLowerCase()));
+  const byId = all.find(
+    (f) =>
+      path.basename(path.dirname(f)).toLowerCase() === arg.toLowerCase() ||
+      path.basename(path.dirname(f)).toLowerCase().includes(arg.toLowerCase())
+  );
   if (byId) return byId;
   return direct; // let readGltfJson surface a clear error if it doesn't exist
 }
@@ -277,7 +343,13 @@ function main() {
   if (!arg) {
     const models = discoverModels();
     const menu = models.map((f) => brief(f));
-    process.stdout.write(JSON.stringify({ models: menu, hint: "call avatar_describe with a model id for the full capability profile" }, null, 2) + "\n");
+    process.stdout.write(
+      JSON.stringify(
+        { models: menu, hint: "call avatar_describe with a model id for the full capability profile" },
+        null,
+        2
+      ) + "\n"
+    );
     return;
   }
   const file = resolveTarget(arg);

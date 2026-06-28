@@ -11,10 +11,20 @@ import { kindOf, loadAsset, applyFbxMaterials } from "../loader.js";
 // a minimal three.js-ish node: only the .traverse() + isMesh/material shape applyFbxMaterials reads.
 function meshRoot() {
   const mesh = { isMesh: true, material: { name: "body" }, needsUpdate: false };
-  return { traverse(fn) { fn(this); fn(mesh); } };
+  return {
+    traverse(fn) {
+      fn(this);
+      fn(mesh);
+    },
+  };
 }
-function emptyRoot() {                                   // an untextured prop: no mesh-with-material
-  return { traverse(fn) { fn(this); } };
+function emptyRoot() {
+  // an untextured prop: no mesh-with-material
+  return {
+    traverse(fn) {
+      fn(this);
+    },
+  };
 }
 
 test("kindOf classifies loadable formats and flags everything else as unsupported", () => {
@@ -28,8 +38,17 @@ test("kindOf classifies loadable formats and flags everything else as unsupporte
 });
 
 test("#6 loadAsset fails HONESTLY on an unsupported format (no GLTFLoader 'not valid JSON')", () => {
-  let err = null, ok = false;
-  loadAsset("C:/x/model.obj", () => { ok = true; }, (e) => { err = e; });
+  let err = null,
+    ok = false;
+  loadAsset(
+    "C:/x/model.obj",
+    () => {
+      ok = true;
+    },
+    (e) => {
+      err = e;
+    }
+  );
   assert.ok(err, "onErr fired");
   assert.ok(!ok, "onOk did NOT fire");
   const msg = String(err.message || err);
@@ -55,14 +74,21 @@ test("#12 loadAsset routes an FBX bind problem to onWarn (not black-holed)", asy
   // 'try{ applyFbxMaterials }; for(p of probs) onWarn(p)' surfacing path without a real file.
   const warned = [];
   await new Promise((resolve) => {
-    loadAsset("C:/x/avatar.fbx", () => resolve(), () => resolve(), {
-      kind: "fbx",
-      resourceDir: "",                                  // forces applyFbxMaterials to report 'no resource dir' for a textured mesh
-      onWarn: (e) => warned.push(e),
-      _fbxLoaderFactory: () => ({
-        load(_url, onOk) { onOk(meshRoot()); },         // hand back a textured mesh immediately
-      }),
-    });
+    loadAsset(
+      "C:/x/avatar.fbx",
+      () => resolve(),
+      () => resolve(),
+      {
+        kind: "fbx",
+        resourceDir: "", // forces applyFbxMaterials to report 'no resource dir' for a textured mesh
+        onWarn: (e) => warned.push(e),
+        _fbxLoaderFactory: () => ({
+          load(_url, onOk) {
+            onOk(meshRoot());
+          }, // hand back a textured mesh immediately
+        }),
+      }
+    );
   });
   assert.ok(warned.length > 0, "a binding warning was surfaced via onWarn");
   assert.match(String(warned[0].message || warned[0]), /textures|bind|resource dir/i, "honest warning text");
@@ -74,27 +100,48 @@ test("#12 loadAsset routes an FBX bind problem to onWarn (not black-holed)", asy
 // loader is constructed — a LOCAL path reaches the 'unsupported format' check (proving it passed the gate).
 test("bus gate: loadAsset BLOCKS remote http(s) urls", () => {
   for (const u of ["http://evil.test/x.glb", "https://evil.test/x.vrm"]) {
-    let err = null, ok = false;
-    loadAsset(u, () => { ok = true; }, (e) => { err = e; });
+    let err = null,
+      ok = false;
+    loadAsset(
+      u,
+      () => {
+        ok = true;
+      },
+      (e) => {
+        err = e;
+      }
+    );
     assert.ok(err && /remote URL load blocked/i.test(String(err.message || err)), `blocked ${u}`);
     assert.ok(!ok, "onOk did not fire for a remote url");
   }
 });
 
 test("bus gate: a LOCAL path passes the gate (reaches format handling, not blocked)", () => {
-  let blocked = false, reachedFormat = false;
-  loadAsset("C:/Users/SirKn/3d Avatar/Avatars/x.obj", () => {}, (e) => {
-    const m = String(e.message || e);
-    if (/remote URL load blocked/i.test(m)) blocked = true;
-    if (/unsupported format/i.test(m)) reachedFormat = true;   // got PAST the gate to kindOf
-  });
+  let blocked = false,
+    reachedFormat = false;
+  loadAsset(
+    "C:/Users/SirKn/3d Avatar/Avatars/x.obj",
+    () => {},
+    (e) => {
+      const m = String(e.message || e);
+      if (/remote URL load blocked/i.test(m)) blocked = true;
+      if (/unsupported format/i.test(m)) reachedFormat = true; // got PAST the gate to kindOf
+    }
+  );
   assert.ok(!blocked, "local path NOT blocked by the remote gate (external Avatars dir keeps loading)");
   assert.ok(reachedFormat, "local path reached format handling — proves it passed the gate");
 });
 
 test("bus gate: allowRemote:true is an explicit opt-in that bypasses the gate", () => {
   let blocked = false;
-  loadAsset("http://ok.test/x.obj", () => {}, (e) => { if (/remote URL load blocked/i.test(String(e.message || e))) blocked = true; }, { allowRemote: true });
+  loadAsset(
+    "http://ok.test/x.obj",
+    () => {},
+    (e) => {
+      if (/remote URL load blocked/i.test(String(e.message || e))) blocked = true;
+    },
+    { allowRemote: true }
+  );
   assert.ok(!blocked, "allowRemote:true bypasses the remote gate");
 });
 
@@ -102,10 +149,28 @@ test("bus gate: allowRemote:true is an explicit opt-in that bypasses the gate", 
 // tab/newline/CR from anywhere in a URL and TRIMS leading control+space before fetching, so " https://"
 // or "ht\ttps://" passed the guard yet still got FETCHED. loadAsset now normalizes first.
 test("bus gate: remote urls smuggled via leading whitespace / embedded tab|newline are STILL blocked", () => {
-  for (const u of [" https://evil.test/x.glb", "\thttps://evil.test/x.vrm", "https\t://evil.test/x.glb", "ht\ttps://evil.test/x.glb", "\n https://evil.test/x.gltf"]) {
-    let err = null, ok = false;
-    loadAsset(u, () => { ok = true; }, (e) => { err = e; });
-    assert.ok(err && /remote URL load blocked/i.test(String(err.message || err)), `blocked smuggled ${JSON.stringify(u)}`);
+  for (const u of [
+    " https://evil.test/x.glb",
+    "\thttps://evil.test/x.vrm",
+    "https\t://evil.test/x.glb",
+    "ht\ttps://evil.test/x.glb",
+    "\n https://evil.test/x.gltf",
+  ]) {
+    let err = null,
+      ok = false;
+    loadAsset(
+      u,
+      () => {
+        ok = true;
+      },
+      (e) => {
+        err = e;
+      }
+    );
+    assert.ok(
+      err && /remote URL load blocked/i.test(String(err.message || err)),
+      `blocked smuggled ${JSON.stringify(u)}`
+    );
     assert.ok(!ok, "onOk did not fire for a smuggled remote url");
   }
 });

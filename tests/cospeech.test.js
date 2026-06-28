@@ -15,11 +15,15 @@ test("silence => stillness (no offsets at all)", () => {
 // not from chatter. So at full volume it must (a) actually move, yet (b) stay under a gentle cap.
 // The cap is a tunable FEEL choice (raise it for a more animated talker), not a frozen constant.
 test("loud speech => actually moves, but stays a gentle beat-emphasis (tunable cap)", () => {
-  const HEAD_CHEST_CAP = 0.12, ARM_CAP = 0.13;   // ~7deg at peak loudness — deliberate; dial up for a livelier talker
+  const HEAD_CHEST_CAP = 0.12,
+    ARM_CAP = 0.13; // ~7deg at peak loudness — deliberate; dial up for a livelier talker
   for (let t = 0; t < 4; t += 0.13) {
     const o = coSpeechPose(t, 1);
-    for (const r of ["head", "chest"]) if (o.parts[r]) for (const v of o.parts[r]) assert.ok(Math.abs(v) <= HEAD_CHEST_CAP, `${r} stays a beat-emphasis, not a flail`);
-    for (const r of ["left_arm", "right_arm"]) assert.ok(Math.abs(o.flex[r][0]) <= ARM_CAP, `${r} stays a beat-emphasis, not a flail`);
+    for (const r of ["head", "chest"])
+      if (o.parts[r])
+        for (const v of o.parts[r]) assert.ok(Math.abs(v) <= HEAD_CHEST_CAP, `${r} stays a beat-emphasis, not a flail`);
+    for (const r of ["left_arm", "right_arm"])
+      assert.ok(Math.abs(o.flex[r][0]) <= ARM_CAP, `${r} stays a beat-emphasis, not a flail`);
   }
   const peakNod = Math.max(...Array.from({ length: 40 }, (_, i) => Math.abs(coSpeechPose(i * 0.05, 1).parts.head[0])));
   assert.ok(peakNod > 0.03, "the head ACTUALLY nods at full volume (not a dead bound)");

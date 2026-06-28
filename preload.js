@@ -14,7 +14,11 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // physically in) is ever grabbable at a time — no double-grab at a bezel seam. uiOpen
   // additionally makes a PEER window focusable while its menu/Settings is open (text
   // inputs need keyboard focus; peers are otherwise non-focusable so they never steal it).
-  setInteractive: (o) => ipcRenderer.send("avatar:interactive", typeof o === "object" && o ? { over: !!o.over, uiOpen: !!o.uiOpen } : { over: !!o, uiOpen: false }),
+  setInteractive: (o) =>
+    ipcRenderer.send(
+      "avatar:interactive",
+      typeof o === "object" && o ? { over: !!o.over, uiOpen: !!o.uiOpen } : { over: !!o, uiOpen: false }
+    ),
   quit: () => ipcRenderer.send("avatar:quit"),
   // Open a native file dialog and import the chosen model into models/ (also
   // handles .unitypackage via import_unitypackage.py). Resolves to {id,label,url},

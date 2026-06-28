@@ -10,7 +10,8 @@ const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
 test("multi-window coords: DIP↔local-px round-trips and respects per-window bounds", () => {
   // middle monitor in the dev rig: origin (2560,145), 1920×1080 DIP, window inner 1920×1080 (ratio 1)
-  const origin = { x: 2560, y: 145 }, bounds = { width: 1920, height: 1080 };
+  const origin = { x: 2560, y: 145 },
+    bounds = { width: 1920, height: 1080 };
   // her base centred on this monitor (global 3520,815) → local px 960,670
   const [lx, ly] = dipToLocalPx(3520, 815, origin, bounds, 1920, 1080);
   assert.ok(close(lx, 960) && close(ly, 670), "global→local px centres her on this display");
@@ -24,8 +25,9 @@ test("multi-window coords: DIP↔local-px round-trips and respects per-window bo
 
 test("multi-window coords: mixed-DPI ratio uses THIS window's own bounds (not 1:1)", () => {
   // a 125%-scaled monitor: 1536×864 DIP but the window reports 1920×1080 CSS px → ratio 1.25
-  const origin = { x: 0, y: 0 }, bounds = { width: 1536, height: 864 };
-  const [lx, ly] = dipToLocalPx(768, 432, origin, bounds, 1920, 1080);   // DIP centre → CSS centre
+  const origin = { x: 0, y: 0 },
+    bounds = { width: 1536, height: 864 };
+  const [lx, ly] = dipToLocalPx(768, 432, origin, bounds, 1920, 1080); // DIP centre → CSS centre
   assert.ok(close(lx, 960) && close(ly, 540), "DIP→CSS scales by inner/bounds, not 1:1");
   const [gx, gy] = localPxToDip(960, 540, origin, bounds, 1920, 1080);
   assert.ok(close(gx, 768) && close(gy, 432), "and inverts cleanly under mixed DPI");
@@ -37,7 +39,7 @@ test("multi-window coords: the .width/.height field name is load-bearing (regres
   const origin = { x: 0, y: 0 };
   const right = dipToLocalPx(960, 540, origin, { width: 1920, height: 1080 }, 1920, 1080);
   assert.ok(close(right[0], 960), "correct {width,height} keeps her on-screen");
-  const wrong = dipToLocalPx(960, 540, origin, { w: 1920, h: 1080 }, 1920, 1080);   // missing width/height
+  const wrong = dipToLocalPx(960, 540, origin, { w: 1920, h: 1080 }, 1920, 1080); // missing width/height
   assert.ok(Math.abs(wrong[0]) > 100000, "a .w/.h-only bounds explodes off-screen — the bug the fields guard against");
 });
 
@@ -46,33 +48,33 @@ test("norm360 wraps any angle into [0,360)", () => {
   assert.strictEqual(norm360(45), 45);
   assert.strictEqual(norm360(360), 0);
   assert.strictEqual(norm360(370), 10);
-  assert.strictEqual(norm360(-10), 350);          // negatives wrap
+  assert.strictEqual(norm360(-10), 350); // negatives wrap
   assert.strictEqual(norm360(-370), 350);
-  assert.strictEqual(norm360(undefined), 0);      // junk → 0
+  assert.strictEqual(norm360(undefined), 0); // junk → 0
   assert.strictEqual(norm360(NaN), 0);
   assert.strictEqual(norm360("90"), 90);
 });
 
 test("rotFromProfile reads {x,y,z} and migrates legacy yaw → Y", () => {
   assert.deepStrictEqual(rotFromProfile({ rot: { x: 10, y: 20, z: 30 } }), { x: 10, y: 20, z: 30 });
-  assert.deepStrictEqual(rotFromProfile({ yaw: 90 }), { x: 0, y: 90, z: 0 });          // legacy single-axis
-  assert.deepStrictEqual(rotFromProfile({}), { x: 0, y: 0, z: 0 });                     // nothing saved
+  assert.deepStrictEqual(rotFromProfile({ yaw: 90 }), { x: 0, y: 90, z: 0 }); // legacy single-axis
+  assert.deepStrictEqual(rotFromProfile({}), { x: 0, y: 0, z: 0 }); // nothing saved
   assert.deepStrictEqual(rotFromProfile(null), { x: 0, y: 0, z: 0 });
-  assert.deepStrictEqual(rotFromProfile({ rot: { x: -10, y: 370, z: 0 } }), { x: 350, y: 10, z: 0 });  // normalized
+  assert.deepStrictEqual(rotFromProfile({ rot: { x: -10, y: 370, z: 0 } }), { x: 350, y: 10, z: 0 }); // normalized
   // a present rot object WINS over a stale legacy yaw
   assert.deepStrictEqual(rotFromProfile({ rot: { x: 0, y: 45, z: 0 }, yaw: 999 }), { x: 0, y: 45, z: 0 });
 });
 
 test("rotToSave returns null for all-zero (so the key is dropped), normalized otherwise", () => {
   assert.strictEqual(rotToSave({ x: 0, y: 0, z: 0 }), null);
-  assert.strictEqual(rotToSave({ x: 360, y: 0, z: -360 }), null);   // all wrap to 0
+  assert.strictEqual(rotToSave({ x: 360, y: 0, z: -360 }), null); // all wrap to 0
   assert.deepStrictEqual(rotToSave({ x: 0, y: 45, z: 0 }), { x: 0, y: 45, z: 0 });
   assert.deepStrictEqual(rotToSave({ x: -10, y: 0, z: 370 }), { x: 350, y: 0, z: 10 });
 });
 
 test("regionFeel: w≤0.001 pins; w=1 is the default feel; w<1 damps; w>1 is bouncier", () => {
   assert.deepStrictEqual(regionFeel(0, 0.14, 0.5, false), { pin: true });
-  assert.deepStrictEqual(regionFeel(0.001, 0.14, 0.5, false), { pin: true });   // boundary pins
+  assert.deepStrictEqual(regionFeel(0.001, 0.14, 0.5, false), { pin: true }); // boundary pins
   const def = regionFeel(1, 0.14, 0.5, false);
   assert.strictEqual(def.pin, false);
   assert.ok(close(def.stiff, 0.14), "w=1 stiff == base");
@@ -94,7 +96,7 @@ test("regionFeel: geo chains are stiffer; dragv is clamped to a floor", () => {
 
 test("pickFps: full rate when active; idle → IDLE; deep-rest → REST", () => {
   assert.strictEqual(pickFps(true, 999, 60, 30, 15, 6), 60);
-  assert.strictEqual(pickFps(false, 3, 60, 30, 15, 6), 30);    // recently active
-  assert.strictEqual(pickFps(false, 6, 60, 30, 15, 6), 30);    // exactly at threshold → still IDLE
-  assert.strictEqual(pickFps(false, 7, 60, 30, 15, 6), 15);    // past threshold → REST
+  assert.strictEqual(pickFps(false, 3, 60, 30, 15, 6), 30); // recently active
+  assert.strictEqual(pickFps(false, 6, 60, 30, 15, 6), 30); // exactly at threshold → still IDLE
+  assert.strictEqual(pickFps(false, 7, 60, 30, 15, 6), 15); // past threshold → REST
 });

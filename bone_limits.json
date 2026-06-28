@@ -1,39 +1,194 @@
 {
-    "_comment": "Anatomical rotation limits for 19 named human bones, in degrees. Salvaged from the killed mods/avatar/enigma_avatar/core/bones.py (slice 2.1-avatar-deadfile, May 26, 2026). Lives next to mod.json. When the avatar mod is rebuilt with a real renderer (Option C), load this file instead of hard-coding the table.",
-    "_schema": {
-        "pitch_min": "minimum pitch (forward/back tilt) in degrees",
-        "pitch_max": "maximum pitch in degrees",
-        "yaw_min": "minimum yaw (left/right turn) in degrees",
-        "yaw_max": "maximum yaw in degrees",
-        "roll_min": "minimum roll (sideways tilt) in degrees",
-        "roll_max": "maximum roll in degrees",
-        "speed_limit": "maximum angular velocity in degrees per second"
+  "_comment": "Anatomical rotation limits for 19 named human bones, in degrees. Salvaged from the killed mods/avatar/enigma_avatar/core/bones.py (slice 2.1-avatar-deadfile, May 26, 2026). Lives next to mod.json. When the avatar mod is rebuilt with a real renderer (Option C), load this file instead of hard-coding the table.",
+  "_schema": {
+    "pitch_min": "minimum pitch (forward/back tilt) in degrees",
+    "pitch_max": "maximum pitch in degrees",
+    "yaw_min": "minimum yaw (left/right turn) in degrees",
+    "yaw_max": "maximum yaw in degrees",
+    "roll_min": "minimum roll (sideways tilt) in degrees",
+    "roll_max": "maximum roll in degrees",
+    "speed_limit": "maximum angular velocity in degrees per second"
+  },
+  "default": {
+    "pitch_min": -45.0,
+    "pitch_max": 45.0,
+    "yaw_min": -45.0,
+    "yaw_max": 45.0,
+    "roll_min": -30.0,
+    "roll_max": 30.0,
+    "speed_limit": 60.0
+  },
+  "bones": {
+    "head": {
+      "pitch_min": -40,
+      "pitch_max": 40,
+      "yaw_min": -80,
+      "yaw_max": 80,
+      "roll_min": -30,
+      "roll_max": 30,
+      "speed_limit": 90.0
     },
-    "default": {
-        "pitch_min": -45.0, "pitch_max": 45.0,
-        "yaw_min": -45.0,   "yaw_max": 45.0,
-        "roll_min": -30.0,  "roll_max": 30.0,
-        "speed_limit": 60.0
+    "neck": {
+      "pitch_min": -30,
+      "pitch_max": 30,
+      "yaw_min": -60,
+      "yaw_max": 60,
+      "roll_min": -20,
+      "roll_max": 20,
+      "speed_limit": 90.0
     },
-    "bones": {
-        "head":           {"pitch_min": -40, "pitch_max":  40, "yaw_min": -80, "yaw_max": 80, "roll_min": -30, "roll_max": 30, "speed_limit": 90.0},
-        "neck":           {"pitch_min": -30, "pitch_max":  30, "yaw_min": -60, "yaw_max": 60, "roll_min": -20, "roll_max": 20, "speed_limit": 90.0},
-        "spine":          {"pitch_min": -30, "pitch_max":  45, "yaw_min": -30, "yaw_max": 30, "roll_min": -20, "roll_max": 20, "speed_limit": 90.0},
-        "chest":          {"pitch_min": -15, "pitch_max":  25, "yaw_min": -20, "yaw_max": 20, "roll_min": -10, "roll_max": 10, "speed_limit": 90.0},
-        "hips":           {"pitch_min": -20, "pitch_max":  20, "yaw_min": -30, "yaw_max": 30, "roll_min": -15, "roll_max": 15, "speed_limit": 90.0},
-        "left_shoulder":  {"pitch_min": -30, "pitch_max":  30, "yaw_min": -30, "yaw_max": 30, "roll_min": -20, "roll_max": 20, "speed_limit": 90.0},
-        "left_arm":       {"pitch_min": -90, "pitch_max": 180, "yaw_min": -90, "yaw_max": 90, "roll_min": -90, "roll_max": 90, "speed_limit": 90.0},
-        "left_forearm":   {"pitch_min":   0, "pitch_max": 145, "yaw_min": -90, "yaw_max": 90, "roll_min":  -5, "roll_max":  5, "speed_limit": 90.0},
-        "left_hand":      {"pitch_min": -80, "pitch_max":  80, "yaw_min": -20, "yaw_max": 45, "roll_min": -45, "roll_max": 45, "speed_limit": 90.0},
-        "right_shoulder": {"pitch_min": -30, "pitch_max":  30, "yaw_min": -30, "yaw_max": 30, "roll_min": -20, "roll_max": 20, "speed_limit": 90.0},
-        "right_arm":      {"pitch_min": -90, "pitch_max": 180, "yaw_min": -90, "yaw_max": 90, "roll_min": -90, "roll_max": 90, "speed_limit": 90.0},
-        "right_forearm":  {"pitch_min":   0, "pitch_max": 145, "yaw_min": -90, "yaw_max": 90, "roll_min":  -5, "roll_max":  5, "speed_limit": 90.0},
-        "right_hand":     {"pitch_min": -80, "pitch_max":  80, "yaw_min": -45, "yaw_max": 20, "roll_min": -45, "roll_max": 45, "speed_limit": 90.0},
-        "left_leg":       {"pitch_min": -30, "pitch_max": 120, "yaw_min": -45, "yaw_max": 45, "roll_min": -45, "roll_max": 30, "speed_limit": 90.0},
-        "left_shin":      {"pitch_min":-140, "pitch_max":   0, "yaw_min":  -5, "yaw_max":  5, "roll_min":  -5, "roll_max":  5, "speed_limit": 90.0},
-        "left_foot":      {"pitch_min": -45, "pitch_max":  45, "yaw_min": -20, "yaw_max": 20, "roll_min": -30, "roll_max": 30, "speed_limit": 90.0},
-        "right_leg":      {"pitch_min": -30, "pitch_max": 120, "yaw_min": -45, "yaw_max": 45, "roll_min": -30, "roll_max": 45, "speed_limit": 90.0},
-        "right_shin":     {"pitch_min":-140, "pitch_max":   0, "yaw_min":  -5, "yaw_max":  5, "roll_min":  -5, "roll_max":  5, "speed_limit": 90.0},
-        "right_foot":     {"pitch_min": -45, "pitch_max":  45, "yaw_min": -20, "yaw_max": 20, "roll_min": -30, "roll_max": 30, "speed_limit": 90.0}
+    "spine": {
+      "pitch_min": -30,
+      "pitch_max": 45,
+      "yaw_min": -30,
+      "yaw_max": 30,
+      "roll_min": -20,
+      "roll_max": 20,
+      "speed_limit": 90.0
+    },
+    "chest": {
+      "pitch_min": -15,
+      "pitch_max": 25,
+      "yaw_min": -20,
+      "yaw_max": 20,
+      "roll_min": -10,
+      "roll_max": 10,
+      "speed_limit": 90.0
+    },
+    "hips": {
+      "pitch_min": -20,
+      "pitch_max": 20,
+      "yaw_min": -30,
+      "yaw_max": 30,
+      "roll_min": -15,
+      "roll_max": 15,
+      "speed_limit": 90.0
+    },
+    "left_shoulder": {
+      "pitch_min": -30,
+      "pitch_max": 30,
+      "yaw_min": -30,
+      "yaw_max": 30,
+      "roll_min": -20,
+      "roll_max": 20,
+      "speed_limit": 90.0
+    },
+    "left_arm": {
+      "pitch_min": -90,
+      "pitch_max": 180,
+      "yaw_min": -90,
+      "yaw_max": 90,
+      "roll_min": -90,
+      "roll_max": 90,
+      "speed_limit": 90.0
+    },
+    "left_forearm": {
+      "pitch_min": 0,
+      "pitch_max": 145,
+      "yaw_min": -90,
+      "yaw_max": 90,
+      "roll_min": -5,
+      "roll_max": 5,
+      "speed_limit": 90.0
+    },
+    "left_hand": {
+      "pitch_min": -80,
+      "pitch_max": 80,
+      "yaw_min": -20,
+      "yaw_max": 45,
+      "roll_min": -45,
+      "roll_max": 45,
+      "speed_limit": 90.0
+    },
+    "right_shoulder": {
+      "pitch_min": -30,
+      "pitch_max": 30,
+      "yaw_min": -30,
+      "yaw_max": 30,
+      "roll_min": -20,
+      "roll_max": 20,
+      "speed_limit": 90.0
+    },
+    "right_arm": {
+      "pitch_min": -90,
+      "pitch_max": 180,
+      "yaw_min": -90,
+      "yaw_max": 90,
+      "roll_min": -90,
+      "roll_max": 90,
+      "speed_limit": 90.0
+    },
+    "right_forearm": {
+      "pitch_min": 0,
+      "pitch_max": 145,
+      "yaw_min": -90,
+      "yaw_max": 90,
+      "roll_min": -5,
+      "roll_max": 5,
+      "speed_limit": 90.0
+    },
+    "right_hand": {
+      "pitch_min": -80,
+      "pitch_max": 80,
+      "yaw_min": -45,
+      "yaw_max": 20,
+      "roll_min": -45,
+      "roll_max": 45,
+      "speed_limit": 90.0
+    },
+    "left_leg": {
+      "pitch_min": -30,
+      "pitch_max": 120,
+      "yaw_min": -45,
+      "yaw_max": 45,
+      "roll_min": -45,
+      "roll_max": 30,
+      "speed_limit": 90.0
+    },
+    "left_shin": {
+      "pitch_min": -140,
+      "pitch_max": 0,
+      "yaw_min": -5,
+      "yaw_max": 5,
+      "roll_min": -5,
+      "roll_max": 5,
+      "speed_limit": 90.0
+    },
+    "left_foot": {
+      "pitch_min": -45,
+      "pitch_max": 45,
+      "yaw_min": -20,
+      "yaw_max": 20,
+      "roll_min": -30,
+      "roll_max": 30,
+      "speed_limit": 90.0
+    },
+    "right_leg": {
+      "pitch_min": -30,
+      "pitch_max": 120,
+      "yaw_min": -45,
+      "yaw_max": 45,
+      "roll_min": -30,
+      "roll_max": 45,
+      "speed_limit": 90.0
+    },
+    "right_shin": {
+      "pitch_min": -140,
+      "pitch_max": 0,
+      "yaw_min": -5,
+      "yaw_max": 5,
+      "roll_min": -5,
+      "roll_max": 5,
+      "speed_limit": 90.0
+    },
+    "right_foot": {
+      "pitch_min": -45,
+      "pitch_max": 45,
+      "yaw_min": -20,
+      "yaw_max": 20,
+      "roll_min": -30,
+      "roll_max": 30,
+      "speed_limit": 90.0
     }
+  }
 }

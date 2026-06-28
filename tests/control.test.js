@@ -7,7 +7,10 @@ import { lookTarget } from "../avatar.js";
 test("extracts tags in order and returns clean spoken text", () => {
   const { clean, tags } = parseControlTags("Sure! [happy] let me show you. [conjure:sword] Here it is.");
   assert.equal(clean, "Sure! let me show you. Here it is.");
-  assert.deepEqual(tags, [{ type: "happy", arg: null }, { type: "conjure", arg: "sword" }]);
+  assert.deepEqual(tags, [
+    { type: "happy", arg: null },
+    { type: "conjure", arg: "sword" },
+  ]);
 });
 
 test("no tags => text unchanged, empty tag list", () => {
@@ -52,7 +55,7 @@ test("parseTagArg: a triple drives pitch, yaw AND roll", () => {
   assert.deepEqual(
     parseTagArg("left_arm=0.8/0.2/0,head=0/0.5/0"),
     { left_arm: [0.8, 0.2, 0], head: [0, 0.5, 0] },
-    "yaw-only and roll-bearing triples both parse per-axis",
+    "yaw-only and roll-bearing triples both parse per-axis"
   );
 });
 
@@ -79,16 +82,25 @@ test("resolvePropName: bare names map to assets; paths pass through; unknown -> 
 // [look:...] resolver — BUG FIX (audit 2026-06-26): stripping [ _-] for the named-direction lookup
 // must NOT eat the minus sign on numeric "px,py" coords, or a negative gaze target gets mirrored.
 test("look: named directions resolve to screen anchors", () => {
-  const W = 1000, H = 800;
+  const W = 1000,
+    H = 800;
   assert.deepEqual(lookTarget("center", W, H), { x: 500, y: 400, label: "center" });
-  assert.deepEqual(lookTarget("up-left", W, H), { x: 0, y: 0, label: "upleft" }, "hyphen/underscore/space variants all normalize");
+  assert.deepEqual(
+    lookTarget("up-left", W, H),
+    { x: 0, y: 0, label: "upleft" },
+    "hyphen/underscore/space variants all normalize"
+  );
   assert.deepEqual(lookTarget("up_left", W, H), { x: 0, y: 0, label: "upleft" });
   assert.equal(lookTarget("left", W, H).x, 0);
   assert.equal(lookTarget(undefined, W, H).label, "center", "no arg -> center");
 });
 
 test("look: explicit px,py PRESERVES negative coordinates (no mirror)", () => {
-  assert.deepEqual(lookTarget("-30,-40", 1000, 800), { x: -30, y: -40, label: "-30,-40" }, "negatives kept (was flipped to 30,40 before the fix)");
+  assert.deepEqual(
+    lookTarget("-30,-40", 1000, 800),
+    { x: -30, y: -40, label: "-30,-40" },
+    "negatives kept (was flipped to 30,40 before the fix)"
+  );
   assert.deepEqual(lookTarget("100,-200", 1000, 800), { x: 100, y: -200, label: "100,-200" });
   assert.deepEqual(lookTarget("250,300", 1000, 800), { x: 250, y: 300, label: "250,300" });
 });

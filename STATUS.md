@@ -8,12 +8,14 @@ AI-composed procedural motion (a masked, weighted LAYER stack) + spring physics 
 and is driven by Enigma / Odysseus (or any LLM) over a local bus.
 
 ## CURRENT STATE -- intent overhaul (2026-06-26)
+
 The engine is primitives-only (no canned gestures), purely generic (no per-model data), and now
 composites motion correctly with a velocity cap. Read these first -- some older sections below
 predate them:
+
 - **No canned gestures / emotes / clips anywhere.** All motion is composed from PRIMITIVES
   (`pose` / `flex` motion layers + per-finger curl, authored by the AI via `perform`). There is
-  no gesture, emote, or clip *catalog* to call -- "purge means purge". (The old `express` bus
+  no gesture, emote, or clip _catalog_ to call -- "purge means purge". (The old `express` bus
   action and `say.py` `express`/`play`/`loop` commands are gone; the AI authors emotion as layers.)
 - **No per-model data.** The per-model `rig_overrides.json` mechanism was **removed end-to-end**
   (loader, the resolver's force/exclude tier, the spring `extra`/`never` and facial
@@ -23,7 +25,7 @@ predate them:
   (`tools/` model-repair) -- never a hand map. The lone per-model eye-flip is now the global
   default (`EYE.flipY: -1`).
 - **Full per-finger control.** Every finger joint resolves into a named chain; `setFingers(side,
-  spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed on the bus as
+spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed on the bus as
   `fingers` and listed in `capabilities().channels.fingers`. (Replaces the whole-hand `gripFingers`.)
 - **Compositor is TRUE sum-then-cap with a velocity clamp.** Same-role layers SUM, then the summed
   offset is clamped ONCE to the per-role joint limit (was wrongly cap-per-layer-then-compose); the
@@ -49,9 +51,11 @@ predate them:
 - Suite: `npm test` -> **186 pass / 0 fail / 11 skipped**; python avatar tests 6/6; `node --check` clean.
 
 ## Motion compositor & AI control (P1-P4)
+
 The AI composes ALL motion as masked, weighted LAYERS on a stack (no canned gesture library);
 disjoint roles SUM, same-role layers SUM-then-cap, timed layers self-expire. Driven over the
 bus (`handleCommand`):
+
 - **`pose` / `layer` / `capabilities`** (P1) -- set a motion layer `{parts,flex,weight,amp,speed,dur,env,id}`,
   run layer-stack ops (add/clear/clearAll), and query what THIS model can drive (roles, flexRoles,
   expressions, channels incl. per-finger control, per-role angle limits + speed limits, units). The
@@ -78,7 +82,9 @@ bus (`handleCommand`):
   (headless tests can't judge feel; software WebGL can't render skinned meshes).
 
 ## Architecture (modules)
+
 The engine is split into focused modules; `avatar.js` is the orchestrator that wires them.
+
 - **`rig.js`** -- bone **identification** cascade (the heart): `resolveRig(model, vrm)` maps any
   rig's bones to the 19 canonical roles via generic tiers, each filling only still-empty roles:
   **VRM humanoid -> name regex -> geometry/topology -> structural "between" repair**. No per-model
@@ -102,6 +108,7 @@ The engine is split into focused modules; `avatar.js` is the orchestrator that w
 - **`main.js`/`preload.js`** -- the Electron shell (transparent overlay, IPC, monitor hop, import dialogs).
 
 ## What works
+
 - **Floats in place** (no gravity/walk); grab its actual **silhouette** (rendered shape), so empty
   space around limbs clicks through to the desktop. Degenerate rigs fall back to a body column.
 - **Bone-ID cascade** identifies rigs robustly. Verified on the model zoo (see Per-avatar below);
@@ -118,14 +125,17 @@ The engine is split into focused modules; `avatar.js` is the orchestrator that w
 - **No model loaded** -- an inert marker; the overlay shows an ASCII DOM hint to add a `.glb`.
 
 ## Run it on your desktop (NO admin)
+
 **Double-click the `Enigma Avatar` desktop icon** (runs `Start-Avatar.ps1` hidden; also `Enigma Avatar.bat`,
 or run `Start-Avatar.ps1` directly to see logs). It pops onto your desktop with **no UI** -- **right-click it**
 for everything. Portable **Node v24** (`%LOCALAPPDATA%\node-portable`) + Electron are installed locally; first
 launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `no_admin_constraint` memory).
+
 - **left-drag** move; scroll or **+/-** resize (**0** resets); **Ctrl+Shift+Alt+Q** quit; **Ctrl+Shift+Alt+C** force click-through (PANIC: reclaim the desktop if she ever blocks clicks); **Ctrl+Shift+Alt+A** force interactive (reach the panel); **H** info panel.
 - Size is remembered per model (localStorage); per-avatar attachments / physics / colors persist in `profiles.json`.
 
 ## AI control (the bus)
+
 - **`bus.py`** -- relay hub on `ws://127.0.0.1:8765` (the launcher starts it; or run it standalone). A
   driver sends JSON `{action, ...}` commands that `avatar.js`'s `handleCommand` applies; any LLM that
   speaks that protocol drives her.
@@ -133,6 +143,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
 - **`speak.py`** -- Kokoro TTS: synthesize text and have her speak it + lip-sync.
 
 ## Tests
+
 - **`npm test`** (in `mods/avatar/`) runs the Node unit tests in `tests/`: the rig cascade (name /
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
@@ -147,11 +158,13 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   a guard that fails loudly on an all-skip masquerade) -- so a cascade change that quietly breaks
   a real rig fails the suite. (Skips cleanly on a fresh clone, where `models/` is gitignored-absent.)
 - Also wired into the project's pytest suite via **`tests/test_avatar_rig.py`** (alongside `tests/test_avatar_bone_data.py`,
-  which locks the 19 role names in `bone_limits.json`). Verification of *rendering/feel* still needs real eyes
+  which locks the 19 role names in `bone_limits.json`). Verification of _rendering/feel_ still needs real eyes
   (software-WebGL can't render skinned meshes) -- drive the live overlay + `EnigmaAvatar.snap()` to inspect.
 
 ## Per-avatar reality (cascade results)
+
 _All counts below are ASSERTED by `tests/realmodels.test.js` (verified via `tools/rig_report.mjs`)._
+
 - **Roxanne / 51dc** -- 19 roles by name; full role coverage + hair/tail physics.
 - **Mal0 / Toy Chica / Fexa** -- 19 roles (name + geometry filling torso/limb gaps; Chica's Blender `.L/.R` sides resolve -- the old T-pose is fixed).
 - **Lolbit** -- 17: its arms are a 3-joint `Shoulder->Elbow->Wrist` chain with **no separate upper-arm bone**, so `left/right_arm` stay empty (Shoulder->`shoulder`, Elbow->`forearm`, Wrist->`hand`). **Mangle** -- 15: no `hips` bone, chest is named `Spine1` (loses to `Spine` for the `spine` slot), and decorative `ShoulderPad` + a duplicated skeleton confuse the right side. Both could be recovered by a cascade-tier improvement, but because it means mapping a role onto a joint it wasn't named for, the resulting arm-swing **feel needs a live look** -- measure any candidate with `node tools/rig_report.mjs <model>` first.
@@ -160,6 +173,7 @@ _All counts below are ASSERTED by `tests/realmodels.test.js` (verified via `tool
 - **grace_howard** -- MMD export whose Japanese bone names were **already corrupted to `U+FFFD` at export time and baked into the (valid-UTF-8) glTF as literal replacement chars** (~2.6k of them; the original Shift-JIS is gone, not recoverable from this file). three.js and the `rig_report` tool both read the same `U+FFFD` soup, and many bones collapse to identical names -- so the name tier can't even address them uniquely. It needs a **UTF-8 re-export from the source MMD model** (or new geometry-tier coverage), not a name map. **Spyro** -- no skin/joints (static), correct.
 
 ## Next (open work)
+
 1. **Feel tuning by the user's eye** on the live overlay: motion amplitude/choreography, the
    velocity-clamp's effect on co-speech snappiness vs the Filian target, jaw axis/sign (`facialTune`),
    lip-sync gain. Headless tests can't judge feel.

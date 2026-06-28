@@ -13,20 +13,20 @@ test("innocent real-word bones don't classify as NSFW (audit false positives)", 
   assert.notStrictEqual(classifyBone("Top_Knot"), "dick");
   assert.notStrictEqual(classifyBone("Butterfly_L"), "butt", "a hair ornament is not a butt");
   assert.notStrictEqual(classifyBone("Canal_flow"), "anus");
-  assert.strictEqual(classifyBone("KnotBase"), "dick", "the real canine-anatomy name still lands");   // guard must not over-block
+  assert.strictEqual(classifyBone("KnotBase"), "dick", "the real canine-anatomy name still lands"); // guard must not over-block
 });
 
 test("audit round 2: mechanical / hair / cockpit names stay innocent; missing NSFW vocab lands", () => {
-  assert.notStrictEqual(classifyBone("AnalogStick_L"), "anus");      // gamepad prop on a robot rig
+  assert.notStrictEqual(classifyBone("AnalogStick_L"), "anus"); // gamepad prop on a robot rig
   assert.notStrictEqual(classifyBone("Analog_01"), "anus");
-  assert.strictEqual(classifyBone("Anal_01"), "anus");               // the real name still lands
-  assert.strictEqual(classifyBone("HairKnot"), "hair");              // a bun is HAIR, not anatomy
+  assert.strictEqual(classifyBone("Anal_01"), "anus"); // the real name still lands
+  assert.strictEqual(classifyBone("HairKnot"), "hair"); // a bun is HAIR, not anatomy
   assert.strictEqual(classifyBone("Hair_Knot_L"), "hair");
   assert.notStrictEqual(classifyBone("RopeKnot"), "dick");
-  assert.strictEqual(classifyBone("KnotBase"), "dick");              // canine anatomy still lands (no over-block)
-  assert.strictEqual(classifyBone("Gear_01"), null);                 // robot gears are not ears (FNaF animatronics!)
+  assert.strictEqual(classifyBone("KnotBase"), "dick"); // canine anatomy still lands (no over-block)
+  assert.strictEqual(classifyBone("Gear_01"), null); // robot gears are not ears (FNaF animatronics!)
   assert.strictEqual(classifyBone("Linear_Drive"), null);
-  assert.strictEqual(classifyBone("LeftEar"), "ear");                // camel-case side prefix still lands
+  assert.strictEqual(classifyBone("LeftEar"), "ear"); // camel-case side prefix still lands
   assert.strictEqual(classifyBone("Ear_03"), "ear");
   assert.strictEqual(classifyBone("Cockpit_Frame"), null);
   assert.notStrictEqual(classifyBone("Peacock_Feather"), "dick");
@@ -39,21 +39,25 @@ test("audit round 2: mechanical / hair / cockpit names stay innocent; missing NS
 });
 
 test("audit round 3: corrective/mechanical names stay innocent; tightened guards hold", () => {
-  assert.strictEqual(classifyBone("Bicep_Bulge_R"), null, "muscle correctives are not NSFW (bulge dropped from the vocab)");
+  assert.strictEqual(
+    classifyBone("Bicep_Bulge_R"),
+    null,
+    "muscle correctives are not NSFW (bulge dropped from the vocab)"
+  );
   assert.strictEqual(classifyBone("EyeBulge_L"), null);
   assert.strictEqual(classifyBone("Calf_Bulge"), null);
-  assert.strictEqual(classifyBone("Braid_Knot_L"), "hair");          // a braid's knot is hair
+  assert.strictEqual(classifyBone("Braid_Knot_L"), "hair"); // a braid's knot is hair
   assert.notStrictEqual(classifyBone("BunKnot"), "dick");
-  assert.notStrictEqual(classifyBone("Hair__Knot"), "dick");          // double separator slipped the old single-char lookbehind
-  assert.strictEqual(classifyBone("KnotBase"), "dick");               // canine anatomy STILL lands
+  assert.notStrictEqual(classifyBone("Hair__Knot"), "dick"); // double separator slipped the old single-char lookbehind
+  assert.strictEqual(classifyBone("KnotBase"), "dick"); // canine anatomy STILL lands
   assert.notStrictEqual(classifyBone("Analysis_Helper"), "anus");
   assert.strictEqual(classifyBone("Anal_01"), "anus");
-  assert.strictEqual(classifyBone("Shears_L"), null);                 // not an ear
+  assert.strictEqual(classifyBone("Shears_L"), null); // not an ear
   assert.strictEqual(classifyBone("Hearing_Aid"), null);
   assert.strictEqual(classifyBone("Early_Bone"), null);
-  assert.strictEqual(classifyBone("DEF-Hear.L_021"), "ear");          // Mal0's spelling STILL lands
+  assert.strictEqual(classifyBone("DEF-Hear.L_021"), "ear"); // Mal0's spelling STILL lands
   assert.strictEqual(classifyBone("Cockle_Shell"), null);
-  assert.strictEqual(classifyBone("Cocker_Tail"), "tail");            // not a dick (tail is fine)
+  assert.strictEqual(classifyBone("Cocker_Tail"), "tail"); // not a dick (tail is fine)
   assert.strictEqual(classifyBone("Cock_01"), "dick");
   assert.strictEqual(classifyBone("Clitellum"), null);
   assert.strictEqual(classifyBone("DEF-Clit_01"), "genital");
@@ -68,23 +72,23 @@ test("Mal0's NSFW rig classifies into the right regions", () => {
   assert.strictEqual(classifyBone("Pussy1.L_0179"), "genital");
   assert.strictEqual(classifyBone("Pussy2.R_0183"), "genital");
   assert.strictEqual(classifyBone("AssHole1.R_0189"), "anus");
-  assert.strictEqual(classifyBone("DE-Dick1_0210"), "dick");         // "Dick1" — no word boundary
+  assert.strictEqual(classifyBone("DE-Dick1_0210"), "dick"); // "Dick1" — no word boundary
   assert.strictEqual(classifyBone("DE-Dick1.007_end_0224"), "dick");
   assert.strictEqual(classifyBone("Sheath_01"), "dick");
   assert.strictEqual(classifyBone("KnotBase"), "dick");
   assert.strictEqual(classifyBone("DEF-TailC_0203"), "tail");
   assert.strictEqual(classifyBone("DEF-HairC3_029"), "hair");
-  assert.strictEqual(classifyBone("DEF-Hear.L_021"), "ear");          // Mal0 spells "ear" as "Hear"
+  assert.strictEqual(classifyBone("DEF-Hear.L_021"), "ear"); // Mal0 spells "ear" as "Hear"
 });
 
 test("structural / non-jiggle bones are NOT sprung (the guards)", () => {
-  assert.strictEqual(classifyBone("DEF-forearm.L_092"), null);        // forEARm — not an ear
-  assert.strictEqual(classifyBone("thigh_r_119"), null);             // aveline leg — not jiggle (would go floppy)
+  assert.strictEqual(classifyBone("DEF-forearm.L_092"), null); // forEARm — not an ear
+  assert.strictEqual(classifyBone("thigh_r_119"), null); // aveline leg — not jiggle (would go floppy)
   assert.strictEqual(classifyBone("thigh_knee_l_125"), null);
-  assert.strictEqual(classifyBone("heart_up_54"), null);             // aveline hEARt deco — not an ear
-  assert.strictEqual(classifyBone("L_hip_JNT_0182"), null);          // renamon hip — structural
-  assert.strictEqual(classifyBone("Button01"), null);               // butt(?!on)
-  assert.strictEqual(classifyBone("Finger_R_03"), null);            // fin(?!ger)
+  assert.strictEqual(classifyBone("heart_up_54"), null); // aveline hEARt deco — not an ear
+  assert.strictEqual(classifyBone("L_hip_JNT_0182"), null); // renamon hip — structural
+  assert.strictEqual(classifyBone("Button01"), null); // butt(?!on)
+  assert.strictEqual(classifyBone("Finger_R_03"), null); // fin(?!ger)
   assert.strictEqual(classifyBone("mixamorig:Spine"), null);
 });
 
@@ -100,9 +104,9 @@ test("renamon / makiro / aveline danglies classify sensibly", () => {
 test("cloth is its own region; generic jiggle bones are caught", () => {
   assert.strictEqual(classifyBone("Skirt_F_01"), "cloth");
   assert.strictEqual(classifyBone("Cloth_back_2"), "cloth");
-  assert.strictEqual(classifyBone("BreastJiggle_L"), "breast");       // body region wins over generic
+  assert.strictEqual(classifyBone("BreastJiggle_L"), "breast"); // body region wins over generic
   assert.strictEqual(classifyBone("Boob_Bounce_01"), "breast");
-  assert.strictEqual(classifyBone("Wobble_03"), "jiggle");            // generic fallback
+  assert.strictEqual(classifyBone("Wobble_03"), "jiggle"); // generic fallback
   assert.strictEqual(classifyBone(""), null);
   assert.strictEqual(classifyBone(null), null);
 });

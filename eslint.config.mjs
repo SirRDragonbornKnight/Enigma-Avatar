@@ -20,10 +20,13 @@ export default [
   {
     // Patterns this codebase uses on purpose — keep them from drowning the real signal.
     rules: {
-      "no-empty": ["error", { allowEmptyCatch: true }],                          // fire-and-forget catches are deliberate
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],  // {action, ...rest} key-strip idiom is intentional
+      "no-empty": ["error", { allowEmptyCatch: true }], // fire-and-forget catches are deliberate
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }], // {action, ...rest} key-strip idiom is intentional
       "no-constant-condition": ["error", { checkLoops: false }],
-      "no-irregular-whitespace": ["error", { skipStrings: true, skipTemplates: true, skipRegExps: true, skipComments: true }],  // unicode in mojibake-repair regexes is intentional
+      "no-irregular-whitespace": [
+        "error",
+        { skipStrings: true, skipTemplates: true, skipRegExps: true, skipComments: true },
+      ], // unicode in mojibake-repair regexes is intentional
     },
   },
   {

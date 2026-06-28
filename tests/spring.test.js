@@ -29,13 +29,23 @@ test("role-matched limbs are NOT sprung once excluded (Phase 1 fix)", () => {
 });
 
 test("springs are DEAD STILL at rest (the breeze was deleted with the idle system, 2026-06-12)", () => {
-  const findBone = (m, n) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === n) b = o; }); return b; };
-  const m = hairRig(); const s = buildSpringBones(m, {});
+  const findBone = (m, n) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === n) b = o;
+    });
+    return b;
+  };
+  const m = hairRig();
+  const s = buildSpringBones(m, {});
   const q0 = findBone(m, "Hair_01").quaternion.clone();
-  for (let i = 0; i < 240; i++) s.update(1 / 60);                       // 4s, body perfectly still
+  for (let i = 0; i < 240; i++) s.update(1 / 60); // 4s, body perfectly still
   const q = findBone(m, "Hair_01").quaternion;
   const dot = Math.abs(q0.x * q.x + q0.y * q.y + q0.z * q.z + q0.w * q.w);
-  assert.ok(1 - dot < 1e-9, `sprung hair must NOT move on its own at rest (quat dot ${dot}) — springs react to body motion only`);
+  assert.ok(
+    1 - dot < 1e-9,
+    `sprung hair must NOT move on its own at rest (quat dot ${dot}) — springs react to body motion only`
+  );
 });
 
 test("GEOMETRIC-fallback chain does NOT sag under gravity at rest (no self-generated motion)", () => {
@@ -44,18 +54,34 @@ test("GEOMETRIC-fallback chain does NOT sag under gravity at rest (no self-gener
   // pose. Before the gate, update() added gravity to every tip each frame and a geo chain settled
   // visibly low. We snapshot every sprung bone's quaternion + its tip world position and assert both
   // are unmoved after a long settle.
-  const m = opaqueBiped(); const s = buildSpringBones(m, {});
+  const m = opaqueBiped();
+  const s = buildSpringBones(m, {});
   assert.ok(s.count >= 3, `opaque rig must hit the >=3-link geometric fallback (got ${s.count})`);
   const sprung = new Set(s.names);
-  const snap = (m) => { const out = new Map(); m.traverse((o) => { if (o.isBone && sprung.has(o.name)) { o.updateWorldMatrix(true, false); out.set(o.name, { q: o.quaternion.clone(), p: o.getWorldPosition(new THREE.Vector3()) }); } }); return out; };
+  const snap = (m) => {
+    const out = new Map();
+    m.traverse((o) => {
+      if (o.isBone && sprung.has(o.name)) {
+        o.updateWorldMatrix(true, false);
+        out.set(o.name, { q: o.quaternion.clone(), p: o.getWorldPosition(new THREE.Vector3()) });
+      }
+    });
+    return out;
+  };
   const before = snap(m);
-  for (let i = 0; i < 600; i++) s.update(1 / 60);                       // 10s, body perfectly still
+  for (let i = 0; i < 600; i++) s.update(1 / 60); // 10s, body perfectly still
   const after = snap(m);
   for (const [name, b0] of before) {
     const b1 = after.get(name);
     const dot = Math.abs(b0.q.x * b1.q.x + b0.q.y * b1.q.y + b0.q.z * b1.q.z + b0.q.w * b1.q.w);
-    assert.ok(1 - dot < 1e-9, `geo bone ${name} rotated on its own at rest (quat dot ${dot}) — gravity must be gated on real motion`);
-    assert.ok(b0.p.distanceTo(b1.p) < 1e-6, `geo bone ${name} sagged at rest (moved ${b0.p.distanceTo(b1.p)}m) — a motionless body must not fall`);
+    assert.ok(
+      1 - dot < 1e-9,
+      `geo bone ${name} rotated on its own at rest (quat dot ${dot}) — gravity must be gated on real motion`
+    );
+    assert.ok(
+      b0.p.distanceTo(b1.p) < 1e-6,
+      `geo bone ${name} sagged at rest (moved ${b0.p.distanceTo(b1.p)}m) — a motionless body must not fall`
+    );
   }
 });
 
@@ -64,7 +90,9 @@ test("constructor regionWeight from a saved blob is CLAMPED to 0..2 (audit 2026-
   // CONSTRUCTOR spread directly — an out-of-range weight there used to bypass the 0..2 slider clamp
   // and drive a verlet instability (near-zero stiffness = permanently floppy). clampParams now covers it.
   const wOf = (rw, region) => {
-    const r = buildSpringBones(hairRig(), { regionWeight: rw }).regions().find((x) => x.region === region);
+    const r = buildSpringBones(hairRig(), { regionWeight: rw })
+      .regions()
+      .find((x) => x.region === region);
     return r && r.weight;
   };
   assert.equal(wOf({ hair: 1e9 }, "hair"), 2, "huge weight clamped to 2");
@@ -73,30 +101,58 @@ test("constructor regionWeight from a saved blob is CLAMPED to 0..2 (audit 2026-
 });
 
 test("impulse() kicks only the matching region's bones, then settles; unknown region returns false", () => {
-  const findTail = (m) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === "Tail") b = o; }); return b; };
-  const steps = (s, n) => { for (let i = 0; i < n; i++) s.update(1 / 60); };
+  const findTail = (m) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === "Tail") b = o;
+    });
+    return b;
+  };
+  const steps = (s, n) => {
+    for (let i = 0; i < n; i++) s.update(1 / 60);
+  };
   // Baseline: same rig, same step count, NO impulse.
-  const mA = hairRig(); const sA = buildSpringBones(mA); steps(sA, 12);
+  const mA = hairRig();
+  const sA = buildSpringBones(mA);
+  steps(sA, 12);
   const qA = findTail(mA).quaternion.clone();
   // Impulsed: a strong lateral tail kick must visibly rotate the tail bone vs the baseline.
-  const mB = hairRig(); const sB = buildSpringBones(mB);
+  const mB = hairRig();
+  const sB = buildSpringBones(mB);
   assert.equal(sB.impulse("tail", { x: 8 }, 0.3), true, "model has a tail → accepted");
-  assert.equal(sB.impulse("wing", { x: 8 }, 0.3), false, "no wings on this rig → rejected (caller can try another region)");
+  assert.equal(
+    sB.impulse("wing", { x: 8 }, 0.3),
+    false,
+    "no wings on this rig → rejected (caller can try another region)"
+  );
   sB.setRegionWeight("hair", 0);
-  assert.equal(sB.impulse("hair", { x: 8 }, 0.3), false, "user-pinned region (weight 0) → rejected, fidget falls through instead of landing invisibly");
+  assert.equal(
+    sB.impulse("hair", { x: 8 }, 0.3),
+    false,
+    "user-pinned region (weight 0) → rejected, fidget falls through instead of landing invisibly"
+  );
   sB.setRegionWeight("hair", 1);
   steps(sB, 12);
   const qB = findTail(mB).quaternion;
   const dot = Math.abs(qA.x * qB.x + qA.y * qB.y + qA.z * qB.z + qA.w * qB.w);
   assert.ok(dot < 0.99995, `tail must deflect under the impulse (quat dot ${dot})`);
   // Region isolation: a HAIR bone must match the no-impulse baseline exactly (the kick was tail-only).
-  const findHair = (m) => { let b = null; m.traverse((o) => { if (o.isBone && o.name === "Hair_01") b = o; }); return b; };
-  const hA = findHair(mA).quaternion, hB = findHair(mB).quaternion;
+  const findHair = (m) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === "Hair_01") b = o;
+    });
+    return b;
+  };
+  const hA = findHair(mA).quaternion,
+    hB = findHair(mB).quaternion;
   const hdot = Math.abs(hA.x * hB.x + hA.y * hB.y + hA.z * hB.z + hA.w * hB.w);
   assert.ok(hdot > 0.999999, `hair must be untouched by a tail impulse (quat dot ${hdot})`);
   // Settle: long after the impulse ends, the tail returns toward rest (≈ the baseline pose).
-  steps(sB, 600); steps(sA, 600);
-  const qA2 = findTail(mA).quaternion, qB2 = findTail(mB).quaternion;
+  steps(sB, 600);
+  steps(sA, 600);
+  const qA2 = findTail(mA).quaternion,
+    qB2 = findTail(mB).quaternion;
   const sdot = Math.abs(qA2.x * qB2.x + qA2.y * qB2.y + qA2.z * qB2.z + qA2.w * qB2.w);
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });

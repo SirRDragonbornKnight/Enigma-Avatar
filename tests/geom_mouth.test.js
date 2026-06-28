@@ -13,21 +13,26 @@ import { detectMouthMorph } from "../geom_mouth.js";
 function makeModel(morphDeltas) {
   const n = 12;
   const base = [];
-  for (let i = 0; i < n; i++) base.push(0, i / (n - 1), 0);   // y: 0 .. 1
+  for (let i = 0; i < n; i++) base.push(0, i / (n - 1), 0); // y: 0 .. 1
   const geom = new THREE.BufferGeometry();
   geom.setAttribute("position", new THREE.Float32BufferAttribute(base, 3));
   geom.morphAttributes.position = morphDeltas.map((d) => new THREE.Float32BufferAttribute(d, 3));
   const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial());
   mesh.morphTargetInfluences = morphDeltas.map(() => 0);
-  const g = new THREE.Group(); g.add(mesh);
+  const g = new THREE.Group();
+  g.add(mesh);
   return g;
 }
 const N = 12;
-const moveY = (pred, dy) => { const a = []; for (let i = 0; i < N; i++) a.push(0, pred(i / (N - 1)) ? dy : 0, 0); return a; };
+const moveY = (pred, dy) => {
+  const a = [];
+  for (let i = 0; i < N; i++) a.push(0, pred(i / (N - 1)) ? dy : 0, 0);
+  return a;
+};
 
 test("picks the morph that drops HEAD-region verts downward (a jaw drop)", () => {
-  const head = moveY((y) => y >= 0.7, -0.1);   // morph 0: head verts move DOWN → the MOUTH
-  const body = moveY((y) => y <= 0.3, -0.1);   // morph 1: body verts move down → below headCut, ignored
+  const head = moveY((y) => y >= 0.7, -0.1); // morph 0: head verts move DOWN → the MOUTH
+  const body = moveY((y) => y <= 0.3, -0.1); // morph 1: body verts move down → below headCut, ignored
   const r = detectMouthMorph(makeModel([head, body]));
   assert.ok(r, "should detect a mouth morph");
   assert.strictEqual(r.index, 0, "morph 0 (head jaw-drop) is the mouth");
@@ -35,14 +40,15 @@ test("picks the morph that drops HEAD-region verts downward (a jaw drop)", () =>
 });
 
 test("returns null when no morph drops the head — acknowledge 'no mouth', never fake", () => {
-  const headUp = moveY((y) => y >= 0.7, +0.1);   // head verts move UP — not a jaw drop
+  const headUp = moveY((y) => y >= 0.7, +0.1); // head verts move UP — not a jaw drop
   assert.strictEqual(detectMouthMorph(makeModel([headUp])), null);
 });
 
 test("returns null for a model with no morph targets", () => {
   const geom = new THREE.BufferGeometry();
   geom.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0, 1, 0], 3));
-  const g = new THREE.Group(); g.add(new THREE.Mesh(geom, new THREE.MeshBasicMaterial()));
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(geom, new THREE.MeshBasicMaterial()));
   assert.strictEqual(detectMouthMorph(g), null);
 });
 
@@ -59,24 +65,29 @@ test("works at LOW morph count (near-equal gate, not a median gate)", () => {
 // jaw morph (at y~0.7..1.0) is invisible. Anchoring on the head BONE recovers it.
 test("#26 head-anchored cut ignores hair-skewed bbox top (anchors on the head bone)", () => {
   // face column y 0..1 (the real head), plus a thin hair strip rising to y=2 with NO morph.
-  const n = 12, base = [];
+  const n = 12,
+    base = [];
   for (let i = 0; i < n; i++) base.push(0, i / (n - 1), 0);
   const geom = new THREE.BufferGeometry();
   geom.setAttribute("position", new THREE.Float32BufferAttribute(base, 3));
   // jaw morph: drops the upper-face verts (y in 0.8..1.0) down — that's the mouth opening.
   const jaw = [];
-  for (let i = 0; i < n; i++) { const y = i / (n - 1); jaw.push(0, y >= 0.8 ? -0.1 : 0, 0); }
+  for (let i = 0; i < n; i++) {
+    const y = i / (n - 1);
+    jaw.push(0, y >= 0.8 ? -0.1 : 0, 0);
+  }
   geom.morphAttributes.position = [new THREE.Float32BufferAttribute(jaw, 3)];
   const faceMesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial());
   faceMesh.morphTargetInfluences = [0];
 
   const hair = new THREE.BufferGeometry();
-  hair.setAttribute("position", new THREE.Float32BufferAttribute([0, 1.5, 0, 0, 2.0, 0], 3));   // skews bbox top to 2.0
+  hair.setAttribute("position", new THREE.Float32BufferAttribute([0, 1.5, 0, 0, 2.0, 0], 3)); // skews bbox top to 2.0
   const hairMesh = new THREE.Mesh(hair, new THREE.MeshBasicMaterial());
 
-  const head = new THREE.Bone();   // head bone at the skull base (y=0.7) — top of the FACE, below hair
+  const head = new THREE.Bone(); // head bone at the skull base (y=0.7) — top of the FACE, below hair
   head.position.set(0, 0.7, 0);
-  const g = new THREE.Group(); g.add(faceMesh, hairMesh, head);
+  const g = new THREE.Group();
+  g.add(faceMesh, hairMesh, head);
   g.updateWorldMatrix(true, true);
 
   // Anchored: span = topmost(2.0) - headY(0.7) = 1.3, cut = 0.7 - 0.35*1.3 = 0.245 -> the jaw
