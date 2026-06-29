@@ -57,6 +57,8 @@ let gPos = { x: 0, y: 0 };
 let _drag = null; // { winId, grabX, grabY, beatAt, beatCur } | null  (grab offset in DIP)
 let _dragTimer = null;
 let _overByWin = new Map(); // winId -> bool (this window's silhouette hit-test result)
+let _lastReportByWin = new Map(); // winId -> ms timestamp of its last hit-test report (liveness)
+const REPORT_STALE_MS = 2500; // a window 'over' but silent longer than this is treated as a HUNG renderer -> forced click-through (fail-open). Healthy renderers heartbeat ~1x/s from their render loop, so an idle-but-legit hover stays fresh.
 let currentModelUrl = null; // last model the brain loaded → peers mirror it
 
 const MODELS_DIR = path.join(__dirname, "models");
@@ -197,7 +199,11 @@ function applyInteractive() {
     else if (_drag)
       interactive = w.win.webContents.id === _drag.winId; // dragging → the GRAB window only, full-window, until release
     else {
-      const over = _overByWin.get(w.win.webContents.id) || false;
+      const id = w.win.webContents.id;
+      let over = _overByWin.get(id) || false;
+      // Self-heal: a renderer that latched 'over:true' then HUNG keeps capturing clicks over its
+      // footprint forever. If its last report is stale, fail OPEN (let clicks through) until it revives.
+      if (over && Date.now() - (_lastReportByWin.get(id) || 0) > REPORT_STALE_MS) over = false;
       interactive = (forceInteractive || over) && w.displayId === cursorDisplayId;
     }
     try {
@@ -299,6 +305,10 @@ function makeWindow(display, isBrain, peerCount) {
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
   // sits blank forever, never knowing its role (the audited "reload bricks every window" bug).
   win.webContents.on("did-finish-load", () => {
+    // A reload re-runs the renderer from scratch; drop any stale hit-test state for this (reused)
+    // webContents id so a pre-reload 'over:true' can't keep capturing clicks before the first report.
+    _overByWin.delete(win.webContents.id);
+    _lastReportByWin.delete(win.webContents.id);
     try {
       if (!win.isVisible()) win.showInactive();
     } catch {} // reveal WITHOUT activating — keeps the user's game/app in the foreground (paired with show:false above)
@@ -336,9 +346,13 @@ function makeWindow(display, isBrain, peerCount) {
           )
       );
   });
-  win.webContents.on("unresponsive", () =>
-    console.error("[main] renderer unresponsive (win " + win.webContents.id + ")")
-  );
+  win.webContents.on("unresponsive", () => {
+    // Immediate fail-open: don't wait for the staleness watchdog — drop this window's capture NOW.
+    console.error("[main] renderer unresponsive (win " + win.webContents.id + ") -> forcing click-through");
+    _overByWin.delete(win.webContents.id);
+    _lastReportByWin.delete(win.webContents.id);
+    applyInteractive();
+  });
   // An UNEXPECTED close (Alt+F4 on the focusable brain, or anything else) must not leave a
   // half-dead set (stale windows[] entry, frozen peers, dead bus) — rebuild cleanly. Expected
   // closes (rebuild's own destroys, app quit) are guarded out.
@@ -568,6 +582,10 @@ function applyTopmost() {
 let _topmostTimer = setInterval(() => {
   if (!_fsActive) applyTopmost();
 }, 4000);
+// Self-heal watchdog: re-arbitrate click-through ~1x/s even when no IPC event fires, so a HUNG
+// renderer that latched 'over:true' is forced through within ~REPORT_STALE_MS (see applyInteractive).
+// Cheap (a few setIgnoreMouseEvents calls); the latch can never outlive a wedged renderer.
+let _healTimer = setInterval(applyInteractive, 1000);
 function buildTrayMenu() {
   const prim = primaryDisplay().id;
   const list = displays()
@@ -685,6 +703,7 @@ function init() {
   ipcMain.on("avatar:interactive", (e, p) => {
     const over = p && typeof p === "object" ? !!p.over || !!p.uiOpen : !!p;
     _overByWin.set(e.sender.id, over);
+    _lastReportByWin.set(e.sender.id, Date.now()); // liveness beat — keeps a legit idle hover fresh
     const ent = entryByWinId(e.sender.id);
     if (ent && !ent.isBrain) {
       const f = !!(p && typeof p === "object" && p.uiOpen);
@@ -984,6 +1003,9 @@ function init() {
   app.on("render-process-gone", (_e, wc, d) => {
     console.error("[main] render-process-gone:", JSON.stringify(d));
     endDrag(); // a crash mid-drag loses the renderer's pointerup → without this she stays glued to the cursor
+    _overByWin.delete(wc.id); // a dead renderer must not leave a stale 'over:true' capturing clicks
+    _lastReportByWin.delete(wc.id);
+    applyInteractive();
     const e = entryByWinId(wc.id);
     if (e) {
       try {
@@ -1017,6 +1039,10 @@ app.on("will-quit", () => {
   if (_topmostTimer) {
     clearInterval(_topmostTimer);
     _topmostTimer = null;
+  }
+  if (_healTimer) {
+    clearInterval(_healTimer);
+    _healTimer = null;
   }
   if (_stopFsWatch) {
     try {

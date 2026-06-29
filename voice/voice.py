@@ -652,6 +652,14 @@ class Voice:
         text = params.get("text")
         if not text:
             return {"success": False, "error": "text required"}
+        # Optional per-request voice/speed — change the resident pipeline's settings WITHOUT reloading
+        # the model (Kokoro takes voice/speed per generate call), so one daemon serves every voice.
+        voice = params.get("voice")
+        if voice:
+            self.pipeline.tts.set_voice(voice)  # type: ignore[union-attr]
+        speed = params.get("speed")
+        if speed is not None:
+            self.pipeline.tts.set_rate(float(speed))  # type: ignore[union-attr]
         out_param = params.get("out_path") or params.get("output_path")
         out_path = Path(out_param) if out_param else None
         result = self.pipeline.tts.generate_to_file(text, out_path=out_path)  # type: ignore[union-attr]
@@ -918,7 +926,10 @@ class Voice:
                         msg.payload.get("params", {}),
                     )
                     resp = Message(type=MessageType.RESPONSE, payload=result, id=msg.id)
-                    client.sendall(resp.to_bytes())
+                    resp_data = resp.to_bytes()
+                    # length-prefixed, matching the request framing and connect_to_router (was raw
+                    # bytes with no prefix here — a client could not frame the response reliably)
+                    client.sendall(struct.pack(">I", len(resp_data)) + resp_data)
         except Exception as e:
             logger.error(f"Client error: {e}")
         finally:

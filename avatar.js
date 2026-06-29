@@ -17,6 +17,9 @@ import { parseControlTags, parseTagArg, resolvePropName } from "./control.js"; /
 import { buildSpringBones } from "./spring.js";
 import { createPhysics } from "./physics.js";
 import { buildFacial } from "./facial.js";
+import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./hittest.js"; // pure, unit-tested click-through math
+import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./placement.js"; // pure, unit-tested placement math
+import { headLookTarget, eyeLookAngles, eyeSide } from "./look.js"; // pure, unit-tested cursor/eye-look math
 import { resolveRig, ROLES } from "./rig.js";
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
 // clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
@@ -375,33 +378,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     );
   }
   function setPlatforms(list) {
-    platforms = (Array.isArray(list) ? list : [])
-      .map((p) => ({ gx: +p.gx, gy: +p.gy, w: Math.max(24, +p.w || 220) }))
-      .filter((p) => isFinite(p.gx) && isFinite(p.gy))
-      .slice(0, 32);
+    platforms = sanitizePlatforms(list);
     renderPlatforms();
     syncPlatformPhysics();
     setStatus(platforms.length ? `platforms: ${platforms.length}` : "platforms cleared");
     return platforms.length;
   }
   function surfaceYAt(gx, gy) {
-    // nearest AI-placed PLATFORM top under gx, within the snap band
-    // SCREEN-BOTTOM FLOOR SNAP REMOVED (user request 2026-06-25: "snap to bottom removed") — she no
-    // longer auto-rests on the desk line; only AI-placed platforms are snap targets now. With no
-    // platform under her, this returns null and floorSnap() is a no-op (she stays where released).
-    const d = curDisp,
-      band = d.height * 0.05;
-    let best = null,
-      bestDy = band;
-    for (const pf of platforms) {
-      if (gx < pf.gx - pf.w / 2 || gx > pf.gx + pf.w / 2) continue;
-      const dy = Math.abs(gy - pf.gy);
-      if (dy <= bestDy) {
-        best = pf.gy;
-        bestDy = dy;
-      }
-    }
-    return best;
+    // nearest AI-placed PLATFORM top under gx, within the snap band (math in placement.js, unit-tested).
+    // SCREEN-BOTTOM FLOOR SNAP REMOVED (user request 2026-06-25) — only AI-placed platforms are snap
+    // targets now. With no platform under her this returns null and floorSnap() is a no-op.
+    return nearestPlatformSurfaceY(gx, gy, platforms, curDisp.height * 0.05);
   }
   function floorSnap() {
     // drag-release / glide-arrival: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
@@ -419,30 +406,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return [Math.round(gPos.x - curDisp.x), Math.round(gPos.y - curDisp.y)];
   } // px within her current monitor
   function anchorGlobal(a) {
-    const d = curDisp,
-      m = 0.12,
-      lo = 0.62,
-      cg = localPxToGlobal(cursor.x, cursor.y); // 12% edge margin; anchors sit a bit low (feet on the deck)
-    const A = {
-      center: [d.x + d.width / 2, d.y + d.height * lo],
-      middle: [d.x + d.width / 2, d.y + d.height * lo],
-      cursor: [cg.x, cg.y],
-      left: [d.x + d.width * m, d.y + d.height * lo],
-      right: [d.x + d.width * (1 - m), d.y + d.height * lo],
-      top: [d.x + d.width / 2, d.y + d.height * m],
-      bottom: [d.x + d.width / 2, d.y + d.height * (1 - m)],
-      topleft: [d.x + d.width * m, d.y + d.height * m],
-      topright: [d.x + d.width * (1 - m), d.y + d.height * m],
-      bottomleft: [d.x + d.width * m, d.y + d.height * (1 - m)],
-      bottomright: [d.x + d.width * (1 - m), d.y + d.height * (1 - m)],
-    };
-    return (
-      A[
-        String(a || "")
-          .toLowerCase()
-          .replace(/[ _-]/g, "")
-      ] || null
-    );
+    // 12% edge margin; anchors sit a bit low (feet on the deck) — math in placement.js (unit-tested)
+    return resolveAnchor(a, curDisp, localPxToGlobal(cursor.x, cursor.y));
   }
   function glideTo(px, py) {
     setGlide(curDisp.x + px, curDisp.y + py);
@@ -547,7 +512,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let _eyeCurX = 0,
     _eyeCurY = 0; // smoothed eye-gaze state (cursor tracking only — the idle dart scheduler was removed: no idle animation, 2026-06-11)
   let _downX = -999; // grab/spin press-origin guard (the _downY tap-detector died with the poke chain, #11)
-  const _clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // --- SIZE POLICY (one place) ------------------------------------------------
   // There is ONE size value (sizeScale), persisted per model. Three entry points
@@ -1978,54 +1942,23 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       } catch {}
       return;
     } // GL context loss must NOT leave a STALE silhouette capturing clicks where she no longer is — strict fail-safe
-    mask.fill(0); // mask is reused → clear last pass's bits before re-marking
-    let mnx = 1e9,
-      mny = 1e9,
-      mxx = -1,
-      mxy = -1,
-      count = 0;
-    for (let i = 0, p = 3; i < SW * SH; i++, p += 4) {
-      if (buf[p] > 24) {
-        mask[i] = 1;
-        count++;
-        const x = i % SW,
-          y = (i / SW) | 0;
-        if (x < mnx) mnx = x;
-        if (x > mxx) mxx = x;
-        if (y < mny) mny = y;
-        if (y > mxy) mxy = y;
-      }
-    }
-    fpCoverage = count / (SW * SH);
-    if (!count || fpCoverage > 0.85) {
+    // Mask derivation + the empty/over-coverage fail-open decision live in the pure,
+    // unit-tested hittest module; this stays the GPU-readback adapter around it.
+    const sil = buildSilhouette(buf, SW, SH, mask);
+    fpCoverage = sil.coverage;
+    if (!sil.ok) {
       hitMask = null;
       return;
-    } // empty, or near-fully opaque (corrupted render) -> fail-safe fallback. A legit large-but-SHAPED avatar keeps its precise mask, so the empty gaps around her still click through (was 0.55, which threw away good masks and dropped to the screen-blocking column).
+    } // empty, or near-fully opaque (corrupted render) -> fail-safe fallback. A legit large-but-SHAPED avatar keeps its precise mask, so the empty gaps around her still click through.
     hitMask = mask;
     maskW = SW;
     maskH = SH;
+    const [mnx, mny, mxx, mxy] = sil.bbox;
     const sxL = (mnx / SW) * innerWidth,
       sxR = ((mxx + 1) / SW) * innerWidth;
     const syT = (1 - (mxy + 1) / SH) * innerHeight,
       syB = (1 - mny / SH) * innerHeight;
     hitRect = [Math.round(sxL), Math.round(syT), Math.round(sxR), Math.round(syB)];
-  }
-
-  function overSilhouette(cx, cy) {
-    const bx = Math.floor((cx / innerWidth) * maskW);
-    const by = Math.floor((1 - cy / innerHeight) * maskH); // flip Y: buffer is bottom-left origin
-    const r = Math.max(1, Math.round((8 * maskW) / innerWidth)); // ~8px screen grab tolerance, in mask cells (tight to the mesh)
-    for (let dy = -r; dy <= r; dy++) {
-      const yy = by + dy;
-      if (yy < 0 || yy >= maskH) continue;
-      const row = yy * maskW;
-      for (let dx = -r; dx <= r; dx++) {
-        const xx = bx + dx;
-        if (xx < 0 || xx >= maskW) continue;
-        if (hitMask[row + xx]) return true;
-      }
-    }
-    return false;
   }
 
   function computeOver() {
@@ -2035,39 +1968,40 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     let over;
     if (hitMask) {
-      over = overSilhouette(cursor.x, cursor.y); // shaped to the avatar — empty space clicks through
+      // shaped to the avatar — empty space clicks through (pure module: overMask)
+      over = overMask(cursor.x, cursor.y, { mask: hitMask, maskW, maskH, innerWidth, innerHeight });
     } else {
       // FAIL-SAFE fallback (silhouette unavailable: empty / off-screen / corrupted render). A click-
       // through overlay MUST fail toward passing clicks through, never toward blocking the desktop.
       // (1) If she does not project onto THIS window, nothing is grabbable here -> click through. This
       // is also what keeps the PEER monitors click-through while she lives on another screen — the exact
       // multi-monitor lockout. (2) Otherwise expose only a SMALL central grab handle around her body,
-      // hard-capped so it can never eat the screen (the old fallback was a 60%-wide x 90%-tall column).
+      // hard-capped so it can never eat the screen. Geometry lives in the pure hittest module; the
+      // world->screen projection (toScreen) is the adapter here.
       const [cxp, cyp] = toScreen(pos.x, pos.y);
-      if (cxp < -40 || cxp > innerWidth + 40 || cyp < -40 || cyp > innerHeight + 40) {
-        over = false;
-        hitRect = [0, 0, 0, 0];
-      } else {
-        const halfW = Math.min(
-          80,
-          Math.max(28, Math.abs(toScreen(pos.x + (modelDims.w || 1.4) * sizeScale * 0.5, pos.y)[0] - cxp))
-        );
-        const topY = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.55)[1];
-        let mny = Math.min(topY, cyp),
-          mxy = Math.max(topY, cyp + 30);
-        if (mxy - mny > innerHeight * 0.6) mxy = mny + innerHeight * 0.6; // never taller than 60% of the window
-        const mnx = cxp - halfW,
-          mxx = cxp + halfW;
-        hitRect = [mnx, mny, mxx, mxy];
-        over = cursor.x >= mnx && cursor.x <= mxx && cursor.y >= mny && cursor.y <= mxy;
-        if (!_fbWarned) {
-          _fbWarned = true;
-          try {
-            window.avatarIPC?.log?.(
-              `[avatar] click-through FALLBACK (no silhouette; coverage=${fpCoverage.toFixed(2)}) -> small grab handle ${Math.round(halfW * 2)}x${Math.round(mxy - mny)}px at ${Math.round(cxp)},${Math.round(cyp)}`
-            );
-          } catch {}
-        }
+      const edgeX = toScreen(pos.x + (modelDims.w || 1.4) * sizeScale * 0.5, pos.y)[0];
+      const topY = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.55)[1];
+      const fb = fallbackGrabHandle({
+        cxp,
+        cyp,
+        edgeX,
+        topY,
+        innerWidth,
+        innerHeight,
+        cursorX: cursor.x,
+        cursorY: cursor.y,
+      });
+      over = fb.over;
+      hitRect = fb.rect;
+      // log once when the fallback actually exposes a handle (i.e. she projects on-screen)
+      const onScreen = fb.rect[0] || fb.rect[1] || fb.rect[2] || fb.rect[3];
+      if (onScreen && !_fbWarned) {
+        _fbWarned = true;
+        try {
+          window.avatarIPC?.log?.(
+            `[avatar] click-through FALLBACK (no silhouette; coverage=${fpCoverage.toFixed(2)}) -> small grab handle ${Math.round(fb.rect[2] - fb.rect[0])}x${Math.round(fb.rect[3] - fb.rect[1])}px at ${Math.round(cxp)},${Math.round(cyp)}`
+          );
+        } catch {}
       }
     }
     if (over !== cursor.over) {
@@ -2090,8 +2024,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if ((lookOn || forced) && _cursorIdle < 2.5 && cursor.seen) {
       // seen, not x>=0 — a cursor on a monitor LEFT of primary maps to negative local px and is still a real target
       const [hx, hy] = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.85); // ≈ head position, in screen px
-      tx = _clampN(((cursor.x - hx) / innerWidth) * LOOK.gainX * LOOK.flipX, -LOOK.maxX, LOOK.maxX);
-      ty = _clampN(((cursor.y - hy) / innerHeight) * LOOK.gainY * LOOK.flipY, -LOOK.maxY, LOOK.maxY);
+      [tx, ty] = headLookTarget(cursor.x, cursor.y, hx, hy, innerWidth, innerHeight, LOOK); // pure (look.js)
       tw = 1;
     }
     const k = Math.min(1, dt * 5);
@@ -2116,8 +2049,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // --- eye-look: rotate the eye bones toward the cursor (in addition to / instead of the head) -----
   function driveEyes(lx, ly, w) {
     if (!eyeBones.length) return;
-    const yaw = _clampN(lx * eyeCfg.gain, -eyeCfg.maxX, eyeCfg.maxX) * eyeCfg.flipX * w;
-    const pitch = _clampN(ly * eyeCfg.gain, -eyeCfg.maxY, eyeCfg.maxY) * eyeCfg.flipY * w;
+    const { yaw, pitch } = eyeLookAngles(lx, ly, eyeCfg, w); // pure (look.js)
     for (const e of eyeBones) {
       // rotate about THIS bone's real anatomical axes, not raw local X/Y
       _eyeQy.setFromAxisAngle(e.up, yaw); // horizontal — turn left/right about the face-UP axis (THE fix: local-Y was the gaze axis → invisible roll)
@@ -2127,12 +2059,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function restEyes() {
     for (const e of eyeBones) e.bone.quaternion.copy(e.rest);
-  }
-  function eyeSide(n) {
-    const s = String(n).toLowerCase();
-    if (/right|_r_|_r\b|\.r_|\.r\b|^r_|r_?eye/.test(s)) return "R";
-    if (/left|_l_|_l\b|\.l_|\.l\b|^l_|l_?eye/.test(s)) return "L";
-    return "C";
   }
   function resolveEyes(model) {
     // TRUST NO NAMES, but "eye" is reliable; exclude brow/lid/lash/_end tips
@@ -2215,6 +2141,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _restClock = 0,
     _wakeUntil = 0,
     _wasActive = false;
+  let _hbLast = 0; // last click-through liveness heartbeat (ms). The arbiter in main treats a window that
+  // stops reporting as a hung renderer and forces it click-through, so we re-send our CURRENT state ~1x/s
+  // even when it hasn't changed — otherwise an idle-but-legit hover over her would look "stale" and drop.
   function wake(sec = 1) {
     const s = +sec;
     _wakeUntil = Math.max(_wakeUntil, performance.now() + (isFinite(s) && s > 0 ? s : 1) * 1000);
@@ -2223,6 +2152,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   function animate() {
     requestAnimationFrame(animate); // cheap heartbeat — keeps the compositor live on every monitor
     _frameAcc += clock.getDelta();
+    // Click-through liveness beat (~1x/s, brain AND peers): re-assert our current hit state so a
+    // healthy idle hover stays grabbable while a HUNG renderer (no beats) gets failed open by main.
+    const _now = performance.now();
+    if (_now - _hbLast >= 1000) {
+      _hbLast = _now;
+      syncInteractive();
+    }
     if (!_isBrain) {
       peerFrame();
       return;
@@ -2917,63 +2853,86 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       });
     return EnigmaAvatar.state(); // default: full live state
   }
-  function handleCommand(c) {
-    if (c.action === "moveTo") EnigmaAvatar.moveTo(c.px ?? 0, c.py ?? 0);
-    else if (c.action === "goTo")
-      return EnigmaAvatar.goTo(c.to ?? c.anchor ?? (c.px != null ? { px: c.px, py: c.py } : "center")); // move by name ("center"/"topleft"/"cursor"/…) or {px,py}
-    else if (c.action === "size") EnigmaAvatar.setSize(c.value ?? 1);
-    else if (c.action === "load" && c.url) EnigmaAvatar.load(c.url);
-    // (the 'express' bus action was removed — body expressions purged; the AI authors emotion via pose/flex)
-    else if (c.action === "ball")
-      return EnigmaAvatar.ball(c.name ?? c.value); // rapier ball-physics toy: throwball / dropball / clearballs
-    else if (c.action === "say" && c.url)
-      EnigmaAvatar.say(c.url, c); // play speech wav + lip-sync (+talk body language)
-    else if (c.action === "mouth")
-      EnigmaAvatar.mouth(c.value); // manual jaw drive (testing) — coerced+guarded in EnigmaAvatar.mouth
-    else if (c.action === "blink") {
+  // --- AI bus command registry -------------------------------------------------
+  // One declarative table instead of a 38-branch if/else chain: action name -> handler(c).
+  // Handlers that RETURN a value answer the bus caller (results relay back over the socket);
+  // void handlers (block body, no return) reply `undefined` — this split is load-bearing, so it
+  // mirrors the original chain exactly. Guards that gated a branch (e.g. `load` needs `url`) move
+  // INTO the handler as an early return. Aliases are wired after the table (snap/screenshot, etc.).
+  // (Removed bus actions stay removed: `express`, `anim` — the AI authors emotion via pose/flex.)
+  const COMMANDS = {
+    moveTo: (c) => {
+      EnigmaAvatar.moveTo(c.px ?? 0, c.py ?? 0);
+    },
+    goTo: (c) => EnigmaAvatar.goTo(c.to ?? c.anchor ?? (c.px != null ? { px: c.px, py: c.py } : "center")), // by name ("center"/"cursor"/…) or {px,py}
+    size: (c) => {
+      EnigmaAvatar.setSize(c.value ?? 1);
+    },
+    load: (c) => {
+      if (c.url) EnigmaAvatar.load(c.url);
+    },
+    ball: (c) => EnigmaAvatar.ball(c.name ?? c.value), // rapier ball toy: throwball / dropball / clearballs
+    say: (c) => {
+      if (c.url) EnigmaAvatar.say(c.url, c); // play speech wav + lip-sync (+talk body language)
+    },
+    mouth: (c) => {
+      EnigmaAvatar.mouth(c.value); // manual jaw drive (testing) — coerced+guarded inside
+    },
+    blink: (c) => {
       const n = +c.value;
       if (c.value != null && isFinite(n)) facial?.setBlink?.(n);
       else facial?.blink?.();
-    } // finite value HOLDS the lids (wink/squint/calibrate; <0 resumes auto); no/garbage value = ONE quick blink
-    else if (c.action === "setMorph")
-      EnigmaAvatar.setMorph(c.index ?? c.idx ?? 0, c.value); // probe a morph by index (find the mouth)
-    else if (c.action === "stop") EnigmaAvatar.stopSpeak();
-    else if (c.action === "attach" && c.url) {
+    }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
+    setMorph: (c) => {
+      EnigmaAvatar.setMorph(c.index ?? c.idx ?? 0, c.value); // probe a morph by index (transient)
+    },
+    stop: () => {
+      EnigmaAvatar.stopSpeak();
+    },
+    attach: (c) => {
+      if (!c.url) return;
       const { action, reqId, ...o } = c;
-      return uiAttach(c.url, o);
-    } // prop/accessory → bone — RELAYED so it appears on every monitor's copy
-    else if (c.action === "detach") c.id ? uiDetach(c.id) : uiClearAttachments();
-    else if (c.action === "tuneAttachment" && c.id) {
+      return uiAttach(c.url, o); // prop/accessory -> bone — RELAYED to every monitor's copy
+    },
+    detach: (c) => {
+      if (c.id) uiDetach(c.id);
+      else uiClearAttachments();
+    },
+    tuneAttachment: (c) => {
+      if (!c.id) return;
       const { action, reqId, ...o } = c;
       return uiTuneAttachment(c.id, o);
-    } else if (c.action === "springTune") {
+    },
+    springTune: (c) => {
       const { action, reqId, ...p } = c;
-      uiSpringTune(p);
-    } // live hair tuning (saved)
-    else if (c.action === "facialTune") {
+      uiSpringTune(p); // live hair tuning (saved)
+    },
+    facialTune: (c) => {
       const { action, reqId, ...p } = c;
       uiFacialTune(p);
-    } else if (c.action === "showBones")
-      return uiShowSkeleton(c.on ?? c.value ?? !bonesShown); // skeleton overlay on/off (toggle resolved HERE so every window flips in lockstep)
-    else if (c.action === "snap" || c.action === "screenshot")
-      EnigmaAvatar.snap(c); // capture avatar → PNG for inspection
-    else if (c.action === "setDisplay" || c.action === "monitor")
-      window.avatarIPC?.monitor?.(c.index ?? c.value ?? "next"); // bring her to a monitor (index, or "next"/"prev") — main owns the layout
-    else if (c.action === "settings") {
+    },
+    showBones: (c) => uiShowSkeleton(c.on ?? c.value ?? !bonesShown), // resolved HERE so every window flips in lockstep
+    snap: (c) => {
+      EnigmaAvatar.snap(c); // capture avatar -> PNG for inspection
+    },
+    setDisplay: (c) => {
+      window.avatarIPC?.monitor?.(c.index ?? c.value ?? "next"); // index or "next"/"prev" — main owns the layout
+    },
+    settings: (c) => {
       if (c.open === false) ui.hideSettings();
       else ui.showSettings();
-    } // open/close the Settings panel
-    else if (c.action === "gallery") {
+    },
+    gallery: (c) => {
       if (c.open === false) ui.hideGallery();
       else ui.showGallery();
-    } // open/close the model gallery
-    else if (c.action === "recolor" && (c.index != null || c.name))
-      return uiRecolor(c.index != null ? c.index : c.name, c.color || c.hex); // tint a material by INDEX (live authority) or name — relayed to every window's copy
-    else if (c.action === "resetColors")
-      return uiResetColors(); // restore every part to its original loaded color (Settings "Reset")
-    else if (c.action === "setMesh")
-      return uiSetMeshVisible(c.index ?? c.idx ?? 0, c.on ?? c.value ?? false); // show/hide a mesh by index
-    else if (c.action === "rotate") {
+    },
+    recolor: (c) => {
+      if (c.index == null && !c.name) return;
+      return uiRecolor(c.index != null ? c.index : c.name, c.color || c.hex); // tint by INDEX (authority) or name — relayed
+    },
+    resetColors: () => uiResetColors(), // restore every part to its loaded color
+    setMesh: (c) => uiSetMeshVisible(c.index ?? c.idx ?? 0, c.on ?? c.value ?? false), // show/hide a mesh by index
+    rotate: (c) => {
       // turn the avatar — {x,y,z}°, {axis,deg}, or legacy {deg}=yaw
       if (c.x != null || c.y != null || c.z != null) {
         const r = getRot();
@@ -2984,48 +2943,59 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       }
       if (c.axis) return uiSetRotAxis(c.axis, c.deg ?? c.value ?? 0);
       return uiSetRotAxis("y", c.deg ?? c.value ?? 0);
-    } else if (c.action === "regionWeight" && c.region)
-      return uiSetRegionWeight(c.region, c.weight ?? c.value ?? 1); // soft-body jiggle amount per area (saved)
-    else if (c.action === "impulse" && c.region) {
+    },
+    regionWeight: (c) => {
+      if (!c.region) return;
+      return uiSetRegionWeight(c.region, c.weight ?? c.value ?? 1); // soft-body jiggle per area (saved)
+    },
+    impulse: (c) => {
+      if (!c.region) return;
       wake(2);
-      return spring && springOn && spring.impulse ? spring.impulse(c.region, c, c.dur) : false;
-    } // kick an appendage through the physics (tail swish / ear flick — AI body language); no-op while springs are toggled off (queue would burst on re-enable)
-    else if (c.action === "morph")
-      return uiSetMorphValue(c.index ?? c.idx ?? 0, c.value); // drive + SAVE a morph by index (vs 'setMorph' = transient probe)
-    else if (c.action === "rotateMode")
-      return uiSetRotateMode(c.on ?? c.value ?? !rotateMode); // drag-to-spin on/off (toggle resolved here → windows stay in lockstep)
-    else if (c.action === "lookMode")
-      return uiSetLookMode(c.mode ?? c.value); // cursor-look: head / eyes / both
-    else if (c.action === "lookAt")
-      return EnigmaAvatar.lookAt(c.px, c.py); // force gaze at a screen point — returns {drove} so the caller sees if it actually moved (#18)
-    else if (c.action === "nameBone" && c.bone)
-      return uiSetBoneLabel(String(c.bone), c.label ?? ""); // label a bone in plain words (saved per avatar; empty label clears) — the AI's handle for "the ahoge"
-    else if (c.action === "highlightBone" && c.bone)
-      return uiHighlightBone(String(c.bone), c.dur); // flash a marker on a bone (point AT a part while talking about it)
-    else if (c.action === "outfit" && c.name)
-      return c.delete ? uiDeleteOutfit(c.name) : c.save ? uiSaveOutfit(c.name) : uiWearOutfit(c.name); // outfit presets: wear by default; {save:true} snapshots the current look; {delete:true} removes
-    // (the 'anim' bus action — authored-clip playback — was removed with the clip-library purge 2026-06-25)
-    else if (c.action === "platform") {
-      // AI effect surfaces: {px,py,w} adds one (screen px on her monitor — `where` convention); {clear:true} wipes all
+      return spring && springOn && spring.impulse ? spring.impulse(c.region, c, c.dur) : false; // kick an appendage (tail swish / ear flick); no-op while springs off
+    },
+    morph: (c) => uiSetMorphValue(c.index ?? c.idx ?? 0, c.value), // drive + SAVE a morph (vs 'setMorph' = transient)
+    rotateMode: (c) => uiSetRotateMode(c.on ?? c.value ?? !rotateMode), // drag-to-spin on/off (lockstep)
+    lookMode: (c) => uiSetLookMode(c.mode ?? c.value), // cursor-look: head / eyes / both
+    lookAt: (c) => EnigmaAvatar.lookAt(c.px, c.py), // force gaze at a screen point — returns {drove}
+    nameBone: (c) => {
+      if (!c.bone) return;
+      return uiSetBoneLabel(String(c.bone), c.label ?? ""); // label a bone in plain words (saved; empty clears)
+    },
+    highlightBone: (c) => {
+      if (!c.bone) return;
+      return uiHighlightBone(String(c.bone), c.dur); // flash a marker on a bone (point AT a part)
+    },
+    outfit: (c) => {
+      if (!c.name) return;
+      return c.delete ? uiDeleteOutfit(c.name) : c.save ? uiSaveOutfit(c.name) : uiWearOutfit(c.name); // wear / {save} / {delete}
+    },
+    platform: (c) => {
+      // AI effect surfaces: {px,py,w} adds one (screen px on her monitor); {clear:true} wipes all
       if (c.clear) return uiSetPlatforms([]);
       if (isFinite(+c.px) && isFinite(+c.py))
         return uiSetPlatforms([...platforms, { gx: curDisp.x + +c.px, gy: curDisp.y + +c.py, w: +c.w || 220 }]);
       return platforms.length;
-    } else if (c.action === "hue" && c.name)
-      uiHueShift(c.name, c.deg ?? c.value ?? 0); // rotate a material's hue — relayed
-    else if (c.action === "pose")
-      return EnigmaAvatar.poseLayer(c); // AI compositor: set a motion layer {parts,flex,dur,weight,env,id} (clear:true removes)
-    else if (c.action === "layer")
-      return EnigmaAvatar.layer(c); // AI compositor: layer stack op add|clear|clearAll
-    else if (c.action === "fingers" || c.action === "hand")
-      return EnigmaAvatar.fingers(c); // AI per-finger hand pose (fist / point / count / "no" wag)
-    else if (c.action === "capabilities" || c.action === "caps")
-      return EnigmaAvatar.capabilities(); // what the brain can drive on THIS model
-    else if (c.action === "conjure")
-      return EnigmaAvatar.conjure(c); // P3: spawn/move/dismiss/clear a conjured prop
-    else if (c.action === "perform")
-      return EnigmaAvatar.perform(c.text); // P4: drive motion from inline-tagged LLM speech; returns the clean line to speak
-    else if (c.action === "query") return answerQuery(c.what); // AI self-report: live state / materials / facial (ground truth)
+    },
+    hue: (c) => {
+      if (c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0); // rotate a material's hue — relayed
+    },
+    pose: (c) => EnigmaAvatar.poseLayer(c), // compositor: set a motion layer {parts,flex,dur,weight,env,id}
+    layer: (c) => EnigmaAvatar.layer(c), // compositor: layer-stack op add|clear|clearAll
+    fingers: (c) => EnigmaAvatar.fingers(c), // per-finger hand pose (fist / point / count / "no" wag)
+    capabilities: () => EnigmaAvatar.capabilities(), // what the brain can drive on THIS model
+    conjure: (c) => EnigmaAvatar.conjure(c), // spawn/move/dismiss/clear a conjured prop
+    perform: (c) => EnigmaAvatar.perform(c.text), // drive motion from inline-tagged LLM speech; returns the clean line
+    query: (c) => answerQuery(c.what), // AI self-report: live ground truth
+  };
+  // Aliases — same handler under a second name (kept identical to the old `||` branches).
+  COMMANDS.screenshot = COMMANDS.snap;
+  COMMANDS.monitor = COMMANDS.setDisplay;
+  COMMANDS.hand = COMMANDS.fingers;
+  COMMANDS.caps = COMMANDS.capabilities;
+
+  function handleCommand(c) {
+    const fn = c && typeof c.action === "string" ? COMMANDS[c.action] : null;
+    return fn ? fn(c) : undefined; // unknown/garbage action -> silent no-op (matches the old fall-through)
   }
   window.EnigmaAvatar = EnigmaAvatar;
   window.__AV = { THREE, scene, camera, rig, getModel: () => model };

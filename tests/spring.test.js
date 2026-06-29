@@ -156,3 +156,36 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
   const sdot = Math.abs(qA2.x * qB2.x + qA2.y * qB2.y + qA2.z * qB2.z + qA2.w * qB2.w);
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });
+
+test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 vs 120 fps", () => {
+  // The dt-normalized verlet (drag/stiffness/damp re-scaled to real dt + time-corrected inertia) must
+  // produce the same physical motion regardless of frame-rate. Before the fix the per-frame fractions
+  // applied N times -> a 120fps tail settled ~twice as fast as a 60fps one over the same wall-clock.
+  const findTail = (m) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === "Tail") b = o;
+    });
+    return b;
+  };
+  const angleFromRest = (q, rest) => {
+    const dot = Math.min(1, Math.abs(q.x * rest.x + q.y * rest.y + q.z * rest.z + q.w * rest.w));
+    return 2 * Math.acos(dot); // radians between two unit quaternions
+  };
+  const run = (dt, T) => {
+    const m = hairRig();
+    const s = buildSpringBones(m);
+    const rest = findTail(m).quaternion.clone();
+    s.impulse("tail", { x: 12 }, 0.3);
+    const n = Math.round(T / dt);
+    for (let i = 0; i < n; i++) s.update(dt);
+    return angleFromRest(findTail(m).quaternion, rest);
+  };
+  const T = 0.25; // mid-swing — before full settle, where any integrator trivially agrees at rest
+  const a = run(1 / 60, T);
+  const b = run(1 / 120, T);
+  assert.ok(a > 0.01, `60fps tail must visibly deflect (got ${a.toFixed(4)} rad)`);
+  assert.ok(b > 0.01, `120fps tail must visibly deflect (got ${b.toFixed(4)} rad)`);
+  const rel = Math.abs(a - b) / Math.max(a, b);
+  assert.ok(rel < 0.15, `deflection must agree across frame-rates (60fps ${a.toFixed(4)} vs 120fps ${b.toFixed(4)} rad, rel diff ${(rel * 100).toFixed(1)}%)`);
+});

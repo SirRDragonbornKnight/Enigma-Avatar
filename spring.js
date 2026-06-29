@@ -142,7 +142,16 @@ export function buildSpringBones(model, opts = {}) {
     return true;
   }
 
+  // Frame-rate independence: the verlet's per-frame fractions (drag decay, stiffness pull, damp) and
+  // the inertia carry were all tuned at REF_FPS. Each frame we re-scale them to the REAL dt so the sway
+  // and settle feel the SAME at 30 / 60 / 144 fps. At exactly REF_FPS this is identity — nothing changes
+  // (which is why every fixed-1/60 unit test still holds). Gravity is already dt*dt-scaled above.
+  const REF_FPS = 60;
+  let _prevDt = 1 / REF_FPS; // last frame's dt → time-corrected verlet inertia carry under variable dt
+
   function update(dt) {
+    const kFrame = dt * REF_FPS; // exponent that maps a per-REF_FPS-frame fraction onto this real frame
+    const tcv = clamp(_prevDt > 1e-4 ? dt / _prevDt : 1, 0, 4); // inertia time-correction (variable-dt verlet)
     for (let i = _impulses.length - 1; i >= 0; i--) {
       const im = _impulses[i];
       im.t += dt;
@@ -171,13 +180,15 @@ export function buildSpringBones(model, opts = {}) {
       const moved = origin.distanceToSquared(it.originPrev) > 1e-12;
       it.originPrev.copy(origin);
       const grav = moved ? (it.geo ? 0.08 : 1) * P.gravity * dt * dt : 0; // geo chains barely fall (wings shouldn't sag)
-      const stiff = feel.stiff,
-        dragv = feel.dragv;
-      // verlet: keep momentum, add gravity, pull back toward rest
+      // Per-frame fractions re-scaled to real dt (identity at REF_FPS): drag decays exponentially and the
+      // stiffness pull likewise; the inertia carry is time-corrected by dt/prevDt so momentum is dt-stable.
+      const stiffFrac = 1 - Math.pow(1 - feel.stiff, kFrame);
+      const dragDecay = Math.pow(1 - feel.dragv, kFrame);
+      // verlet: keep momentum (time-corrected + damped), add gravity, pull back toward rest
       inertia
         .copy(it.tip)
         .sub(it.prev)
-        .multiplyScalar(1 - dragv);
+        .multiplyScalar(tcv * dragDecay);
       it.prev.copy(it.tip);
       it.tip.add(inertia);
       it.tip.y += grav;
@@ -189,14 +200,14 @@ export function buildSpringBones(model, opts = {}) {
           it.tip.y += im.y * e * dt;
           it.tip.z += im.z * e * dt;
         }
-      it.tip.addScaledVector(d.copy(restTip).sub(it.tip), stiff);
+      it.tip.addScaledVector(d.copy(restTip).sub(it.tip), stiffFrac);
       // constrain to bone length
       d.copy(it.tip).sub(origin);
       if (d.lengthSq() < 1e-9) d.copy(restWDir).multiplyScalar(it.len);
       it.tip.copy(d.setLength(it.len)).add(origin);
       // w<1 → damp amplitude toward rest (less jiggle) and re-pin to bone length
       if (feel.damp > 0) {
-        it.tip.lerp(restTip, feel.damp);
+        it.tip.lerp(restTip, 1 - Math.pow(1 - feel.damp, kFrame)); // dt-normalized amplitude damp (identity at REF_FPS)
         it.tip.copy(d.copy(it.tip).sub(origin).setLength(it.len)).add(origin);
       }
       // orient the bone so it points origin -> tip
@@ -211,6 +222,7 @@ export function buildSpringBones(model, opts = {}) {
       } // safety — reset the verlet state too, else inertia=tip−prev stays NaN and the bone is dead forever
       b.updateWorldMatrix(false, false); // chain: children see the update
     }
+    _prevDt = dt; // remember this frame's dt for the next frame's inertia time-correction
   }
 
   // Regions actually present, with a representative bone count + the live weight — the UI builds
