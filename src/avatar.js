@@ -467,6 +467,44 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     facialOn = true,
     locked = false; // engine toggles (Settings checkboxes; the idle toggle died with the idle machinery, 2026-06-12 — proc.update is purely reactive/commanded now and always runs)
   let lookOn = true; // companion behavior: track the cursor (reactive; everything self-firing is gone)
+  // AI-control kill-switch (brain-only, persisted). When OFF, inbound AI bus commands are DROPPED at
+  // the connect() chokepoint before they can do anything — so nothing the avatar does over the bus can
+  // be a surprise. Flip it back on (Settings checkbox or the tray's "Accept AI control") and the
+  // still-open bus connection resumes instantly. Default ON to preserve the brain.py / say.py workflow.
+  const AI_CONTROL_KEY = "enigmaAvatar.aiControl";
+  let aiControlOn = (() => {
+    try {
+      return localStorage.getItem(AI_CONTROL_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  })();
+  // Flash the (normally hidden) status line on each ACCEPTED bus command so an AI-driven move is never
+  // mistaken for a glitch; restore the panel's prior visibility after a beat. setAiControl persists the
+  // toggle and mirrors it to the tray checkbox. Both are wired into the control surface / UI below.
+  let _aiFlashTimer = null,
+    _aiFlashWasHidden = false;
+  function flashAiActivity(action) {
+    if (action === "query" || action === "capabilities") return; // read-only introspection isn't a visible action — don't flash on the brain's verify-by-numbers chatter
+    setStatus("AI: " + (action || "command"));
+    const el = document.getElementById("ui");
+    if (!el) return;
+    if (_aiFlashTimer) clearTimeout(_aiFlashTimer);
+    else _aiFlashWasHidden = el.classList.contains("hidden");
+    el.classList.remove("hidden");
+    _aiFlashTimer = setTimeout(() => {
+      _aiFlashTimer = null;
+      if (_aiFlashWasHidden) el.classList.add("hidden");
+    }, 1500);
+  }
+  function setAiControl(on) {
+    aiControlOn = !!on;
+    try {
+      localStorage.setItem(AI_CONTROL_KEY, aiControlOn ? "1" : "0");
+    } catch {}
+    setStatus(aiControlOn ? "AI control ON" : "AI control PAUSED (bus commands ignored)");
+    window.avatarIPC?.aiControlChanged?.(aiControlOn); // keep the tray checkbox in sync
+  }
   // Accessor bridge so ui.js (Settings checkboxes) can read/write these toggles. Their
   // source of truth stays here — the animate loop reads the raw `let`s directly.
   const flags = {
@@ -2517,6 +2555,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     getRoleBones: () => roleBones,
     getUi: () => ui,
     getHandleCommand: () => handleCommand,
+    getAiPaused: () => !aiControlOn, // kill-switch: connect() drops inbound commands while this is true
+    onAiCommand: (action) => flashAiActivity(action), // flash the status line on each ACCEPTED command
     getUiLoadModel: () => uiLoadModel,
     getUiAttach: () => uiAttach,
     getUiDetach: () => uiDetach,
@@ -2826,6 +2866,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     getBonesShown: () => bonesShown,
     getShadowOn: () => shadowOn,
     setShadowOn: relayed("setShadowOn"), // ground-contact shadow toggle (Settings)
+    getAiControl: () => aiControlOn,
+    setAiControl: (v) => setAiControl(v), // AI-control kill-switch (Settings checkbox; NOT relayed — brain-only)
     loadModel: uiLoadModel,
     attachMesh: uiAttach,
     detachAttachment: uiDetach,
@@ -3196,7 +3238,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _started = true;
     if (_isBrain) {
       startup();
-      if (window.avatarIPC) EnigmaAvatar.connect();
+      if (window.avatarIPC) {
+        EnigmaAvatar.connect();
+        // Wire the AI-control kill-switch to the tray: report our persisted state for the checkbox,
+        // and accept toggle requests the tray sends (toBrain "avatar:setAiControl").
+        window.avatarIPC.aiControlChanged?.(aiControlOn);
+        window.avatarIPC.onSetAiControl?.((on) => setAiControl(on));
+      }
     } // brain: load the model + drive the bus
     // peers: idle until main broadcasts avatar:model (onModel handler loads it)
   }

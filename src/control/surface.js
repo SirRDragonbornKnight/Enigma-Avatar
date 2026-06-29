@@ -91,6 +91,8 @@ export function createControlSurface(api) {
     getRoleBones,
     getUi,
     getHandleCommand,
+    getAiPaused, // kill-switch: when true, drop EVERY inbound bus command before it dispatches
+    onAiCommand, // notified with the action name of each ACCEPTED command (drives the activity flash)
     // ui* relays are defined LATER in avatar.js (~2964) than this factory's call site (~2446), so they
     // come in as getters too — only ever invoked at runtime (load/attach/detach), never at build.
     getUiLoadModel,
@@ -435,8 +437,27 @@ export function createControlSurface(api) {
             return;
           }
           if (!c || c.type === "reply") return;
+          // Kill-switch: while AI control is paused, NOTHING the bus sends runs — drop it before
+          // dispatch (queries included: paused means fully inert, revealing nothing). A reqId driver
+          // still gets an honest "paused" reply so it isn't left hanging.
+          if (getAiPaused && getAiPaused()) {
+            if (c.reqId != null) {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    type: "reply",
+                    reqId: c.reqId,
+                    action: c.action,
+                    result: { error: "ai control paused" },
+                  })
+                );
+              } catch {}
+            }
+            return;
+          }
           let result;
           try {
+            if (onAiCommand) onAiCommand(c.action); // surface the accepted command (no-surprises indicator)
             result = getHandleCommand()(c);
           } catch (err) {
             result = { error: String((err && err.message) || err) };

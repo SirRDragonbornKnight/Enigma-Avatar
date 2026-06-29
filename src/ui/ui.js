@@ -1039,6 +1039,9 @@ export function createUI(api) {
     body.appendChild(sCheck("Show skeleton (inspect bones)", api.getBonesShown(), (v) => api.showSkeleton(v)));
     if (api.getShadowOn)
       body.appendChild(sCheck("Ground shadow (stands on a surface)", api.getShadowOn(), (v) => api.setShadowOn(v)));
+    // AI-control kill-switch: when off, the avatar ignores every command from the bus (no surprises).
+    if (api.getAiControl)
+      body.appendChild(sCheck("Accept AI control (bus)", api.getAiControl(), (v) => api.setAiControl(v)));
     const panelOn = !document.getElementById("ui")?.classList.contains("hidden");
     body.appendChild(
       sCheck("Show info panel", panelOn, (v) => document.getElementById("ui")?.classList.toggle("hidden", !v))

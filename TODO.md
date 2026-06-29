@@ -25,6 +25,19 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 Electron BOOT (the new `ROOT` paths in `shell/main.js`, `package.json "main"`, `index.html`
 src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boots.**
 
+**Move-set redesign (DONE 2026-06-29):** one name per concept, NO backward-compat aliases. Merged 4
+duplicate pairs so a driver never guesses which verb: `move` (was moveTo+goTo, routes on {px,py} vs
+{to}), `look` (was lookAt+lookMode, {at} vs {mode}), `morph` (was morph+setMorph, default saves /
+{save:false} probes), `pose` (was pose+layer, {clear:"id"}|{clear:true}). Renamed 2 implementation
+names: `setDisplay`->`monitor`, `setMesh`->`mesh`. Dropped 4 aliases (`screenshot`/`hand`/`caps`/old
+`monitor`). Added `query:"actions"` (live verb list -- the AI "what can I send?" hook). Touched
+`bus.js` + `say.py` + `tools/test_battery.py` + `tests/bus.test.js` only; `avatar.js` control surface
+UNCHANGED (the merged verbs route in the bus handler onto existing methods). Green: node --test 255/11,
+eslint 0; merge tests bite (mutation-checked). **FOLLOW-UP:** the external MCP `avatar_command`
+forwarder (`modkit_mcp.py`, NOT in this repo) still lists `lookAt`/`lookMode`/`goTo`/`setMesh` -- update
+its key-list to the new names or those forwards will no-op. **Still needs a live launch to confirm a
+real bus drive.**
+
 **Phases 2-5 (OPEN -- must be done WITH a live launch between carves):** decompose the
 ~3.6k-line `src/avatar.js` orchestrator closure into modules (`src/scene/`, `src/control/bus.js`
 + `surface.js`, `src/appearance/*`, `src/interaction/input.js`). NOT safe to do blind:
@@ -56,18 +69,28 @@ src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boo
 
 ### 2) Fixable now (small, code-only)
 
-- [ ] **(SAFETY) No periodic main-side re-arbitration** (`main.js` `applyInteractive` is event-driven only).
-      A _hung_ renderer latched at `over:true` keeps capturing clicks over her footprint until the user hits
-      the panic key / tray (no auto self-heal). Add a periodic `applyInteractive()` (or a renderer-heartbeat ->
-      force-through) on the existing 4s topmost-reassert timer. Also clear the sender's `_overByWin` entry on
-      `render-process-gone`/reload so a reused webContents id can't keep a stale `true`.
-- [ ] **Spring verlet only PARTIALLY dt-normalized** -- gravity is dt-scaled (`spring.js`); inertia +
-      the stiffness pull are still frame-count-based. Normalize the rest for frame-rate independence.
-- [ ] **Folder rename renames only the manifest LABEL, not the on-disk folder** (`library.js`
-      `renameModel`, comment at its head). A true rename must migrate the folder/URL + the profile key.
-- [ ] **Click-through guard has no test.** The silhouette hit-test (`computeOver`/`overSilhouette`,
-      avatar.js) + `containsEvent` (ui.js) are safety-critical and untested -- needs the logic extracted
-      to be unit-testable headlessly. `dom.js` mock also omits `importDropped`/`setInteractive`.
+**Reconciled vs code 2026-06-29 (each item re-verified by direct read):** the first four below were
+already DONE in the tree -- the doc had drifted. Left checked here as a record; only the last three
+are genuinely open.
+
+- [x] **(SAFETY) Periodic main-side re-arbitration -- DONE.** `shell/main.js` runs `_healTimer =
+      setInterval(applyInteractive, 1000)`, and `applyInteractive` fails OPEN when a renderer's last
+      `over:true` report is older than `REPORT_STALE_MS` (hung-renderer self-heal). The sender's
+      `_overByWin` entry is cleared on both `render-process-gone` and reload. (Verified main.js:208-210,
+      592, 1007-1012.)
+- [x] **Spring verlet dt-normalization -- DONE.** `src/motion/spring.js` re-scales the drag decay,
+      stiffness pull, and damp to real dt (`kFrame = dt*REF_FPS`, `Math.pow(...)`) and time-corrects the
+      inertia carry (`tcv = dt/_prevDt`); gravity stays dt*dt-scaled. Identity at REF_FPS so the
+      fixed-1/60 unit tests still hold. (Verified spring.js:145-225.)
+- [x] **Click-through guard now tested -- DONE.** The silhouette hit-test is extracted to
+      `src/interaction/hittest.js` (`buildSilhouette`/`overSilhouette`/`fallbackGrabHandle`) and pinned by
+      `tests/hittest.test.js`, including the safety-critical "empty render -> ok:false (fail-open)" case.
+      (Minor leftover: `tests/dom.js` mock still omits `importDropped`/`setInteractive` -- only matters if a
+      future test drives those through the mock.)
+- [~] **Folder rename is label-only -- BY DESIGN, not a gap.** `src/model/library.js` `renameModel`
+      updates the manifest label only and deliberately leaves the folder/URL/profile key intact (so URLs
+      and per-avatar profiles keyed by URL don't break); documented in the comment at its head. A true
+      folder+URL+profile migration is a feature, not a defect -- only do it on an explicit ask.
 - [ ] **No speech bubble** for spoken lines (none in any source).
 - [ ] **Multi-mesh divergent-morph UI** + morph/lip-sync index collision -- only the bounded
       "primary group" morph path exists (Low).
@@ -75,9 +98,12 @@ src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boo
 ### 3) The brain (P4) -- PARTIAL (ties to the 2026-06-26 deep-research)
 
 - [ ] The bus + `perform`/`pose`/verify path and `brain.py` are BUILT (capabilities->author->
-      verify-by-numbers loop; deterministic grounded author + optional `--llm`). OPEN: the persistent,
-      perception/memory-driven "mind" (event loop, conversation integration) and Enigma-as-author once it
-      finishes pretraining. Architecture decision pending the deep-research report.
+      verify-by-numbers loop; deterministic grounded author + optional `--llm`). **A working brain exists
+      TODAY: the `--llm` author accepts ANY OpenAI-compatible endpoint -- a local model, OR Claude/any
+      agent that can emit the perform-tagged lines (tags are sanitized against live caps before they reach
+      the body, so it can never drive a missing limb). It is NOT blocked on Enigma.** OPEN: the persistent,
+      perception/memory-driven "mind" (event loop, conversation integration) -- and Enigma-as-author once it
+      finishes pretraining, as the local from-scratch option. Architecture decision pending the deep-research report.
 
 ### 4) Deferred by design (bigger -- do NOT start without an explicit call)
 
@@ -90,13 +116,15 @@ src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boo
 
 ### 5) Environment / housekeeping
 
-- [ ] **`BALL_URL` asset missing** from this checkout (`props/worn_baseball_ball/...glb`) -> conjure/
-      throw have nothing to render here; conjure already fails HONESTLY via `onMiss`. Stage the .glb (it
-      lives in the standalone mirror).
+- [x] **`BALL_URL` asset staged locally 2026-06-29.** Copied `worn_baseball_ball.glb` from
+      `C:\Users\SirKn\3d Avatar\Avatars\` into `props/worn_baseball_ball/` so conjure/throw render here.
+      `props/` is gitignored (provisioned-locally convention), so this is a per-box stage, not a commit --
+      re-stage on a fresh clone. (NB: the file is ~64 MB -- heavy for a thrown prop; consider a lighter ball.)
 - [ ] Orphan `profiles.json` keys for removed models (harmless stale tuning; could prune).
-- [ ] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree`** (`--tree` path only): `pathname` from
-      the package is joined to `out_dir` with no `..`/absolute containment check. The UI import path uses
-      `basename` and is safe; only a manual `--tree` on a malicious package is exposed. Add a containment assert.
+- [x] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree` -- DONE.** `extract_tree` now
+      contains every write under `realpath(out_dir)`: it strips a leading `/` and Windows drive letter, then
+      skips+warns on any entry whose `realpath` isn't under the out-root (`commonpath` check).
+      (Verified import_unitypackage.py:105-122.)
 
 ## INTENT OVERHAUL -- audit #9 reconciliation (2026-06-26). FIXED + suite 186/0/11 + python 6/6 + node --check clean.
 

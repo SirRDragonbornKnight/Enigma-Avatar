@@ -25,10 +25,19 @@ const { spawnSync } = require("child_process");
 // overlay is local, so reload cost is trivial). Must run before app is ready.
 app.commandLine.appendSwitch("disable-http-cache");
 
+// [BLANK-OVERLAY FIX] Chromium's native window-occlusion detection on Windows decides a
+// transparent, click-through, always-on-top overlay is "occluded" and STOPS compositing it to
+// save power — so the window shows only its native background (no DOM, no WebGL canvas) while
+// capturePage() still works (it forces a paint). Symptom seen here: opaque test window showed
+// its backgroundColor but never the content; HW-accel on/off made no difference. Disabling the
+// occlusion calculation keeps the overlay painting whether or not Windows thinks it's covered.
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+
 // --- window set (one per display) -------------------------------------------
 let windows = []; // [{ displayId, win, bounds, isBrain }] — bounds in DIP
 let tray = null;
 let forceInteractive = false;
+let _aiControlOn = true; // mirror of the brain's AI-control kill-switch, for the tray checkbox (brain reports it via "avatar:aiControlState"; the tray toggles it via "avatar:setAiControl")
 let _forceThrough = false; // PANIC: force EVERY window click-through so the desktop is always reclaimable (Ctrl+Shift+Alt+C)
 // STICKY view-only lock (set by env at launch): she renders but NEVER captures a click on ANY monitor.
 // Unlike the _forceThrough panic latch, this is NOT cleared by bringToDisplay/monitor moves — so a
@@ -78,7 +87,12 @@ function runPython(args) {
 // The model library — folder discovery / import / recoverable trash. Pure fs logic, UNIT-TESTED in
 // tests/library.test.js; main.js just wires the real paths + the IPC surface. The python CLIs
 // (import_unitypackage.py) live in python/.
-const lib = createLibrary({ modelsDir: MODELS_DIR, manifestPath: MANIFEST, runPython, scriptDir: path.join(ROOT, "python") });
+const lib = createLibrary({
+  modelsDir: MODELS_DIR,
+  manifestPath: MANIFEST,
+  runPython,
+  scriptDir: path.join(ROOT, "python"),
+});
 
 // --- display + window helpers -----------------------------------------------
 function displays() {
@@ -531,10 +545,7 @@ async function importProp() {
 // renderer can read back with fetch — durable + portable, unlike localStorage.
 function saveProfiles(json) {
   try {
-    fs.writeFileSync(
-      path.join(ROOT, "profiles.json"),
-      typeof json === "string" ? json : JSON.stringify(json, null, 2)
-    );
+    fs.writeFileSync(path.join(ROOT, "profiles.json"), typeof json === "string" ? json : JSON.stringify(json, null, 2));
     return { ok: true };
   } catch (e) {
     return { error: String((e && e.message) || e) };
@@ -615,6 +626,12 @@ function buildTrayMenu() {
     { label: "Bring to primary monitor", click: recoverToPrimary },
     { label: "Bring to monitor", enabled: list.length > 1, submenu: monitorItems },
     { label: "Drop her (unstick from cursor)", click: endDrag }, // escape hatch: force-release a drag that got stuck to the cursor, without closing her
+    {
+      label: "Accept AI control (bus)",
+      type: "checkbox",
+      checked: _aiControlOn,
+      click: () => toBrain("avatar:setAiControl", !_aiControlOn), // brain applies + persists, then reports back -> menu re-checks
+    }, // kill-switch: untick to make the avatar ignore EVERY command from the AI bus (no surprises)
     { type: "separator" },
     {
       label: "Open Settings",
@@ -721,6 +738,12 @@ function init() {
     applyInteractive();
   });
   ipcMain.on("avatar:quit", () => app.quit());
+  // The brain reports its AI-control kill-switch state (on launch + on every toggle) so the tray
+  // checkbox reflects the truth — including a state the brain restored from a previous session.
+  ipcMain.on("avatar:aiControlState", (_e, on) => {
+    _aiControlOn = !!on;
+    refreshTrayMenu();
+  });
 
   // Global position: the brain pushes glide/nudge/goTo steps here; main re-broadcasts to all windows.
   // Ignored while a DRAG owns the position — a glide step racing the 8ms cursor-follow is a visible blip.

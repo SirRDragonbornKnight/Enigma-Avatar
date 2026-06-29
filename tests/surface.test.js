@@ -49,6 +49,8 @@ function makeSurface(over = {}) {
     roleBones: {},
     ui: { isOpen: () => false, showSettings: spy(), hideSettings: spy() },
     handleCommand: spy({ ok: 1 }),
+    aiPaused: false, // AI-control kill-switch state (read live by connect()'s gate)
+    onAiCommand: spy(), // notified of each ACCEPTED command (the no-surprises activity flash)
     uiLoadModel: spy(),
     uiAttach: spy(),
     uiDetach: spy(),
@@ -107,6 +109,8 @@ function makeSurface(over = {}) {
     getRoleBones: () => live.roleBones,
     getUi: () => live.ui,
     getHandleCommand: () => live.handleCommand,
+    getAiPaused: () => live.aiPaused,
+    onAiCommand: (a) => live.onAiCommand(a),
     getUiLoadModel: () => live.uiLoadModel,
     getUiAttach: () => live.uiAttach,
     getUiDetach: () => live.uiDetach,
@@ -162,6 +166,40 @@ test("perform resolves its SELF-reference: a [look] tag calls EnigmaAvatar.lookA
   assert.deepEqual([cursor.x, cursor.y], [50, 60], "the self-call to lookAt actually moved the gaze");
 });
 
+test("connect() kill-switch: while AI control is paused, NO command dispatches and the caller gets an honest paused reply", () => {
+  // BITE: remove the getAiPaused gate in surface.js and handleCommand fires anyway -> this fails.
+  const { surface, live } = makeSurface({ aiPaused: true });
+  let lastWs = null;
+  class FakeWS {
+    constructor() {
+      lastWs = this;
+      this.sent = [];
+    }
+    send(s) {
+      this.sent.push(JSON.parse(s));
+    }
+  }
+  globalThis.WebSocket = FakeWS;
+  surface.connect("ws://x");
+  lastWs.onmessage({ data: JSON.stringify({ action: "ball", reqId: 9 }) });
+  assert.equal(live.handleCommand.calls.length, 0, "a paused avatar runs NOTHING the bus sends");
+  assert.equal(live.onAiCommand.calls.length, 0, "and the activity flash never fires for a dropped command");
+  assert.deepEqual(
+    lastWs.sent[0],
+    { type: "reply", reqId: 9, action: "ball", result: { error: "ai control paused" } },
+    "a reqId driver still gets an honest 'paused' reply instead of hanging"
+  );
+  // Flip it back on: the SAME open socket resumes — the command now dispatches and flashes.
+  live.aiPaused = false;
+  lastWs.onmessage({ data: JSON.stringify({ action: "ball", reqId: 10 }) });
+  assert.equal(live.handleCommand.calls.length, 1, "un-pausing resumes dispatch on the live connection");
+  assert.deepEqual(
+    live.onAiCommand.calls[0],
+    ["ball"],
+    "an accepted command notifies the activity flash with its action"
+  );
+});
+
 test("connect() routes an incoming bus message through the LATER-defined handleCommand (live getter)", () => {
   // surface is built at ~2446 but handleCommand at ~3117; the getter must resolve it at message time.
   const { surface, live } = makeSurface();
@@ -179,7 +217,11 @@ test("connect() routes an incoming bus message through the LATER-defined handleC
   surface.connect("ws://x");
   live.handleCommand.ret = { pong: 1 };
   lastWs.onmessage({ data: JSON.stringify({ action: "ball", reqId: 5 }) });
-  assert.deepEqual(live.handleCommand.calls[0][0], { action: "ball", reqId: 5 }, "message routed to the LIVE handleCommand");
+  assert.deepEqual(
+    live.handleCommand.calls[0][0],
+    { action: "ball", reqId: 5 },
+    "message routed to the LIVE handleCommand"
+  );
   assert.deepEqual(
     lastWs.sent[0],
     { type: "reply", reqId: 5, action: "ball", result: { pong: 1 } },

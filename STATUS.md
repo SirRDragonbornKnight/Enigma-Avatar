@@ -48,7 +48,7 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `npm test` -> **186 pass / 0 fail / 11 skipped**; python avatar tests 6/6; `node --check` clean.
+- Suite: `node --test` -> **264 pass / 0 fail / 11 skipped** (2026-06-29); python avatar tests 14/14; eslint + prettier clean.
 
 ## Motion compositor & AI control (P1-P4)
 
@@ -142,6 +142,14 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
 - **`bus.py`** -- relay hub on `ws://127.0.0.1:8765` (the launcher starts it; or run it standalone). A
   driver sends JSON `{action, ...}` commands that `avatar.js`'s `handleCommand` applies; any LLM that
   speaks that protocol drives her.
+- **AI-control kill-switch ("no surprises").** A persisted toggle (`localStorage enigmaAvatar.aiControl`,
+  default ON) gates the bus at the `connect()` chokepoint (`src/control/surface.js`): while OFF, EVERY
+  inbound command is dropped before it dispatches (queries included -- a reqId driver gets an honest
+  `{"error":"ai control paused"}` reply), so nothing over the bus can be a surprise. Flip it from
+  **Settings -> "Accept AI control (bus)"** or the **tray** checkbox (reachable even when she can't be
+  clicked); the still-open socket resumes instantly. Each ACCEPTED command also briefly reveals the
+  status line ("AI: <action>") so an AI-driven move is never mistaken for a glitch. Origin gating in
+  `bus.py` (`ALLOWED_ORIGINS`) still blocks cross-site (browser) producers at the handshake.
 - **`say.py`** -- CLI: `say.py model chica`; `size 0.8`; `fingers R 1`; `perform "Hi! [pose:right_arm=1.0]"`; `snap`; `demo` (run with no args for the full list). Fails honestly on bad args (no raw traceback); ASCII help.
 - **`speak.py`** -- Kokoro TTS: synthesize text and have her speak it + lip-sync.
 
@@ -151,7 +159,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
   no longer stomps the AI pose). The suite asserts INTENT, not current behavior. Current count:
-  **186 pass / 0 fail / 11 skipped**.
+  **264 pass / 0 fail / 11 skipped** (2026-06-29; +the move-set bus/query tests and the AI-control kill-switch gate test since the 186 mark).
 - **`node tools/rig_report.mjs`** -- headless cascade inspector: extracts each model's REAL bone snapshot from
   its glTF JSON (names + world positions + hierarchy, no WebGL / no mesh decode) and runs the SAME tiers the
   engine uses (incl. the tier-3.5 `resolveBetween` step + the current facial regexes + a blink-channel probe),
@@ -180,8 +188,12 @@ _All counts below are ASSERTED by `tests/realmodels.test.js` (verified via `tool
 1. **Feel tuning by the user's eye** on the live overlay: motion amplitude/choreography, the
    velocity-clamp's effect on co-speech snappiness vs the Filian target, jaw axis/sign (`facialTune`),
    lip-sync gain. Headless tests can't judge feel.
-2. **P4 "the brain"** -- the LLM that authors the tag/pose streams over the bus, designed WITH the
-   user (the bus + `perform`/`pose` path is built & tested; Enigma is still pretraining).
+2. **P4 "the brain"** -- the LLM that authors the tag/pose streams over the bus. The bus +
+   `perform`/`pose` path and `brain.py`'s decide->act->verify-by-numbers loop are built & tested, and
+   `brain.py --llm <endpoint>` already lets ANY OpenAI-compatible author (a local model, OR Claude/any
+   agent) drive her today -- tags are sanitized against live caps first. NOT blocked on Enigma (which is
+   the future local-from-scratch author, still pretraining). What remains is the persistent
+   perception/memory "mind", designed WITH the user.
 3. **A nicer/"cuter" no-model placeholder** (current state is just the ASCII text hint).
 4. **Model-zoo stragglers** (measure each with `node tools/rig_report.mjs <model>`, confirm the swing
    live): lolbit/mangle arm (+mangle hips/chest) via a cascade-tier improvement; grace_howard needs a
