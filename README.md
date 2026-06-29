@@ -19,9 +19,31 @@ your desktop, like _Desktop Mate_. One codebase, runs in a browser **and** in El
 > `rig_overrides`), with full per-finger control, a true sum-then-cap compositor, an enforced
 > speed limit, working VRM bodies, and strict blink. This README reflects that.
 
-## Files
+## Repo layout
 
-- `index.html` + `avatar.js` -- the engine **orchestrator** (scene, render loop, model lifecycle, float/grab, the `EnigmaAvatar` control surface + bus `handleCommand`).
+The tree groups files by concern (folderized 2026-06-29; see `TODO.md` "Restructure"):
+
+```
+index.html              page shell (importmap + loads src/avatar.js)
+shell/                  Electron MAIN process: main.js, preload.js, foreground.js
+src/
+  avatar.js             the renderer orchestrator (entry; wires everything below)
+  model/                loader.js, library.js, default_avatar.js
+  rig/                  rig.js, skinweights.js, region.js, face-geometry.js, mouth-geometry.js
+  motion/               procedural.js, spring.js, conjure.js, physics.js, motionmath.js
+  face/                 facial.js          audio/  voice.js
+  interaction/          hittest.js (SAFETY), look.js, placement.js
+  control/              control.js (perform-tag parser)
+  ui/                   ui.js              util/   mathutil.js
+python/                 bus.py, say.py, speak.py, brain.py, import_unitypackage.py
+voice/                  vendored Kokoro TTS (voice.py)
+tools/  tests/  assets/
+bone_limits.json, models.json, mod.json, package.json   (config/data stay at root)
+```
+
+## Files (by role)
+
+- `index.html` + `src/avatar.js` -- the engine **orchestrator** (scene, render loop, model lifecycle, float/grab, the `EnigmaAvatar` control surface + bus `handleCommand`).
 - `rig.js` -- **bone IDENTIFICATION cascade**: VRM humanoid -> name regex -> geometric/topological inference -> structural "between" repair. Generic (no per-model data); maps any rig's bones to 19 canonical roles and degrades gracefully on non-bipeds. Unit-tested.
 - `procedural.js` -- the motion compositor: applies the AI's masked, weighted `pose`/`flex` layers (+ per-finger curl) over the roles `rig.js` resolves. Same-role layers sum, the sum is capped once to the joint limit, and the per-frame delta is rate-limited to `speed_limit`. No idle/emote catalog.
 - `spring.js` -- spring-bone physics (hair/tail/ears sway); name-based + geometric fallback, with role-matched bones excluded so limbs never go floppy; gravity gated on real motion so fallback chains don't sag at rest.

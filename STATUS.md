@@ -83,7 +83,10 @@ bus (`handleCommand`):
 
 ## Architecture (modules)
 
-The engine is split into focused modules; `avatar.js` is the orchestrator that wires them.
+The engine is split into focused modules; `src/avatar.js` is the orchestrator that wires them.
+Files are folderized by concern (2026-06-29): `shell/` (Electron main), `src/<concern>/`
+(`model rig motion face audio interaction control ui util`), `python/` (bus + CLIs), `voice/`
+(vendored TTS). Full tree in `README.md`; the bare module names below now live under those folders.
 
 - **`rig.js`** -- bone **identification** cascade (the heart): `resolveRig(model, vrm)` maps any
   rig's bones to the 19 canonical roles via generic tiers, each filling only still-empty roles:

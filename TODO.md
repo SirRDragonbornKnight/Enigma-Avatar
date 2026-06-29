@@ -17,6 +17,32 @@ logs a dead key). Lower-severity items left open are in the buckets below (H1 re
 or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-window reload,
 `verify:"where"` mouse false-positive, name-tier center-role drop when the sole center bone is side-tagged.
 
+### 0) Restructure (conceptual rebuild) -- Phase 1 DONE, Phases 2-5 OPEN
+
+**Phase 1 (DONE 2026-06-29):** folderized the flat repo into `shell/` + `src/<concern>/` +
+`python/` with zero logic changes; all refs repointed; green at every headless layer
+(node --test 236/11, pytest 14, eslint 0, tsc 0). The ONE thing headless can't prove is the
+Electron BOOT (the new `ROOT` paths in `shell/main.js`, `package.json "main"`, `index.html`
+src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boots.**
+
+**Phases 2-5 (OPEN -- must be done WITH a live launch between carves):** decompose the
+~3.6k-line `src/avatar.js` orchestrator closure into modules (`src/scene/`, `src/control/bus.js`
++ `surface.js`, `src/appearance/*`, `src/interaction/input.js`). NOT safe to do blind:
+
+- **Deferred-reference web.** The bus `COMMANDS` table reads `ui` + ~20 `ui*` relays defined
+  ~700 lines LATER; only deferred (runtime) execution makes it legal. Any extraction must
+  rebuild that graph via a deps object and be INVOKED after the deps exist (TDZ/order traps).
+- **Live mutable state.** Handlers read `let`s reassigned elsewhere (`facial`, `spring`,
+  `platforms`, `bonesShown`, `rotateMode`, `springOn`, `curDisp`) -- pass them as live
+  thunks/getters, NEVER frozen values, or a bus command silently breaks.
+- **No glue test coverage + no headless Electron.** Tests cover the pure modules, not the
+  dispatch table or the SAFETY-critical hit-test/input/click-through -- and Electron can't be
+  launched in the agent shell. So each carve needs the user to launch & spot-check (esp.
+  click-through) before the next. Suggested order (leaf-first): bus registry -> control
+  surface -> appearance (outfits/meshes/morphs/recolor/jiggle/attachments) -> scene/render
+  loop -> hit-test/input LAST and most carefully. Also split `ui.js` (1.6k) + `shell/main.js`
+  (1k) along their section seams. Net target: `src/avatar.js` ~150-line bootstrap.
+
 ### 1) Needs the live overlay + real models (cannot be judged from code/tests)
 
 - [ ] **FEEL TUNING by the user's eye.** Motion amplitude/choreography; the velocity-clamp vs Filian

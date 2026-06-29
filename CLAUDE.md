@@ -23,8 +23,8 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
   model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/recode against the
   SPEC's intent, NOT against what the code currently does — passing tests often just enshrine wrong
   behavior. Loading from that external dir MUST keep working (no path-restricting the loader).
-- **Control plane = the local WebSocket bus** (`bus.py`), driven by `say.py` (fire-and-forget) and
-  `tools/avbus.py` (request/reply): pose/look/conjure/say/capabilities, plus inline perform tags in
+- **Control plane = the local WebSocket bus** (`python/bus.py`), driven by `python/say.py` (fire-and-forget)
+  and `tools/avbus.py` (request/reply): pose/look/conjure/say/capabilities, plus inline perform tags in
   speech (`[pose:role=p/y/r]`, `[look:dir]`, `[conjure:x]`). It is **Origin-gated** (blocks browser
   drive-by / CSWSH); keep it so.
 - **SAFETY — fail-safe click-through is load-bearing.** The overlay is transparent and must pass clicks
@@ -38,13 +38,20 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
 - **Generic-only:** no per-model rig overrides, no canned gestures/emotes. Fit rigs via the 19-role
   cascade (VRM → name → geometry → between); author motion via pose/flex/setFingers. Don't re-add the
   removed override mechanism.
-- **TTS is vendored** (`voice/voice.py`, Kokoro, Apache-2.0) so this repo is self-contained — `speak.py`
-  loads it locally. Don't reintroduce a dependency on the engine's `mods/voice`.
+- **TTS is vendored** (`voice/voice.py`, Kokoro, Apache-2.0) so this repo is self-contained —
+  `python/speak.py` loads it locally. Don't reintroduce a dependency on the engine's `mods/voice`.
 
 ## Working style
 - "Make a plan first" means present the plan and **stop for approval** — don't build it in the same pass.
 - **Fix in place, don't compensate** — change the wrong code; don't bolt on shims/wrappers/fallbacks.
 - Verify load-bearing numbers/line-refs with a direct tool call BEFORE relaying them.
+
+## Repo layout (folderized 2026-06-29)
+`shell/` = Electron main process · `src/` = renderer engine, grouped by concern
+(`model/ rig/ motion/ face/ audio/ interaction/ control/ ui/ util/`, entry `src/avatar.js`)
+· `python/` = bus + CLIs · `voice/` = vendored TTS · config/data (`*.json`, `index.html`) at
+root. Full tree + per-file roles in `README.md`. `src/avatar.js` is still a ~3.6k-line
+orchestrator closure pending decomposition — see `TODO.md` "Restructure".
 
 ## Project state
 `STATUS.md` (what works + how to launch) · `TODO.md` (backlog / audit log).
