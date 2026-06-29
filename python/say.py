@@ -89,7 +89,7 @@ def _parse(argv: list[str]) -> dict | None:
     if head == "size":
         return {"action": "size", "value": float(argv[1])}
     if head == "move":
-        return {"action": "moveTo", "px": float(argv[1]), "py": float(argv[2])}
+        return {"action": "move", "px": float(argv[1]), "py": float(argv[2])}
     if head == "model":
         return {"action": "load", "url": _resolve_model(argv[1])}
     if head in ("default", "placeholder", "blank"):  # the built-in zero-asset procedural figure (no model file needed)
@@ -122,15 +122,15 @@ def _parse(argv: list[str]) -> dict | None:
     ):  # move the overlay between screens: `monitor next` (cycle L->R) or `monitor 1`
         arg = argv[1].lower() if len(argv) > 1 else "next"  # no arg -> just hop to the next monitor
         if arg in ("next", "prev", "cycle"):
-            return {"action": "setDisplay", "index": "prev" if arg == "prev" else "next"}
+            return {"action": "monitor", "index": "prev" if arg == "prev" else "next"}
         return {
-            "action": "setDisplay",
+            "action": "monitor",
             "index": int(arg),
         }  # explicit screen.getAllDisplays() index (use the menu to see which is which)
     if head == "goto":  # ease to a named anchor: `goto center` / topleft / topright / cursor ...
-        return {"action": "goTo", "to": argv[1] if len(argv) > 1 else "center"}
+        return {"action": "move", "to": argv[1] if len(argv) > 1 else "center"}
     if head == "look":  # aim her gaze at a screen point: `look 800 400`
-        return {"action": "lookAt", "px": float(argv[1]), "py": float(argv[2])}
+        return {"action": "look", "px": float(argv[1]), "py": float(argv[2])}
     if (
         head == "fingers"
     ):  # curl a hand 0..1, or `none` to release to the reactive grip: `fingers R 1` / `fingers L none`

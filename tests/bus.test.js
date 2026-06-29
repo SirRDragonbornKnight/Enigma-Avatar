@@ -63,8 +63,18 @@ test("the motion-core move set is reachable by action name", () => {
   // An AI driving her must be able to address each motion primitive + the introspection verbs.
   // If a future edit drops one of these from the table, the brain loses that ability silently — bite.
   const { COMMANDS } = makeRegistry();
-  for (const action of ["pose", "layer", "fingers", "lookAt", "conjure", "perform", "capabilities", "query"]) {
+  for (const action of ["pose", "fingers", "look", "move", "conjure", "perform", "capabilities", "query"]) {
     assert.equal(typeof COMMANDS[action], "function", `move set must expose '${action}'`);
+  }
+});
+
+test("one name per concept: the retired verbs/aliases are GONE (not silently still routing)", () => {
+  // 2026-06-29 redesign merged 4 duplicate pairs + renamed 2 + dropped 4 aliases. A driver that learns
+  // the move set must not find two names for one thing. If any of these reappear, the merge regressed.
+  const { COMMANDS, handleCommand } = makeRegistry();
+  for (const dead of ["moveTo", "goTo", "lookAt", "lookMode", "setMorph", "layer", "setDisplay", "setMesh", "screenshot", "caps", "hand"]) {
+    assert.equal(COMMANDS[dead], undefined, `'${dead}' must be retired, not aliased`);
+    assert.equal(handleCommand({ action: dead }), undefined, `'${dead}' dispatches to an honest no-op`);
   }
 });
 
@@ -97,14 +107,54 @@ test("pose / fingers / conjure forward the command to the control surface", () =
   assert.equal(EA.conjure.calls.length, 1, "conjure -> EnigmaAvatar.conjure");
 });
 
-test("aliases route to the same behavior as their canonical action", () => {
+test("move routes on its args: {px,py} = pixel-exact, {to} = by name (merged moveTo+goTo)", () => {
   const { handleCommand, EA } = makeRegistry();
-  handleCommand({ action: "screenshot" });
-  assert.equal(EA.snap.calls.length, 1, "screenshot -> snap");
-  handleCommand({ action: "caps" });
-  assert.equal(EA.capabilities.calls.length, 1, "caps -> capabilities");
-  handleCommand({ action: "hand", side: "L", curl: 0.5 });
-  assert.equal(EA.fingers.calls.length, 1, "hand -> fingers");
+  handleCommand({ action: "move", px: 700, py: 1100 });
+  assert.deepEqual(EA.moveTo.calls[0], [700, 1100], "pixel coords -> moveTo(px,py)");
+  handleCommand({ action: "move", to: "bottomright" });
+  assert.deepEqual(EA.goTo.calls[0], ["bottomright"], "a named anchor -> goTo(name)");
+  handleCommand({ action: "move" });
+  assert.deepEqual(EA.goTo.calls[1], ["center"], "no args -> goTo('center')");
+});
+
+test("look routes on its args: {mode} sets the channel, {at}/{px,py} forces a gaze (merged lookMode+lookAt)", () => {
+  const { handleCommand, EA, deps } = makeRegistry();
+  handleCommand({ action: "look", mode: "eyes" });
+  assert.deepEqual(deps.uiSetLookMode.calls[0], ["eyes"], "a mode -> uiSetLookMode");
+  assert.equal(EA.lookAt.calls.length, 0, "setting the mode does NOT also force a gaze");
+  handleCommand({ action: "look", at: [300, 400] });
+  assert.deepEqual(EA.lookAt.calls[0], [300, 400], "{at:[x,y]} -> lookAt(x,y)");
+  handleCommand({ action: "look", px: 5, py: 6 });
+  assert.deepEqual(EA.lookAt.calls[1], [5, 6], "{px,py} also forces a gaze");
+});
+
+test("morph drives+SAVES by default; {save:false} is a transient probe (merged morph+setMorph)", () => {
+  // BITE: the save split is the whole point of the merge — flip the default and one of these fails.
+  const { handleCommand, EA, deps } = makeRegistry();
+  handleCommand({ action: "morph", index: 2, value: 1 });
+  assert.deepEqual(deps.uiSetMorphValue.calls[0], [2, 1], "default -> the saved/relayed path");
+  assert.equal(EA.setMorph.calls.length, 0, "the saved path does NOT also poke the transient one");
+  handleCommand({ action: "morph", index: 3, value: 0.5, save: false });
+  assert.deepEqual(EA.setMorph.calls[0], [3, 0.5], "{save:false} -> the transient local probe");
+});
+
+test("pose folds in layer clearing: {clear:'id'} one layer, {clear:true} all (merged pose+layer)", () => {
+  const { handleCommand, EA } = makeRegistry();
+  handleCommand({ action: "pose", flex: { right_arm: [1, 0, 0] } });
+  assert.equal(EA.poseLayer.calls.length, 1, "a normal pose still sets a layer via poseLayer");
+  handleCommand({ action: "pose", clear: "wave" });
+  assert.deepEqual(EA.poseLayer.calls[1][0], { id: "wave", clear: true }, "{clear:'id'} clears that one layer");
+  handleCommand({ action: "pose", clear: true });
+  assert.deepEqual(EA.layer.calls[0][0], { op: "clearAll" }, "{clear:true} clears ALL layers");
+});
+
+test("query('actions') self-reports the live move set (the 'what can I send?' verify-by-numbers hook)", () => {
+  const { handleCommand, COMMANDS } = makeRegistry();
+  const actions = handleCommand({ action: "query", what: "actions" });
+  assert.ok(Array.isArray(actions), "query:actions returns a list");
+  assert.deepEqual(actions, Object.keys(COMMANDS).sort(), "it reports exactly the live table, sorted");
+  assert.ok(actions.includes("move") && actions.includes("look"), "the merged verbs are advertised");
+  assert.ok(!actions.includes("moveTo"), "retired verbs are NOT advertised");
 });
 
 test("handlers read LIVE state, not a frozen snapshot (showBones toggles with bonesShown)", () => {
