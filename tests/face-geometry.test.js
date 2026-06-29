@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { analyzeMorphGeometry } from "../geom_face.js";
+import { analyzeMorphGeometry } from "../src/rig/face-geometry.js";
 
 // Grid head plane: x −0.5..+0.5, y 1..2 in local space (head bone at y=1 → span = 1.0). With
 // the default bands that puts EYES at y≈1.62 (band 1.44..1.80) and MOUTH at y≈1.25 (1.07..1.43).

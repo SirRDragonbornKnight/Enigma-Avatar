@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolveNames, resolveGeometry, resolveBetween, ROLES } from "../rig.js";
+import { resolveNames, resolveGeometry, resolveBetween, ROLES } from "../src/rig/rig.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const MOD = path.resolve(HERE, ".."); // enigma-avatar

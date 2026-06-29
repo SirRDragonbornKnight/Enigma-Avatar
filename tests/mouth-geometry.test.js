@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import * as THREE from "three";
-import { detectMouthMorph } from "../geom_mouth.js";
+import { detectMouthMorph } from "../src/rig/mouth-geometry.js";
 
 // model = Group → Mesh with morph targets over a vertical vertex column (y 0..1).
 // detectMouthMorph's headCut = maxY - 0.35*H = 0.65, so verts with y >= ~0.67 are "head".

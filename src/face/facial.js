@@ -9,8 +9,8 @@
 // `mode` keeps meaning "does she have a MOUTH" (every consumer reads it that way); blinkMode is new.
 // Lip-sync stays amplitude-driven (mouth opens on loudness) via setMouth().
 import * as THREE from "three";
-import { detectMouthMorph } from "./geom_mouth.js";
-import { analyzeMorphGeometry } from "./geom_face.js"; // head-anchored eye/mouth band classifier (facial v2 item ②, unit-tested)
+import { detectMouthMorph } from "../rig/mouth-geometry.js";
+import { analyzeMorphGeometry } from "../rig/face-geometry.js"; // head-anchored eye/mouth band classifier (facial v2 item ②, unit-tested)
 
 // Widened name dictionaries (research 2026-06-11: ARKit camelCase, Unified Expressions, VRoid
 // Fcl_*, CC V_*, MMD Japanese). No bare \bopen\b — it grabs eye_open etc.

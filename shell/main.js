@@ -61,20 +61,24 @@ let _lastReportByWin = new Map(); // winId -> ms timestamp of its last hit-test 
 const REPORT_STALE_MS = 2500; // a window 'over' but silent longer than this is treated as a HUNG renderer -> forced click-through (fail-open). Healthy renderers heartbeat ~1x/s from their render loop, so an idle-but-legit hover stays fresh.
 let currentModelUrl = null; // last model the brain loaded → peers mirror it
 
-const MODELS_DIR = path.join(__dirname, "models");
-const MANIFEST = path.join(__dirname, "models.json");
-const { createLibrary } = require("./library.js");
+// main.js lives in shell/; the runtime data dirs (models/, props/, assets/), the JSON
+// manifests, and index.html all stay at the REPO ROOT, so resolve them off ROOT, not __dirname.
+const ROOT = path.resolve(__dirname, "..");
+const MODELS_DIR = path.join(ROOT, "models");
+const MANIFEST = path.join(ROOT, "models.json");
+const { createLibrary } = require("../src/model/library.js");
 // Try a python interpreter (only needed to import a .unitypackage) — injected into the library.
 function runPython(args) {
   for (const py of [process.env.PYTHON, "python", "py"].filter(Boolean)) {
-    const r = spawnSync(py, args, { cwd: __dirname, encoding: "utf8" });
+    const r = spawnSync(py, args, { cwd: ROOT, encoding: "utf8" });
     if (!(r.error && r.error.code === "ENOENT")) return r; // found an interpreter (may still have failed inside)
   }
   return { status: 1, stderr: "Python not found (needed to import .unitypackage)" };
 }
 // The model library — folder discovery / import / recoverable trash. Pure fs logic, UNIT-TESTED in
-// tests/library.test.js; main.js just wires the real paths + the IPC surface.
-const lib = createLibrary({ modelsDir: MODELS_DIR, manifestPath: MANIFEST, runPython, scriptDir: __dirname });
+// tests/library.test.js; main.js just wires the real paths + the IPC surface. The python CLIs
+// (import_unitypackage.py) live in python/.
+const lib = createLibrary({ modelsDir: MODELS_DIR, manifestPath: MANIFEST, runPython, scriptDir: path.join(ROOT, "python") });
 
 // --- display + window helpers -----------------------------------------------
 function displays() {
@@ -300,7 +304,7 @@ function makeWindow(display, isBrain, peerCount) {
   // or spawn a window. (No-op in normal use; closes a renderer-compromise escalation path.)
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
-  win.loadFile(path.join(__dirname, "index.html"));
+  win.loadFile(path.join(ROOT, "index.html"));
   // PERSISTENT listener (not .once): a reload (tray "Reload avatar" / the render-process-gone
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
   // sits blank forever, never knowing its role (the audited "reload bricks every window" bug).
@@ -499,7 +503,7 @@ async function importProp() {
   const files = res.filePaths;
   const mesh = files.find((f) => lib.MESH_EXT.has(path.extname(f).toLowerCase()));
   if (!mesh) return { error: "no .glb/.gltf/.vrm/.fbx among the selected files" };
-  const propsDir = path.join(__dirname, "props");
+  const propsDir = path.join(ROOT, "props");
   let name = lib.slug(path.basename(mesh, path.extname(mesh)));
   if (fs.existsSync(path.join(propsDir, name))) {
     for (let i = 2; i < 1000; i++) {
@@ -528,7 +532,7 @@ async function importProp() {
 function saveProfiles(json) {
   try {
     fs.writeFileSync(
-      path.join(__dirname, "profiles.json"),
+      path.join(ROOT, "profiles.json"),
       typeof json === "string" ? json : JSON.stringify(json, null, 2)
     );
     return { ok: true };
@@ -652,7 +656,7 @@ function refreshTrayMenu() {
 }
 function createTray() {
   if (tray) return;
-  let icon = nativeImage.createFromPath(path.join(__dirname, "assets", "tray.png"));
+  let icon = nativeImage.createFromPath(path.join(ROOT, "assets", "tray.png"));
   if (!icon || icon.isEmpty()) icon = nativeImage.createEmpty(); // tray still works iconless (Windows shows a default)
   tray = new Tray(icon);
   tray.setToolTip("Enigma Avatar — click to bring to primary, right-click to move / quit");
@@ -822,7 +826,7 @@ function init() {
     const f = fs.readdirSync(dir).find((n) => lib.MESH_EXT.has(path.extname(n).toLowerCase()));
     return f ? path.join(dir, f) : null;
   };
-  const fixModelMod = () => import(require("url").pathToFileURL(path.join(__dirname, "tools", "fix_model.mjs")).href);
+  const fixModelMod = () => import(require("url").pathToFileURL(path.join(ROOT, "tools", "fix_model.mjs")).href);
   ipcMain.handle("avatar:diagnoseModel", async (_e, id) => {
     try {
       if (!lib.safeId(id)) return { error: "bad model id" };

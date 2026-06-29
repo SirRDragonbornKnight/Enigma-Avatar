@@ -2,7 +2,7 @@
 // coSpeechPose(t, rms) returns additive role offsets scaled by live loudness. Headless + deterministic.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { coSpeechPose } from "../motionmath.js";
+import { coSpeechPose } from "../src/motion/motionmath.js";
 
 test("silence => stillness (no offsets at all)", () => {
   const o = coSpeechPose(1.0, 0);

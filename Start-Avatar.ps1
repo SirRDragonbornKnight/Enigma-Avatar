@@ -33,7 +33,7 @@ $bus = $null
 $python = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
 if ($python) {
-  $bus = Start-Process -FilePath $python -ArgumentList "`"$PSScriptRoot\bus.py`"" -WindowStyle Hidden -PassThru
+  $bus = Start-Process -FilePath $python -ArgumentList "`"$PSScriptRoot\python\bus.py`"" -WindowStyle Hidden -PassThru
 }
 
 Write-Host "Launching Enigma Avatar overlay." -ForegroundColor Green

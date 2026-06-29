@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
-import { createPhysics } from "../physics.js";
+import { createPhysics } from "../src/motion/physics.js";
 
 test("rapier: a dropped ball falls, bounces, and settles on the floor", async () => {
   await RAPIER.init({});

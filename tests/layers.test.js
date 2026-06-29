@@ -3,7 +3,7 @@
 // Headless: build the synthetic fullBiped, drive update(), assert on the live role bones.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProceduralRig } from "../procedural.js";
+import { buildProceduralRig } from "../src/motion/procedural.js";
 import { fullBiped } from "./fixtures.js";
 
 // rotation angle (rad) between a bone's current orientation and a captured rest quaternion:

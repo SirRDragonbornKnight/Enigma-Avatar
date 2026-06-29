@@ -21,8 +21,9 @@ from pathlib import Path
 import pytest
 
 AVATAR_DIR = Path(__file__).resolve().parents[1]  # repo root (standalone Enigma Avatar repo)
-if str(AVATAR_DIR) not in sys.path:
-    sys.path.insert(0, str(AVATAR_DIR))
+PY_DIR = AVATAR_DIR / "python"  # bus.py / say.py / speak.py live under python/
+if str(PY_DIR) not in sys.path:
+    sys.path.insert(0, str(PY_DIR))
 
 websockets = pytest.importorskip("websockets")
 from websockets.exceptions import InvalidHandshake

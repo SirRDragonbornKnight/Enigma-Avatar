@@ -4,8 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { buildSpringBones } from "../spring.js";
-import { resolveRig } from "../rig.js";
+import { buildSpringBones } from "../src/motion/spring.js";
+import { resolveRig } from "../src/rig/rig.js";
 import { hairRig, fullBiped, opaqueBiped } from "./fixtures.js";
 
 test("hairRig — springs hair/strand/tail/skirt; excludes forearm & fingers", () => {

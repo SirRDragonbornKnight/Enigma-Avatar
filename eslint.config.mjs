@@ -10,7 +10,8 @@ import globals from "globals";
 import prettier from "eslint-config-prettier";
 
 // Files loaded by the Electron MAIN process (CommonJS), not the browser renderer.
-const CJS_FILES = ["main.js", "preload.js", "library.js", "foreground.js"];
+// The shell lives in shell/; the model library is a CJS module under src/model/.
+const CJS_FILES = ["shell/main.js", "shell/preload.js", "shell/foreground.js", "src/model/library.js"];
 
 export default [
   {

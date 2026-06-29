@@ -7,25 +7,25 @@
 
 import * as THREE from "three";
 import { VRMUtils } from "@pixiv/three-vrm";
-import { loadAsset, kindOf, baseName } from "./loader.js";
-import { createVoice } from "./voice.js";
-import { createUI } from "./ui.js";
-import { buildProceduralRig } from "./procedural.js";
-import { coSpeechPose } from "./motionmath.js"; // co-speech body-motion envelope (pure, unit-tested)
-import { createConjure } from "./conjure.js"; // P3: transform-based conjure (spawn / move / dismiss props)
-import { parseControlTags, parseTagArg, resolvePropName } from "./control.js"; // P4: inline bracketed control tags in LLM speech
-import { buildSpringBones } from "./spring.js";
-import { createPhysics } from "./physics.js";
-import { buildFacial } from "./facial.js";
-import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./hittest.js"; // pure, unit-tested click-through math
-import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./placement.js"; // pure, unit-tested placement math
-import { headLookTarget, eyeLookAngles, eyeSide } from "./look.js"; // pure, unit-tested cursor/eye-look math
-import { resolveRig, ROLES } from "./rig.js";
-import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
+import { loadAsset, kindOf, baseName } from "./model/loader.js";
+import { createVoice } from "./audio/voice.js";
+import { createUI } from "./ui/ui.js";
+import { buildProceduralRig } from "./motion/procedural.js";
+import { coSpeechPose } from "./motion/motionmath.js"; // co-speech body-motion envelope (pure, unit-tested)
+import { createConjure } from "./motion/conjure.js"; // P3: transform-based conjure (spawn / move / dismiss props)
+import { parseControlTags, parseTagArg, resolvePropName } from "./control/control.js"; // P4: inline bracketed control tags in LLM speech
+import { buildSpringBones } from "./motion/spring.js";
+import { createPhysics } from "./motion/physics.js";
+import { buildFacial } from "./face/facial.js";
+import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./interaction/hittest.js"; // pure, unit-tested click-through math
+import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./interaction/placement.js"; // pure, unit-tested placement math
+import { headLookTarget, eyeLookAngles, eyeSide } from "./interaction/look.js"; // pure, unit-tested cursor/eye-look math
+import { resolveRig, ROLES } from "./rig/rig.js";
+import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
 // clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
 // (default_avatar.js's buildDefaultAvatar is retired — #13: no model loaded shows a DOM message via
 //  enterNoModel(), not a self-made character. Nothing here imports it anymore.)
-import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./mathutil.js";
+import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
 // bootstrap below (no renderer / DOM needed), letting tests assert the REAL ordering, not a fake.

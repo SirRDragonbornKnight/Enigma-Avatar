@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headLookTarget, eyeLookAngles, eyeSide } from "../look.js";
+import { headLookTarget, eyeLookAngles, eyeSide } from "../src/interaction/look.js";
 
 const LOOK = { gainX: 1.4, gainY: 1.0, flipX: 1, flipY: -1, maxX: 0.6, maxY: 0.35 };
 const EYE = { gain: 1.15, flipX: 1, flipY: -1, maxX: 0.62, maxY: 0.42 };

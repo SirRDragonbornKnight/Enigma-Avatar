@@ -2,7 +2,7 @@
 // save, the spring weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
 import { test } from "node:test";
 import assert from "node:assert";
-import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, dipToLocalPx, localPxToDip } from "../mathutil.js";
+import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, dipToLocalPx, localPxToDip } from "../src/util/mathutil.js";
 
 // (the ambientAmp + idle-v4 primitive tests died with the idle system, 2026-06-12)
 

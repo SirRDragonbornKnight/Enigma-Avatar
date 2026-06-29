@@ -35,8 +35,9 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VOICE_MOD = HERE / "voice" / "voice.py"  # vendored Kokoro TTS (Apache-2.0) — this repo is standalone
-OUT_DIR = HERE / "outputs"
+ROOT = HERE.parent  # speak.py lives in python/; voice/ and outputs/ stay at the repo root
+VOICE_MOD = ROOT / "voice" / "voice.py"  # vendored Kokoro TTS (Apache-2.0) — this repo is standalone
+OUT_DIR = ROOT / "outputs"
 URI = "ws://127.0.0.1:8765"
 VOICE_HOST = "127.0.0.1"  # the resident voice service (voice/voice.py Voice.run_standalone)
 VOICE_PORT = 9907  # loads Kokoro ONCE and serves every line — no per-utterance model reload

@@ -13,9 +13,9 @@
 // Sketchfab rip where every bone is "Bone037_016") falls back to a GEOMETRIC pass that
 // springs the far-reaching dangly chains (tail / wings / fins).
 import * as THREE from "three";
-import { classifyBone, NSFW_REGIONS } from "./region.js";
-import { regionFeel } from "./mathutil.js"; // pure weight→physics mapping (unit-tested)
-export { classifyBone, NSFW_REGIONS } from "./region.js"; // re-export so existing importers keep working
+import { classifyBone, NSFW_REGIONS } from "../rig/region.js";
+import { regionFeel } from "../util/mathutil.js"; // pure weight→physics mapping (unit-tested)
+export { classifyBone, NSFW_REGIONS } from "../rig/region.js"; // re-export so existing importers keep working
 
 // (The ambient BREEZE — wind-at-rest swaying every dangly chain — was DELETED with the whole idle
 // system, user order 2026-06-12: it was SELF-GENERATED motion. Springs react to real movement only.)

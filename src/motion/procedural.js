@@ -11,7 +11,7 @@
 // Do not re-add self-generated motion here — not even as a "sensible default".
 
 import * as THREE from "three";
-import { resolveRig } from "./rig.js";
+import { resolveRig } from "../rig/rig.js";
 // bell / jumpElevation (gesture + clip shaping) were removed with the gesture/clip PURGE (2026-06-25);
 // the AI composes ALL motion as additive layers via the compositor now — nothing here shapes a clip.
 // (easeInOut survives in motionmath.js for conjure timing; it's just no longer imported here.)

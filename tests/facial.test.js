@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import * as THREE from "three";
-import { buildFacial } from "../facial.js";
+import { buildFacial } from "../src/face/facial.js";
 
 function meshWithMorphs(dict, count) {
   const m = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());

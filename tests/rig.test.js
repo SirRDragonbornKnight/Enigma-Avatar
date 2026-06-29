@@ -3,8 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../rig.js";
-import { buildDefaultAvatar } from "../default_avatar.js";
+import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../src/rig/rig.js";
+import { buildDefaultAvatar } from "../src/model/default_avatar.js";
 import {
   fullBiped,
   blenderBiped,

@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { installDOM, fire, makeApi } from "./dom.js";
-import { createUI } from "../ui.js";
+import { createUI } from "../src/ui/ui.js";
 
 const S = () => document.getElementById("avsettings");
 const M = () => document.getElementById("avmenu");

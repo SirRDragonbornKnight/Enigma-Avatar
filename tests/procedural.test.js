@@ -3,7 +3,7 @@
 // rig.js is lifted byte-for-byte from procedural.js#roleOf, so these must stay green.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProceduralRig } from "../procedural.js";
+import { buildProceduralRig } from "../src/motion/procedural.js";
 import { fullBiped, blenderBiped, hairRig } from "./fixtures.js";
 
 const matched = (model) => buildProceduralRig(model, {}).matched; // already sorted

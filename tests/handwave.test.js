@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { makeBone } from "./fixtures.js";
-import { buildProceduralRig } from "../procedural.js";
+import { buildProceduralRig } from "../src/motion/procedural.js";
 
 // A biped whose RIGHT hand carries five named finger chains (thumb..pinky), each a 3-joint
 // chain extending out of the palm with a little spread — enough for the curl-axis calibration.

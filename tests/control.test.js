@@ -1,8 +1,8 @@
 // P4 control channel — the pure parser that turns tagged LLM speech into motion intent + clean text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseControlTags, parseTagArg, resolvePropName } from "../control.js";
-import { lookTarget } from "../avatar.js";
+import { parseControlTags, parseTagArg, resolvePropName } from "../src/control/control.js";
+import { lookTarget } from "../src/avatar.js";
 
 test("extracts tags in order and returns clean spoken text", () => {
   const { clean, tags } = parseControlTags("Sure! [happy] let me show you. [conjure:sword] Here it is.");

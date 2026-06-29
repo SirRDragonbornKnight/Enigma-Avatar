@@ -61,7 +61,7 @@ ALIASES = {
 def _models_json() -> dict:
     """{id: url} from the mod's models.json (user-added models)."""
     try:
-        data = json.loads((HERE / "models.json").read_text(encoding="utf-8"))
+        data = json.loads((HERE.parent / "models.json").read_text(encoding="utf-8"))
         return {m["id"]: m["url"] for m in data.get("models", []) if m.get("id") and m.get("url")}
     except Exception:
         return {}

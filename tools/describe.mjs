@@ -20,7 +20,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readGltfJson, buildSnapshot, runCascade, discoverModels, urlKeyFor } from "./rig_report.mjs";
-import { ROLES } from "../rig.js";
+import { ROLES } from "../src/rig/rig.js";
 
 const REPLACEMENT = "�"; // baked-in mojibake marker (lost Shift-JIS, etc.)
 

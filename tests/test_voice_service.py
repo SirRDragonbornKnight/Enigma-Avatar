@@ -24,8 +24,9 @@ from pathlib import Path
 import pytest
 
 AVATAR_DIR = Path(__file__).resolve().parents[1]  # repo root (standalone Enigma Avatar repo)
-if str(AVATAR_DIR) not in sys.path:
-    sys.path.insert(0, str(AVATAR_DIR))
+PY_DIR = AVATAR_DIR / "python"  # speak.py lives under python/ (voice/ stays at root)
+if str(PY_DIR) not in sys.path:
+    sys.path.insert(0, str(PY_DIR))
 
 import speak  # the thin client under test (no Kokoro import at module load)
 

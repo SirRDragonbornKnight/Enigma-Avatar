@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "../placement.js";
+import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "../src/interaction/placement.js";
 
 const DISP = { x: 100, y: 200, width: 1000, height: 800 };
 const CURSOR = { x: 555, y: 666 };

@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSilhouette, overSilhouette, fallbackGrabHandle } from "../hittest.js";
+import { buildSilhouette, overSilhouette, fallbackGrabHandle } from "../src/interaction/hittest.js";
 
 // Build an RGBA buffer (bottom-left origin) of size SW*SH with alpha set to `a`
 // at every (x,y) for which inside(x,y) is true, else 0.
