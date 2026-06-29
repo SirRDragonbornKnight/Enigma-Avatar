@@ -11,7 +11,7 @@ composited from masked, weighted pose/flex layers fed over a local WebSocket bus
 meet ONLY at the bus (`ws://127.0.0.1:8765`).
 
 ## Setup / build / test — run these first
-- Node tests: `node --test` (Node built-in runner; ~217 tests, some skip without the real model
+- Node tests: `node --test` (Node built-in runner; ~274 tests, some skip without the real model
   library). `node --check <file>.js` for a quick syntax pass.
 - Python tests: `python -m pytest tests/test_avatar_*.py -q` (the bus CSWSH origin-gate + bone data).
 - Console output must be **ASCII** (the Windows cp1252 console can't print `→`, `—`, etc.).
@@ -40,6 +40,26 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
   removed override mechanism.
 - **TTS is vendored** (`voice/voice.py`, Kokoro, Apache-2.0) so this repo is self-contained —
   `python/speak.py` loads it locally. Don't reintroduce a dependency on the engine's `mods/voice`.
+
+## The control plane (`src/control/`) — and why it's a "facade"
+`EnigmaAvatar` (in `src/control/surface.js`) is the single control object every driver shares:
+(1) the **AI bus** dispatches onto it (`bus.js`), (2) **devtools/console** drive it via
+`window.EnigmaAvatar`, (3) **in-process** callers (UI, hotkeys, the `query.js` reporter) call it
+directly. It has owned this role since the first avatar commit (`1f92ad0`).
+
+It is a **facade** in the design-pattern sense — a flat set of stable verbs (`recolor`, `lookAt`,
+`poseLayer`, `conjure`, …) that **forward** to the engine internals, which live in the big
+`avatar.js` closure with all their shared state (`model`, `proc`, `rig`, profiles). "Facade" means
+*delegating front door*, NOT *broken/fake* — these methods do the real thing. This is deliberate and
+correct: it gives the AI **one object to learn** and a contract that stays stable while internals
+change (the spec's "AI-extendability" thesis). Don't "fix" the delegation by inlining engine logic
+into the surface or by duplicating state — that's the anti-goal.
+
+The three control modules (`surface.js` + `bus.js` + `query.js`) were carved out of `avatar.js` into
+factories (`createControlSurface`/`createBusRegistry`/`createQueryReporter`) that take a deps `api`.
+Because they're built mid-closure, **mutable engine state is passed as live getter thunks** (never
+frozen values) and a few render-loop primitives as setter thunks — so a handler always sees current
+truth. Each has an intent-first, mutation-checked test (`tests/{surface,bus,query}.test.js`).
 
 ## Working style
 - "Make a plan first" means present the plan and **stop for approval** — don't build it in the same pass.
