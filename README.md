@@ -1,5 +1,10 @@
 # Enigma Avatar -- desktop companion (Desktop Mate-style)
 
+> Its own repository, extracted from the Enigma Engine monorepo on 2026-06-28 (full history
+> preserved). Enigma Avatar is the **body**; **Enigma Engine** (the from-scratch LLM) is an
+> optional **brain** that can drive it over the local WebSocket bus (`ws://127.0.0.1:8765`).
+> Kokoro TTS (`voice/voice.py`, Apache-2.0) is vendored so this repo is fully self-contained.
+
 A rigged 3D model -- **any shape: human, animal, robot** -- that animates with its
 own **skeleton/bones** and **floats on a transparent, always-on-top overlay** of
 your desktop, like _Desktop Mate_. One codebase, runs in a browser **and** in Electron.

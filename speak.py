@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VOICE_MOD = HERE.parent / "mods" / "voice" / "voice.py"  # avatar lives at repo root now; voice mod stays under mods/
+VOICE_MOD = HERE / "voice" / "voice.py"  # vendored Kokoro TTS (Apache-2.0) — this repo is standalone
 OUT_DIR = HERE / "outputs"
 URI = "ws://127.0.0.1:8765"
 
