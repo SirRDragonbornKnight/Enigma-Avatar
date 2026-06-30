@@ -31,23 +31,16 @@ function makeReporter(over = {}) {
     eyeBones: [],
     ...over,
   };
-  const aq = createQueryReporter({
+  // `live` IS the engine state container (the reporter reads engine.facial / engine.proc / … off it);
+  // mutate it between calls to prove live reads. rig is a stable object on the container.
+  const engine = Object.assign(live, { rig: { rotation: { x: 0, y: Math.PI, z: 0 } } });
+  const aq = createQueryReporter(engine, {
     EnigmaAvatar: EA,
     _norm360: (v) => ((v % 360) + 360) % 360,
-    rig: { rotation: { x: 0, y: Math.PI, z: 0 } },
     getRot: () => ({ x: 10, y: 20, z: 30 }),
     outfitNames: () => ["casual"],
     profileFor: () => ({ hiddenMeshes: [] }),
     allMeshesInfo: () => [],
-    getFacial: () => live.facial,
-    getCurKey: () => live.curKey,
-    getSizeScale: () => live.sizeScale,
-    getProc: () => live.proc,
-    getPlatforms: () => live.platforms,
-    getCurDisp: () => live.curDisp,
-    getWeightMass: () => live.weightMass,
-    getSpringNeverExtra: () => live.springNeverExtra,
-    getEyeBones: () => live.eyeBones,
   });
   return { aq, EA, live };
 }

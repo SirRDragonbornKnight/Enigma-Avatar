@@ -2592,23 +2592,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // Answer a 'query' from the AI bus with LIVE ground truth — the overlay is the authority on
   // what it actually loaded (current model, facial/mouth mode, materials by index, roles).
   // Reporter lives in src/control/query.js; mutable state is read through live getters.
-  const answerQuery = createQueryReporter({
+  const answerQuery = createQueryReporter(engine, {
     EnigmaAvatar,
     _norm360,
-    rig,
     getRot,
     outfitNames,
     profileFor,
     allMeshesInfo,
-    getFacial: () => facial,
-    getCurKey: () => curKey,
-    getSizeScale: () => sizeScale,
-    getProc: () => proc,
-    getPlatforms: () => platforms,
-    getCurDisp: () => curDisp,
-    getWeightMass: () => _weightMass,
-    getSpringNeverExtra: () => _springNeverExtra,
-    getEyeBones: () => eyeBones,
   });
   window.EnigmaAvatar = EnigmaAvatar;
   window.__AV = { THREE, scene, camera, rig, getModel: () => model };
