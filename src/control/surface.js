@@ -429,7 +429,7 @@ export function createControlSurface(api) {
       try {
         const ws = new WebSocket(url);
         ws.onopen = () => setStatus("AI bus connected");
-        ws.onmessage = (e) => {
+        ws.onmessage = async (e) => {
           let c;
           try {
             c = JSON.parse(e.data);
@@ -459,6 +459,11 @@ export function createControlSurface(api) {
           try {
             if (onAiCommand) onAiCommand(c.action); // surface the accepted command (no-surprises indicator)
             result = getHandleCommand()(c);
+            // A few handlers are async (e.g. `snap` resolves the written PNG's path); await before we
+            // reply so a reqId driver gets the real result, not a serialized Promise. Sync handlers
+            // return non-thenables and are untouched. Dispatch already ran synchronously above, so
+            // command-application order is preserved; only this reqId reply is deferred to the resolve.
+            if (result && typeof result.then === "function") result = await result;
           } catch (err) {
             result = { error: String((err && err.message) || err) };
           }

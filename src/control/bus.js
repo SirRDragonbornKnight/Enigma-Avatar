@@ -199,9 +199,7 @@ export function createBusRegistry(api) {
     // --- SYSTEM / VERIFY-BY-NUMBERS ----------------------------------------------------------------
     capabilities: () => EnigmaAvatar.capabilities(), // what the brain can drive on THIS model
     query: (c) => (c.what === "actions" ? Object.keys(COMMANDS).sort() : answerQuery(c.what)), // self-report: the move set, or live ground truth
-    snap: (c) => {
-      EnigmaAvatar.snap(c); // capture avatar -> PNG for inspection
-    },
+    snap: (c) => EnigmaAvatar.snap(c), // capture avatar -> PNG; returns {ok,path,width,height} so a driver gets the file back (async — the bus reply awaits it)
     showBones: (c) => uiShowSkeleton(c.on ?? c.value ?? !getBonesShown()), // resolved HERE so every window flips in lockstep
     nameBone: (c) => {
       if (!c.bone) return;
