@@ -15,11 +15,13 @@
 // and two implementation-y names became intention names: setDisplay->monitor, setMesh->mesh.
 // `query:"actions"` self-reports the live verb list (the AI's "what can I send?" — verify by numbers).
 //
-// WIRING: avatar.js calls createBusRegistry(api) AFTER every dependency exists (the control surface,
-// the ui object, the ui* relays). State the handlers read LIVE (facial / spring / springOn /
-// bonesShown / rotateMode / platforms / curDisp are reassigned over the avatar's life) is passed as
-// getter thunks, never frozen values, so a handler always sees current truth.
-export function createBusRegistry(api) {
+// WIRING: avatar.js calls createBusRegistry(engine, services) AFTER every dependency exists (the
+// control surface, the ui object, the ui* relays). `services` holds the stable verbs (EnigmaAvatar,
+// ui, wake, getRot, answerQuery, the ui* relays). `engine` is the live state container (engine/state.js):
+// handlers read facial / spring / springOn / bonesShown / rotateMode / platforms / curDisp off it as
+// engine.facial, engine.springOn, … so they always see current truth (those are reassigned over the
+// avatar's life) without ever capturing a frozen value.
+export function createBusRegistry(engine, services) {
   const {
     EnigmaAvatar,
     ui,
@@ -49,15 +51,7 @@ export function createBusRegistry(api) {
     uiWearOutfit,
     uiSetPlatforms,
     uiHueShift,
-    // live-state getters (read at handler-call time, never captured)
-    getFacial,
-    getSpring,
-    getSpringOn,
-    getBonesShown,
-    getRotateMode,
-    getPlatforms,
-    getCurDisp,
-  } = api;
+  } = services;
 
   const COMMANDS = {
     // --- MOTION ------------------------------------------------------------------------------------
@@ -80,8 +74,8 @@ export function createBusRegistry(api) {
     impulse: (c) => {
       if (!c.region) return;
       wake(2);
-      const spring = getSpring();
-      return spring && getSpringOn() && spring.impulse ? spring.impulse(c.region, c, c.dur) : false; // kick an appendage (tail swish / ear flick); no-op while springs off
+      const spring = engine.spring;
+      return spring && engine.springOn && spring.impulse ? spring.impulse(c.region, c, c.dur) : false; // kick an appendage (tail swish / ear flick); no-op while springs off
     },
     perform: (c) => EnigmaAvatar.perform(c.text), // drive motion from inline-tagged LLM speech; returns the clean line
 
@@ -97,8 +91,8 @@ export function createBusRegistry(api) {
     },
     blink: (c) => {
       const n = +c.value;
-      if (c.value != null && isFinite(n)) getFacial()?.setBlink?.(n);
-      else getFacial()?.blink?.();
+      if (c.value != null && isFinite(n)) engine.facial?.setBlink?.(n);
+      else engine.facial?.blink?.();
     }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
 
     // --- CONJURE (prop spawning) + the physics-ball toy (distinct features) -------------------------
@@ -128,16 +122,16 @@ export function createBusRegistry(api) {
       if (c.axis) return uiSetRotAxis(c.axis, c.deg ?? c.value ?? 0);
       return uiSetRotAxis("y", c.deg ?? c.value ?? 0);
     },
-    rotateMode: (c) => uiSetRotateMode(c.on ?? c.value ?? !getRotateMode()), // drag-to-spin on/off (lockstep)
+    rotateMode: (c) => uiSetRotateMode(c.on ?? c.value ?? !engine.rotateMode), // drag-to-spin on/off (lockstep)
     monitor: (c) => {
       window.avatarIPC?.monitor?.(c.index ?? c.value ?? "next"); // index or "next"/"prev" — main owns the layout (was setDisplay)
     },
     platform: (c) => {
       // AI effect surfaces: {px,py,w} adds one (screen px on her monitor); {clear:true} wipes all
       if (c.clear) return uiSetPlatforms([]);
-      const platforms = getPlatforms();
+      const platforms = engine.platforms;
       if (isFinite(+c.px) && isFinite(+c.py)) {
-        const curDisp = getCurDisp();
+        const curDisp = engine.curDisp;
         return uiSetPlatforms([...platforms, { gx: curDisp.x + +c.px, gy: curDisp.y + +c.py, w: +c.w || 220 }]);
       }
       return platforms.length;
@@ -200,7 +194,7 @@ export function createBusRegistry(api) {
     capabilities: () => EnigmaAvatar.capabilities(), // what the brain can drive on THIS model
     query: (c) => (c.what === "actions" ? Object.keys(COMMANDS).sort() : answerQuery(c.what)), // self-report: the move set, or live ground truth
     snap: (c) => EnigmaAvatar.snap(c), // capture avatar -> PNG; returns {ok,path,width,height} so a driver gets the file back (async — the bus reply awaits it)
-    showBones: (c) => uiShowSkeleton(c.on ?? c.value ?? !getBonesShown()), // resolved HERE so every window flips in lockstep
+    showBones: (c) => uiShowSkeleton(c.on ?? c.value ?? !engine.bonesShown), // resolved HERE so every window flips in lockstep
     nameBone: (c) => {
       if (!c.bone) return;
       return uiSetBoneLabel(String(c.bone), c.label ?? ""); // label a bone in plain words (saved; empty clears)

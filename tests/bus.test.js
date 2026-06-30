@@ -48,14 +48,9 @@ function makeRegistry() {
     .split(",");
   const deps = { EnigmaAvatar: EA, ui, wake: spy(), getRot: spy({ x: 0, y: 0, z: 0 }), answerQuery: spy("Q") };
   for (const n of relayNames) deps[n] = spy();
-  deps.getFacial = () => live.facial;
-  deps.getSpring = () => live.spring;
-  deps.getSpringOn = () => live.springOn;
-  deps.getBonesShown = () => live.bonesShown;
-  deps.getRotateMode = () => live.rotateMode;
-  deps.getPlatforms = () => live.platforms;
-  deps.getCurDisp = () => live.curDisp;
-  const reg = createBusRegistry(deps);
+  // `live` IS the engine state container (handlers read engine.facial / engine.springOn / … off it);
+  // mutate it between calls to prove live reads. `deps` is the stable services.
+  const reg = createBusRegistry(live, deps);
   return { ...reg, EA, ui, live, deps };
 }
 

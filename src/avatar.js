@@ -2944,7 +2944,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // object, and the ui* relays all exist — so the handlers' references resolve. Mutable engine state
   // (facial/spring/springOn/bonesShown/rotateMode/platforms/curDisp are reassigned over the avatar's
   // life) is passed as live getter thunks, never frozen, so a handler always sees current truth.
-  const { handleCommand } = createBusRegistry({
+  const { handleCommand } = createBusRegistry(engine, {
     EnigmaAvatar,
     ui,
     wake,
@@ -2973,13 +2973,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiWearOutfit,
     uiSetPlatforms,
     uiHueShift,
-    getFacial: () => facial,
-    getSpring: () => spring,
-    getSpringOn: () => springOn,
-    getBonesShown: () => bonesShown,
-    getRotateMode: () => rotateMode,
-    getPlatforms: () => platforms,
-    getCurDisp: () => curDisp,
   });
 
   addEventListener("contextmenu", (e) => {

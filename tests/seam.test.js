@@ -134,7 +134,7 @@ test("seam: the EnigmaAvatar facade surface is unchanged", () => {
 });
 
 test("seam: the bus COMMANDS move set is unchanged", () => {
-  const { COMMANDS } = createBusRegistry({});
+  const { COMMANDS } = createBusRegistry({}, {});
   assert.deepEqual(
     Object.keys(COMMANDS).sort(),
     BUS_COMMANDS,
