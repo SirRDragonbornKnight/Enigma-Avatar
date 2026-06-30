@@ -114,6 +114,48 @@ function entryByWinId(id) {
 function liveWindows() {
   return windows.filter((w) => w.win && !w.win.isDestroyed());
 }
+
+// DEV auto-reload (opt-in via ENIGMA_DEV=1): reload every live window when a RENDERER source file
+// changes, so an edit takes effect without the manual tray "Reload avatar" (the running renderer
+// otherwise keeps executing the JS it parsed at startup). Inert for normal users — the desktop
+// launcher doesn't set the flag, so there's no fs.watch cost and no surprise reload. SCOPE: renderer
+// code only (src/ tree + index.html). MAIN-process files (shell/*.js) can't be hot-swapped in a
+// running Electron, so a relaunch is still needed there — we log that rather than pretend. We skip
+// *.json on purpose: the app itself writes profiles.json / models.json at runtime, and watching them
+// would reload-loop.
+function startDevReload() {
+  if (process.env.ENIGMA_DEV !== "1") return;
+  let timer = null;
+  const reloadAll = () => {
+    const live = liveWindows();
+    for (const w of live) {
+      try {
+        w.win.reload();
+      } catch {}
+    }
+    console.error("[dev] renderer change -> reloaded " + live.length + " window(s)");
+  };
+  const onEvt = (_evt, file) => {
+    if (!file) return;
+    const f = String(file).replace(/\\/g, "/");
+    if (/(^|\/)node_modules\//.test(f)) return;
+    if (!/\.(js|css|html)$/i.test(f)) return; // renderer source only (json is runtime-written -> would loop)
+    clearTimeout(timer);
+    timer = setTimeout(reloadAll, 200); // debounce a burst of saves into one reload
+  };
+  const targets = [
+    { dir: path.join(ROOT, "src"), opts: { recursive: true } }, // the renderer engine
+    { dir: ROOT, opts: { recursive: false } }, // top-level index.html (non-recursive: don't descend into node_modules/shell)
+  ];
+  for (const t of targets) {
+    try {
+      fs.watch(t.dir, t.opts, onEvt);
+    } catch (e) {
+      console.error("[dev] auto-reload: cannot watch " + t.dir + " (" + (e && e.message) + ")");
+    }
+  }
+  console.error("[dev] auto-reload ON (ENIGMA_DEV=1) - watching src/ + index.html; save a renderer file to reload");
+}
 // The display (and its overlay window) that currently contains the avatar's base position.
 function displayForGlobalPos() {
   return screen.getDisplayNearestPoint({ x: Math.round(gPos.x), y: Math.round(gPos.y) });
@@ -716,6 +758,8 @@ function init() {
       "[main] fullscreen-yield disabled - overlay may sit over fullscreen games (Ctrl+Shift+Alt+C still force-reclaims the desktop)"
     );
   }
+
+  startDevReload(); // dev-only (ENIGMA_DEV=1): reload renderer windows on a source-file save
 
   // Click-through hit reports (per window) → arbiter. {over, uiOpen} — uiOpen counts as "over"
   // (an open menu/Settings must keep receiving clicks even off the silhouette) AND makes a PEER
