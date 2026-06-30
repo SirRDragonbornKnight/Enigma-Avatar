@@ -213,6 +213,12 @@ export function createBusRegistry(engine, services) {
     },
   };
 
+  /**
+   * Dispatch one inbound bus command onto its handler. The wire shape is the typed contract in
+   * src/control/protocol.js (BusCommand union); an unknown/garbage action is an honest no-op
+   * (undefined), never a throw.
+   * @param {import("./protocol.js").BusCommand} c
+   */
   function handleCommand(c) {
     const fn = c && typeof c.action === "string" ? COMMANDS[c.action] : null;
     return fn ? fn(c) : undefined; // unknown/garbage action -> silent no-op (matches the old fall-through)
