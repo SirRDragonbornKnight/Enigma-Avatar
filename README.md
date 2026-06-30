@@ -32,10 +32,10 @@ src/
   rig/                  rig.js, skinweights.js, region.js, face-geometry.js, mouth-geometry.js
   motion/               procedural.js, spring.js, conjure.js, physics.js, motionmath.js
   face/                 facial.js          audio/  voice.js
-  interaction/          hittest.js (SAFETY), look.js, placement.js
+  interaction/          hittest.js (SAFETY), placement.js
   control/              control.js (perform-tag parser)
   ui/                   ui.js              util/   mathutil.js
-python/                 bus.py, say.py, speak.py, brain.py, import_unitypackage.py
+python/                 bus.py, say.py, speak.py, import_unitypackage.py
 voice/                  vendored Kokoro TTS (voice.py)
 tools/  tests/  assets/
 bone_limits.json, models.json, mod.json, package.json   (config/data stay at root)
@@ -95,7 +95,7 @@ for everything (models, **Add model...**, size, settings, quit). Launches hidden
   PRIMITIVES: masked, weighted `pose`/`flex` motion layers + per-finger `fingers`, authored over
   the bus or from inline-tagged speech (`perform`). Disjoint layers sum; same-role layers sum-then-cap;
   the per-frame delta is velocity-clamped; timed layers self-expire.
-  Left alone she stands still -- springs, blink (on a drive), and cursor-look are the only reflexes.
+  Left alone she stands still -- springs and blink (on a drive) are the only reflexes.
 - **Facial layer** -- amplitude lip-sync (blendshapes/visemes if present, else a jaw bone) + strict blink (speech-onset / bus only).
 - **Voice** -- Kokoro TTS speaks and the mouth lip-syncs to the audio (no cloud, **no fallback**).
 - **VRM bodies move** -- `autoUpdateHumanBones=false` at load lets the compositor drive `.vrm` humanoids.

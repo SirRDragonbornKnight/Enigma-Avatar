@@ -551,10 +551,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // all lived here — DELETED OUTRIGHT, user order 2026-06-12. No tunables remain: there is
   // nothing to tune. The blocks below are the survivors: commanded gestures/emotes + reactive
   // look/grip, and the gesture-boundary anti-pop blends they need.)
-  let _additive = false,
-    lookX = 0,
-    lookY = 0,
-    lookW = 0;
+  let _additive = false;
   // AI MOTION LAYERS (P1 compositor) — the brain composes motion as independent additive offset
   // bundles; disjoint roles SUM for free, same-role layers SUM here (weight-scaled). A layer:
   //   { parts:{role:[p,y,r]}, flex:{role:[ang,abd]}, weight, amp, speed, fn(localT)->{parts,flex},
@@ -769,8 +766,8 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     }
   }
 
-  // ===== THE FRAME LOOP. She stands bit-still at REST; the ONLY things that move her are reactive
-  // cursor-look + the AI's own additive motion LAYERS (pose/flex over the bus, P1) + the reactive
+  // ===== THE FRAME LOOP. She stands bit-still at REST; the ONLY things that move her are the AI's
+  // own additive motion LAYERS (pose/flex over the bus, P1) + the reactive
   // finger grip while carried. No idle, no canned gestures/expressions, no clip playback — every
   // deliberate move is AI-authored through the compositor (the gesture catalog / root-motion / clip
   // playback / body expressions were PURGED 2026-06-25, user order "purge means purge"). =====
@@ -783,12 +780,12 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       return;
     }
 
-    // BASE POSE — the normalized rest stance + reactive cursor-look. A fixed pose, not motion.
+    // BASE POSE — the normalized rest stance. A fixed pose, not motion.
     pose("hips", 0, 0, 0);
     pose("spine", 0, 0, 0);
     pose("chest", 0, 0, 0);
-    pose("neck", lookY * lookW * 0.35, lookX * lookW * 0.35, 0);
-    pose("head", lookY * lookW, lookX * lookW, 0);
+    pose("neck", 0, 0, 0);
+    pose("head", 0, 0, 0);
     pose("left_shoulder", 0, 0, 0);
     pose("right_shoulder", 0, 0, 0);
     flex("left_leg", 0);
@@ -830,11 +827,6 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     matched: R.matched,
     restAdjust, // boneName → net WORLD rotation the bind normalization applied there (for dangly-chain gravity preservation in avatar.js)
     update,
-    setLook: (x, y, w) => {
-      lookX = x || 0;
-      lookY = y || 0;
-      lookW = w == null ? 1 : Math.max(0, Math.min(1, w));
-    },
     setLayer: (id, spec) => {
       // AI compositor: add/replace a motion layer (spec=null clears it)
       if (!id) return false;
@@ -876,7 +868,6 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       channels: {
         pose: true,
         flex: Object.keys(flexAxis).length > 0,
-        look: true,
         layers: true,
         fingers: { L: fingers.L.map((f) => f.name), R: fingers.R.map((f) => f.name) },
       },

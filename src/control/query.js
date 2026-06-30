@@ -6,8 +6,8 @@
 // skin-weight truth, per-mesh bounds, eye gaze). Read-ONLY — it never mutates engine state.
 //
 // WIRING: avatar.js calls createQueryReporter(engine, services) after the control surface exists.
-// `engine` is the live state container (engine/state.js); state that changes over the avatar's life
-// (facial/proc/platforms/curDisp/curKey/sizeScale/weight maps/eyeBones/rig) is read off it and
+// `engine` is the live state container (built inline in avatar.js); state that changes over the avatar's life
+// (facial/proc/platforms/curDisp/curKey/sizeScale/weight maps/rig) is read off it and
 // snapshotted once at the TOP of each call so a single report is internally consistent. `services`
 // holds the stable helpers (EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo).
 import * as THREE from "three";
@@ -23,8 +23,7 @@ export function createQueryReporter(engine, services) {
       curKey = engine.curKey,
       sizeScale = engine.sizeScale,
       _weightMass = engine.weightMass,
-      _springNeverExtra = engine.springNeverExtra,
-      eyeBones = engine.eyeBones;
+      _springNeverExtra = engine.springNeverExtra;
     if (what === "materials") return EnigmaAvatar.materials(); // [{index,name}] — the recolor handle
     if (what === "meshes") return EnigmaAvatar.meshes(); // [{index,name,visible}] — show/hide handle
     if (what === "regions") return EnigmaAvatar.springRegions(); // [{region,count,weight,nsfw}] — soft-body jiggle areas
@@ -104,15 +103,6 @@ export function createQueryReporter(engine, services) {
         top,
       };
     }
-    if (what === "eyegaze")
-      return eyeBones.map((e) => {
-        // DIAGNOSTIC: each eye's world gaze vector — fwd.x flips L↔R only if HORIZONTAL eye-look works
-        const fwdLocal = e.right.clone().cross(e.up).normalize();
-        const wq = new THREE.Quaternion();
-        e.bone.getWorldQuaternion(wq);
-        const f = fwdLocal.applyQuaternion(wq);
-        return { bone: e.bone.name, fwd: [+f.x.toFixed(3), +f.y.toFixed(3), +f.z.toFixed(3)] };
-      });
     return EnigmaAvatar.state(); // default: full live state
   };
 }

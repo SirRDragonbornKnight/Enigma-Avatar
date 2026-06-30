@@ -9,7 +9,6 @@
 // VOCABULARY (2026-06-29 redesign — no backward-compat aliases): one name per concept. Four pairs
 // that used to be two verbs for near-the-same thing were merged so a driver never has to guess which:
 //   move   (was moveTo + goTo)      — {px,py} exact OR {to:"center"|"cursor"|...} by name
-//   look   (was lookAt + lookMode)  — {at:[px,py]} gaze at a point OR {mode:"head"|"eyes"|"both"}
 //   morph  (was morph + setMorph)   — drives+SAVES by default; {save:false} = transient probe
 //   pose   (was pose + layer)       — set a compositor layer; {clear:"id"} one, {clear:true} all
 // and two implementation-y names became intention names: setDisplay->monitor, setMesh->mesh.
@@ -17,7 +16,7 @@
 //
 // WIRING: avatar.js calls createBusRegistry(engine, services) AFTER every dependency exists (the
 // control surface, the ui object, the ui* relays). `services` holds the stable verbs (EnigmaAvatar,
-// ui, wake, getRot, answerQuery, the ui* relays). `engine` is the live state container (engine/state.js):
+// ui, wake, getRot, answerQuery, the ui* relays). `engine` is the live state container (built inline in avatar.js):
 // handlers read facial / spring / springOn / bonesShown / rotateMode / platforms / curDisp off it as
 // engine.facial, engine.springOn, … so they always see current truth (those are reassigned over the
 // avatar's life) without ever capturing a frozen value.
@@ -43,7 +42,6 @@ export function createBusRegistry(engine, services) {
     uiSetRegionWeight,
     uiSetMorphValue,
     uiSetRotateMode,
-    uiSetLookMode,
     uiSetBoneLabel,
     uiHighlightBone,
     uiDeleteOutfit,
@@ -63,14 +61,6 @@ export function createBusRegistry(engine, services) {
       return EnigmaAvatar.poseLayer(c);
     },
     fingers: (c) => EnigmaAvatar.fingers(c), // per-finger hand pose (fist / point / count / "no" wag)
-    look: (c) => {
-      // gaze: {mode:"head"|"eyes"|"both"} sets the cursor-look channel; otherwise force a gaze at a
-      // screen point ({at:[px,py]} or {px,py}). (was lookMode + lookAt.)
-      if (c.mode != null || (c.value != null && c.at == null && c.px == null && c.py == null))
-        return uiSetLookMode(c.mode ?? c.value);
-      const at = Array.isArray(c.at) ? c.at : null;
-      return EnigmaAvatar.lookAt(at ? at[0] : c.px, at ? at[1] : c.py); // force gaze; returns {drove}
-    },
     impulse: (c) => {
       if (!c.region) return;
       wake(2);

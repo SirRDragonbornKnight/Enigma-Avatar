@@ -1,16 +1,15 @@
 // The EnigmaAvatar control surface — the facade every driver talks to (blueprint sec 3/5/8).
 //
 // INTENT: createControlSurface wires a big facade over the engine. The carve's whole correctness rests
-// on it reading LIVE state through getters (never frozen), WRITING the look primitives through setters,
-// resolving its self-reference (perform -> lookAt) and the things defined later in avatar.js (ui /
-// handleCommand / the ui* relays) at call time, and degrading honestly. These tests drive the REAL
+// on it reading LIVE state through getters (never frozen), resolving the things defined later in
+// avatar.js (ui / handleCommand / the ui* relays) at call time, and degrading honestly. These tests drive the REAL
 // factory (the bus/query tests mock EnigmaAvatar, so only this file exercises surface.js) and BITE:
 // freeze a getter or drop a setter and the matching assertion fails.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createControlSurface } from "../src/control/surface.js";
 
-// surface.js reads window globals in state()/lookAt()/perform(); provide them for the Node test env.
+// surface.js reads window globals in state()/perform(); provide them for the Node test env.
 globalThis.innerWidth = 1920;
 globalThis.innerHeight = 1080;
 
@@ -28,7 +27,7 @@ function spy(ret) {
 // getters; mutate it between calls to prove live reads. `fn` holds the delegate-function spies.
 function makeSurface(over = {}) {
   const live = {
-    proc: { setLook: true, capabilities: () => ({ roles: 19 }), layerIds: () => ["a"], matched: ["hips"] },
+    proc: { capabilities: () => ({ roles: 19 }), layerIds: () => ["a"], matched: ["hips"] },
     facial: { setMouth: spy(), mode: "jaw", info: { axis: "x" } },
     spring: { names: ["tail"] },
     model: null,
@@ -38,14 +37,12 @@ function makeSurface(over = {}) {
     modelDims: { w: 2, h: 5 },
     springOn: true,
     facialOn: true,
-    lookOn: true,
     locked: false,
     rotateMode: false,
     bonesShown: false,
     curKey: "model-A",
     weightMass: null,
     attachObjs: [],
-    lookMode: "both",
     roleBones: {},
     ui: { isOpen: () => false, showSettings: spy(), hideSettings: spy() },
     handleCommand: spy({ ok: 1 }),
@@ -55,8 +52,6 @@ function makeSurface(over = {}) {
     uiAttach: spy(),
     uiDetach: spy(),
     uiClearAttachments: spy(),
-    cursorIdle: 999,
-    forceLookUntil: 0,
     ...over,
   };
   const fn = {};
@@ -65,7 +60,7 @@ function makeSurface(over = {}) {
     "tuneAttachment,showSkeleton,snapshot,allMaterialsInfo,recolor,hueShift,resetColors,profileFor",
     "allMeshesInfo,setMeshVisible,setMeshLabel,setBoneLabel,setRot,setYaw,setRotAxis,getRot,springRegions",
     "setRegionWeight,allMorphsInfo,setMorphValue,setRotateMode,posScreen,resolvePropName,parseControlTags",
-    "parseTagArg,lookTarget,wake,setLookMode,hasEyes",
+    "parseTagArg,wake",
   ]
     .join(",")
     .split(","))
@@ -79,13 +74,11 @@ function makeSurface(over = {}) {
   const conjurer = { spawn: spy("cid"), clear: spy(), dismiss: spy(), moveTo: spy(), ids: spy([]) };
 
   // `engine` IS the live state object: the surface reads engine.proc / engine.model / … so mutating
-  // `live` between calls proves the live reads; engine.cursorIdle = v writes straight back to it. The
-  // stable in-place objects are assigned on so the factory can destructure them at build.
+  // `live` between calls proves the live reads. The stable in-place objects are assigned on so the
+  // factory can destructure them at build.
   const engine = Object.assign(live, {
     pos,
     cursor,
-    LOOK: {},
-    eyeCfg: {},
     CONJURE_ASSETS: { ball: "ball.glb" },
   });
   const surface = createControlSurface(engine, {
@@ -118,29 +111,6 @@ test("setMorph drives the LIVE model by index and coerces NaN away from the GPU"
   assert.equal(infl[1], 0.7, "wrote the live model's influence");
   assert.equal(surface.setMorph(0, "not-a-number"), 0, "NaN is rejected (returns 0, no write)");
   assert.equal(infl[0], 0, "the bad value never reached the influences array");
-});
-
-test("lookAt WRITES through the setter thunks + cursor, and reports drove from the LIVE rig", () => {
-  // BITE: drop setForceLookUntil/setCursorIdle (or freeze proc) and these fail.
-  const { surface, live, cursor } = makeSurface();
-  const r = surface.lookAt(300, 400);
-  assert.deepEqual([cursor.x, cursor.y], [300, 400], "mutates the shared cursor in place");
-  assert.equal(live.cursorIdle, 0, "reset the idle counter via setCursorIdle");
-  assert.ok(live.forceLookUntil > 0, "opened the forced-look window via setForceLookUntil");
-  assert.equal(r.drove, true, "a rig with setLook reports drove=true");
-  live.proc = { setLook: undefined }; // a model with no gaze channel
-  assert.equal(surface.lookAt(1, 1).drove, false, "no gaze channel -> honest drove=false, not a fake success");
-  assert.equal(surface.lookAt(NaN, NaN).lookAt[0], 960, "NaN coords coerce to screen center (innerWidth/2)");
-});
-
-test("perform resolves its SELF-reference: a [look] tag calls EnigmaAvatar.lookAt", () => {
-  const { surface, fn, cursor } = makeSurface();
-  fn.parseControlTags.ret = { clean: "hi", tags: [{ type: "look", arg: "left" }] };
-  fn.lookTarget.ret = { x: 50, y: 60, label: "left" };
-  const r = surface.perform("hi [look:left]");
-  assert.equal(r.say, "hi", "returns the clean line for TTS");
-  assert.deepEqual(r.performed, ["look:left"]);
-  assert.deepEqual([cursor.x, cursor.y], [50, 60], "the self-call to lookAt actually moved the gaze");
 });
 
 test("connect() kill-switch: while AI control is paused, NO command dispatches and the caller gets an honest paused reply", () => {

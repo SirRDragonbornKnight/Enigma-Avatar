@@ -2,7 +2,7 @@
 //
 // The `EnigmaAvatar` facade (src/control/surface.js) and the bus move set (src/control/bus.js
 // COMMANDS) are the stable seam every driver depends on: the AI bus, devtools/`window.EnigmaAvatar`,
-// the CLIs (say.py / avbus.py / brain.py), the UI, and the hotkeys. The whole point of decomposing
+// the CLIs (say.py / avbus.py), the UI, and the hotkeys. The whole point of decomposing
 // the avatar.js closure behind this facade is that NONE of those observe a change.
 //
 // These two frozen lists lock that contract. A refactor that accidentally renames/drops/adds a verb
@@ -19,7 +19,7 @@ import { createBusRegistry } from "../src/control/bus.js";
 globalThis.innerWidth = globalThis.innerWidth ?? 1920;
 globalThis.innerHeight = globalThis.innerHeight ?? 1080;
 
-// The 59 public facade methods (sorted). Generated from the real factory, not hand-counted.
+// The 53 public facade methods (sorted). Generated from the real factory, not hand-counted.
 const SURFACE_METHODS = [
   "attach",
   "attachments",
@@ -31,21 +31,15 @@ const SURFACE_METHODS = [
   "conjure",
   "connect",
   "detach",
-  "eyeTune",
   "facialTune",
   "fingers",
-  "getLookMode",
   "getRotateMode",
   "glideTo",
   "goTo",
-  "hasEyes",
   "hueShift",
   "layer",
   "layers",
   "load",
-  "lookAt",
-  "lookMode",
-  "lookTune",
   "matched",
   "materials",
   "meshes",
@@ -82,7 +76,7 @@ const SURFACE_METHODS = [
   "where",
 ];
 
-// The 38 bus move-set verbs (sorted). One name per concept (the 2026-06-29 alias purge).
+// The 37 bus move-set verbs (sorted). One name per concept (the 2026-06-29 alias purge).
 const BUS_COMMANDS = [
   "attach",
   "ball",
@@ -97,7 +91,6 @@ const BUS_COMMANDS = [
   "hue",
   "impulse",
   "load",
-  "look",
   "mesh",
   "monitor",
   "morph",

@@ -12,7 +12,7 @@
 //   (?<![a-z])anal(?!og) → "Canal"/"banal"/"AnalogStick" aren't;  (?<![a-z])cock(?!pit|tail|atoo) →
 //   "Peacock"/"Cockpit" aren't;  (?<![a-z])ass(?![a-z]) → "Bass"/"Assistant" aren't.
 // "dick" carries NO word boundary on purpose — Mal0's bone is "DE-Dick1" (k runs straight into 1).
-export const REGIONS = [
+const REGIONS = [
   // distinct NSFW areas get their OWN region (→ their own weight slider) — Mal0 carries all three as
   // separate chains (Pussy*, AssHole*, DE-Dick*) and lumping them under one "genital" weight meant the
   // user couldn't tune/disable them individually ("we are missing a few weights").

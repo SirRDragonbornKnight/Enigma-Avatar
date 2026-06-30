@@ -48,7 +48,7 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `node --test` -> **278 pass / 0 fail / 11 skipped** (2026-06-30); python avatar tests 19/19; eslint + prettier clean.
+- Suite: `node --test` -> **261 pass / 0 fail / 11 skipped** (2026-06-30, after removing the cursor-look gaze system, `brain.py`, and the `src/engine/state.js` container); python avatar tests 19/19; eslint + prettier clean.
 
 ## Motion compositor & AI control (P1-P4)
 
@@ -189,11 +189,13 @@ _All counts below are ASSERTED by `tests/realmodels.test.js` (verified via `tool
    velocity-clamp's effect on co-speech snappiness vs the Filian target, jaw axis/sign (`facialTune`),
    lip-sync gain. Headless tests can't judge feel.
 2. **P4 "the brain"** -- the LLM that authors the tag/pose streams over the bus. The bus +
-   `perform`/`pose` path and `brain.py`'s decide->act->verify-by-numbers loop are built & tested, and
-   `brain.py --llm <endpoint>` already lets ANY OpenAI-compatible author (a local model, OR Claude/any
-   agent) drive her today -- tags are sanitized against live caps first. NOT blocked on Enigma (which is
-   the future local-from-scratch author, still pretraining). What remains is the persistent
-   perception/memory "mind", designed WITH the user.
+   `perform`/`pose` path is built & tested; any OpenAI-compatible author (a local model, OR Claude/any
+   agent) can drive her over the bus today via `say.py` / `avbus.py` / Odysseus -- tags are sanitized
+   against live caps first. NOT blocked on Enigma (which is the future local-from-scratch author, still
+   pretraining). (The standalone `brain.py` decide->act->verify driver loop and its `--llm` author were
+   REMOVED 2026-06-30 at the user's request, along with the cursor-follow gaze system and the
+   `src/engine/state.js` container.) What remains is the persistent perception/memory "mind", designed
+   WITH the user.
 3. **A nicer/"cuter" no-model placeholder** (current state is just the ASCII text hint).
 4. **Model-zoo stragglers** (measure each with `node tools/rig_report.mjs <model>`, confirm the swing
    live): lolbit/mangle arm (+mangle hips/chest) via a cascade-tier improvement; grace_howard needs a

@@ -138,9 +138,7 @@ async def behavior(bus, url):
     r["motion"] = f"end: knee={j.get('leftKnee')} elbow={j.get('leftElbow')}"
     # perform: inline-tagged speech -> motion + the clean line back
     r["perform"] = await bus.ask({"action": "perform", "text": "Watch this! [pose:right_arm=1.0]"}) or "fired"
-    # look + highlight + naming
-    await bus.cmd({"action": "look", "px": 100, "py": 100})
-    await asyncio.sleep(0.6)
+    # highlight + naming
     bones = await bus.query("bones") or []
     bn = bones[2]["name"] if len(bones) > 2 else None
     r["highlight"] = (await bus.ask({"action": "highlightBone", "bone": bn, "dur": 1})) if bn else "n/a"

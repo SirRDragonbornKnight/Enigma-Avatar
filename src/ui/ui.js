@@ -1021,27 +1021,6 @@ export function createUI(api) {
     hr.style.cssText = "height:1px;background:rgba(255,255,255,.1);margin:8px 0;";
     body.appendChild(hr);
     body.appendChild(sCheck("Spring physics", flags.springOn, (v) => (flags.springOn = v)));
-    body.appendChild(sCheck("Look at cursor", flags.lookOn, (v) => (flags.lookOn = v)));
-    // Look with HEAD / EYES / BOTH — only offered when the model actually has eye bones.
-    if (api.hasEyes && api.hasEyes() && api.setLookMode) {
-      const lsel = document.createElement("select");
-      for (const [val, lab] of [
-        ["both", "Head + eyes"],
-        ["head", "Head only"],
-        ["eyes", "Eyes only"],
-      ]) {
-        const o = document.createElement("option");
-        o.value = val;
-        o.textContent = lab;
-        if (val === (api.getLookMode ? api.getLookMode() : "both")) o.selected = true;
-        lsel.appendChild(o);
-      }
-      lsel.onchange = (e) => {
-        e.stopPropagation();
-        api.setLookMode(lsel.value);
-      };
-      body.appendChild(sRow("Look with", lsel));
-    }
     body.appendChild(sCheck("Face (blink / lip-sync)", flags.facialOn, (v) => (flags.facialOn = v)));
     body.appendChild(sCheck("Lock in place", flags.locked, (v) => (flags.locked = v)));
     body.appendChild(sCheck("Show skeleton (inspect bones)", api.getBonesShown(), (v) => api.showSkeleton(v)));

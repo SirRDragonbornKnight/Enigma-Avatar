@@ -27,8 +27,8 @@ model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/
   SPEC's intent, NOT against what the code currently does — passing tests often just enshrine wrong
   behavior. Loading from that external dir MUST keep working (no path-restricting the loader).
 - **Control plane = the local WebSocket bus** (`python/bus.py`), driven by `python/say.py` (fire-and-forget)
-  and `tools/avbus.py` (request/reply): pose/look/conjure/say/capabilities, plus inline perform tags in
-  speech (`[pose:role=p/y/r]`, `[look:dir]`, `[conjure:x]`). It is **Origin-gated** (blocks browser
+  and `tools/avbus.py` (request/reply): pose/conjure/say/capabilities, plus inline perform tags in
+  speech (`[pose:role=p/y/r]`, `[conjure:x]`). It is **Origin-gated** (blocks browser
   drive-by / CSWSH); keep it so.
 - **SAFETY — fail-safe click-through is load-bearing.** The overlay is transparent and must pass clicks
   THROUGH to the desktop whenever it's unsure the cursor is over her mesh — it once **locked the user
@@ -51,7 +51,7 @@ model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/
 `window.EnigmaAvatar`, (3) **in-process** callers (UI, hotkeys, the `query.js` reporter) call it
 directly. It has owned this role since the first avatar commit (`1f92ad0`).
 
-It is a **facade** in the design-pattern sense — a flat set of stable verbs (`recolor`, `lookAt`,
+It is a **facade** in the design-pattern sense — a flat set of stable verbs (`recolor`,
 `poseLayer`, `conjure`, …) that **forward** to the engine internals, which live in the big
 `avatar.js` closure with all their shared state (`model`, `proc`, `rig`, profiles). "Facade" means
 _delegating front door_, NOT _broken/fake_ — these methods do the real thing. This is deliberate and

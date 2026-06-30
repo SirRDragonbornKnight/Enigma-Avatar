@@ -1,6 +1,6 @@
 """Avatar bus protocol — the Python mirror of src/control/protocol.js (the JS is the source of truth).
 
-The three Python drivers (say.py / avbus.py / brain.py) speak the same JSON {action, ...} wire format
+The Python drivers (say.py / avbus.py) speak the same JSON {action, ...} wire format
 the overlay's bus dispatch (control/bus.js) understands. This module gives them the canonical verb
 vocabulary + a structural validator so they don't each re-hardcode it. It is kept in lockstep with
 protocol.js by tests/test_avatar_protocol.py, which parses the JS and fails if the two ever diverge.
@@ -14,7 +14,7 @@ from __future__ import annotations
 # The bus move set — one verb per concept. MUST equal protocol.js ACTIONS (drift-guarded by the test).
 ACTIONS: tuple[str, ...] = (
     "attach", "ball", "blink", "capabilities", "conjure", "detach", "facialTune", "fingers", "gallery",
-    "highlightBone", "hue", "impulse", "load", "look", "mesh", "monitor", "morph", "mouth", "move",
+    "highlightBone", "hue", "impulse", "load", "mesh", "monitor", "morph", "mouth", "move",
     "nameBone", "outfit", "perform", "platform", "pose", "query", "recolor", "regionWeight",
     "resetColors", "rotate", "rotateMode", "say", "settings", "showBones", "size", "snap", "springTune",
     "stop", "tuneAttachment",
@@ -24,7 +24,7 @@ ACTIONS: tuple[str, ...] = (
 QUERY_KINDS: tuple[str, ...] = (
     "materials", "meshes", "regions", "bones", "morphs", "rotation", "facial", "model", "where",
     "capabilities", "caps", "roles", "joints", "stance", "iktest", "grip", "outfits", "platforms",
-    "bounds", "weights", "eyegaze", "state",
+    "bounds", "weights", "state",
 )
 
 # Verbs whose listed field must be present to be actionable (mirrors protocol.js REQUIRED_FIELDS).

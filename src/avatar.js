@@ -17,18 +17,16 @@ import { parseControlTags, parseTagArg, resolvePropName } from "./control/contro
 import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar control surface (facade the bus/query/devtools drive)
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
-import { makeEngineView } from "./engine/state.js"; // one live state container the control modules read through (replaces ~115 thunks)
 import { buildSpringBones } from "./motion/spring.js";
 import { createPhysics } from "./motion/physics.js";
 import { buildFacial } from "./face/facial.js";
 import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./interaction/hittest.js"; // pure, unit-tested click-through math
 import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./interaction/placement.js"; // pure, unit-tested placement math
-import { headLookTarget, eyeLookAngles, eyeSide } from "./interaction/look.js"; // pure, unit-tested cursor/eye-look math
 import { resolveRig, ROLES } from "./rig/rig.js";
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
 // clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
-// (default_avatar.js's buildDefaultAvatar is retired — #13: no model loaded shows a DOM message via
-//  enterNoModel(), not a self-made character. Nothing here imports it anymore.)
+// (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character. The old
+//  default_avatar.js procedural-placeholder was deleted 2026-06-30 — there is no placeholder model.)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
@@ -48,35 +46,6 @@ export function stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn,
   if (vrm) vrm.update(dt); // VRM spring bones / look-at / expressions (humanoid copy-back is OFF — see #1 at load)
 }
 
-// Pure resolver for the perform `[look:...]` tag: a named direction (4 cardinals + 4 diagonals +
-// center) OR an explicit "px,py" point. Top-level (outside the bootstrap block) so it's importable +
-// regression-tested: the named-lookup strips [ _-] and must NOT eat the minus sign on numeric coords
-// (else negative gaze coords mirror). Returns { x, y, label } or null (unrecognized -> caller makes an
-// HONEST no-op, never a false success).
-export function lookTarget(arg, w, h) {
-  const cx = w / 2,
-    cy = h / 2,
-    raw = String(arg || "center")
-      .toLowerCase()
-      .trim(),
-    key = raw.replace(/[ _-]/g, "");
-  const dirs = {
-    left: [0, cy],
-    right: [w, cy],
-    up: [cx, 0],
-    down: [cx, h],
-    center: [cx, cy],
-    upleft: [0, 0],
-    upright: [w, 0],
-    downleft: [0, h],
-    downright: [w, h],
-  };
-  if (dirs[key]) return { x: dirs[key][0], y: dirs[key][1], label: key };
-  const m = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(raw.replace(/\s+/g, "")); // numeric form matched on RAW (minus preserved)
-  if (m && isFinite(+m[1]) && isFinite(+m[2])) return { x: +m[1], y: +m[2], label: +m[1] + "," + +m[2] };
-  return null;
-}
-
 // The browser runtime bootstrap (renderer, DOM, animate loop, AI bus) only runs in the overlay
 // window. Under `node --test` there is no `location`/`document`, so the module loads as just the
 // pure export above and the bootstrap is skipped — keeping avatar.js import-safe for unit tests.
@@ -84,7 +53,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const params = new URLSearchParams(location.search);
   // NO hard-coded / bundled models — the repo must not reference third-party (copyrighted) avatars.
   // The launch default is the FIRST model the user's models/ folder has (resolved in startup() via
-  // avatarIPC.listModels), else the original procedural avatar (default_avatar.js). `?model=<url>`
+  // avatarIPC.listModels), else the no-model DOM message (enterNoModel — no placeholder). `?model=<url>`
   // still forces a specific one.
   const FORCED_MODEL = params.get("model") || null;
   const DEFAULT_KEY = "__default__"; // synthetic curKey for the zero-asset procedural placeholder (no /models/ path, no override)
@@ -483,11 +452,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let springOn = true,
     facialOn = true,
     locked = false; // engine toggles (Settings checkboxes; the idle toggle died with the idle machinery, 2026-06-12 — proc.update is purely reactive/commanded now and always runs)
-  let lookOn = true; // companion behavior: track the cursor (reactive; everything self-firing is gone)
   // AI-control kill-switch (brain-only, persisted). When OFF, inbound AI bus commands are DROPPED at
   // the connect() chokepoint before they can do anything — so nothing the avatar does over the bus can
   // be a surprise. Flip it back on (Settings checkbox or the tray's "Accept AI control") and the
-  // still-open bus connection resumes instantly. Default ON to preserve the brain.py / say.py workflow.
+  // still-open bus connection resumes instantly. Default ON to preserve the say.py / Odysseus workflow.
   const AI_CONTROL_KEY = "enigmaAvatar.aiControl";
   let aiControlOn = (() => {
     try {
@@ -531,12 +499,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     set springOn(v) {
       springOn = v;
     },
-    get lookOn() {
-      return lookOn;
-    },
-    set lookOn(v) {
-      lookOn = v;
-    },
     get facialOn() {
       return facialOn;
     },
@@ -550,25 +512,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       locked = v;
     },
   };
-  const LOOK = { gainX: 1.4, gainY: 1.0, flipX: 1, flipY: -1, maxX: 0.6, maxY: 0.35 }; // cursor-look feel (flip signs per rig)
-  let _lookX = 0,
-    _lookY = 0,
-    _lookW = 0,
-    _cursorIdle = 99; // smoothed look state
-  let _forceLookUntil = 0; // #18: a COMMANDED gaze (lookAt / perform look) drives for ~1.2s even when the ambient cursor-follow toggle (lookOn) is OFF — a command must actually move the eyes, not silently no-op
-  // Eye-look: rotate the eye bones toward the cursor (in addition to / instead of the head).
-  const EYE = { gain: 1.15, flipX: 1, flipY: -1, maxX: 0.62, maxY: 0.42 }; // GLOBAL eye-look defaults. flipY:-1 = cursor-down -> eyes-down on the rigs tested (folded from per-model to a global default 2026-06-25); flip if a model points wrong.
-  let eyeCfg = { ...EYE }; // ACTIVE eye config = the global EYE defaults (eyeTune() adjusts live; no per-model data)
-  let eyeBones = []; // [{bone, rest}] resolved per model
-  let lookMode = "both"; // "both" | "head" | "eyes" — what tracks the cursor
-  try {
-    const lm = localStorage.getItem("enigmaAvatar.lookMode");
-    if (lm) lookMode = lm;
-  } catch {}
-  const _eyeQy = new THREE.Quaternion(),
-    _eyeQp = new THREE.Quaternion(); // reused per-frame: yaw (about face-up) + pitch (about ear-to-ear) eye rotations
-  let _eyeCurX = 0,
-    _eyeCurY = 0; // smoothed eye-gaze state (cursor tracking only — the idle dart scheduler was removed: no idle animation, 2026-06-11)
   let _downX = -999; // grab/spin press-origin guard (the _downY tap-detector died with the poke chain, #11)
 
   // --- SIZE POLICY (one place) ------------------------------------------------
@@ -636,7 +579,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     curKey = DEFAULT_KEY;
     modelDims = { w: 1, h: 2 };
     roleBones = {};
-    eyeBones = [];
     _weightMass = null;
     _springNeverExtra = [];
     _poseBones = [];
@@ -962,7 +904,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     applyMeshVisibility(); // re-hide any meshes turned off (clothing variants etc.)
     applyMorphs(); // re-apply saved morph/blendshape values (the avatar's own toggles)
     applyRotation(); // restore the saved rotation (all 3 axes)
-    resolveEyes(model); // find eye bones for cursor eye-look (Mal0/makiro/renamon have them)
     proc?.bindExtras?.({ sprungNames: spring ? spring.names : [] }); // the finger-grip layer must not double-drive a sprung hand ribbon (the spring writes those every frame after proc)
     // (The per-model idle profile application lived here — the WHOLE idle system is deleted,
     // user order 2026-06-12: "delete the idle animation everywhere and anything that has to
@@ -1017,7 +958,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return bonesShown;
   }
   // --- NO-MODEL overlay (#13: the self-made character is retired — no model loaded shows a MESSAGE) ---
-  // When no .glb is loaded we render nothing (default_avatar.js returns an inert empty group) and put
+  // When no .glb is loaded we render nothing (no placeholder model) and put
   // up a visible DOM panel telling the user how to add one. ASCII only (no emojis), per the avatar
   // console/UI rule. Raised when the placeholder loads, retracted the instant a real model arrives.
   let _onboarding = false,
@@ -2068,118 +2009,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
   }
 
-  // Head/neck track the cursor (gentle), decaying to idle when the cursor is still/away.
-  function updateLook(dt) {
-    if (!proc || !proc.setLook) return;
-    _cursorIdle += dt;
-    let tx = 0,
-      ty = 0,
-      tw = 0;
-    // #18: `lookOn` gates ONLY the ambient cursor-follow. A COMMANDED gaze (lookAt) opens a short
-    // forced window so the look actually drives even with cursor-follow off — and a manual blink
-    // window never reports a no-op success.
-    const forced = performance.now() < _forceLookUntil;
-    if ((lookOn || forced) && _cursorIdle < 2.5 && cursor.seen) {
-      // seen, not x>=0 — a cursor on a monitor LEFT of primary maps to negative local px and is still a real target
-      const [hx, hy] = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.85); // ≈ head position, in screen px
-      [tx, ty] = headLookTarget(cursor.x, cursor.y, hx, hy, innerWidth, innerHeight, LOOK); // pure (look.js)
-      tw = 1;
-    }
-    const k = Math.min(1, dt * 5);
-    _lookX += (tx - _lookX) * k;
-    _lookY += (ty - _lookY) * k;
-    _lookW += (tw - _lookW) * k;
-    proc.setLook(_lookX, -_lookY, lookMode === "eyes" ? 0 : _lookW); // head-look — pitch INVERTED vs the eyes (positive head-pitch = DOWN on these rigs, per the emote signs), so mouse-up → head UP; eyes keep _lookY (already correct)
-    // eye-look: the eyes track the cursor (weight _lookW) and return to CENTER otherwise. The random
-    // idle DARTS that used to fill the gaps are GONE (user ruling 2026-06-11: no idle animation —
-    // reactive tracking stays, self-generated motion doesn't). Head-only mode rests the eyes.
-    if (lookMode === "head" || !eyeBones.length) {
-      restEyes();
-    } else {
-      const wantX = _lookX * _lookW,
-        wantY = _lookY * _lookW;
-      const ke = Math.min(1, dt * 11); // saccade — fast but not a hard snap
-      _eyeCurX += (wantX - _eyeCurX) * ke;
-      _eyeCurY += (wantY - _eyeCurY) * ke;
-      driveEyes(_eyeCurX, _eyeCurY, 1);
-    }
-  }
-  // --- eye-look: rotate the eye bones toward the cursor (in addition to / instead of the head) -----
-  function driveEyes(lx, ly, w) {
-    if (!eyeBones.length) return;
-    const { yaw, pitch } = eyeLookAngles(lx, ly, eyeCfg, w); // pure (look.js)
-    for (const e of eyeBones) {
-      // rotate about THIS bone's real anatomical axes, not raw local X/Y
-      _eyeQy.setFromAxisAngle(e.up, yaw); // horizontal — turn left/right about the face-UP axis (THE fix: local-Y was the gaze axis → invisible roll)
-      _eyeQp.setFromAxisAngle(e.right, pitch); // vertical — tilt up/down about the ear-to-ear (RIGHT) axis
-      e.bone.quaternion.copy(e.rest).multiply(_eyeQy).multiply(_eyeQp);
-    }
-  }
-  function restEyes() {
-    for (const e of eyeBones) e.bone.quaternion.copy(e.rest);
-  }
-  function resolveEyes(model) {
-    // TRUST NO NAMES, but "eye" is reliable; exclude brow/lid/lash/_end tips
-    const all = [];
-    // exclude not just the obvious non-eyeballs but EYE-LOOK IMPOSTERS the scan caught driving gaze:
-    // an "Eyepatch" (fexa) and an "Eye_Con" controller (sexy_roxanne) both contain "eye" but must NOT
-    // be rotated — a patch isn't a gaze target, and a controller double-applies onto the real eyes.
-    model?.traverse((o) => {
-      if (o.isBone) {
-        const n = o.name || "";
-        if (
-          /eye/i.test(n) &&
-          !/_end|brow|lid|lash|socket|blink|patch|controll|ctrl|eye[_ ]?con\b|_aim|aim$|target|look[_ ]?at/i.test(n)
-        )
-          all.push(o);
-      }
-    });
-    const set = new Set(all);
-    let top = all.filter((o) => {
-      for (let p = o.parent; p; p = p.parent) if (set.has(p)) return false;
-      return true;
-    }); // topmost eye per chain (no parent+child double-drive)
-    // SIDED eyes win over CENTER candidates: if any L/R eye exists, drop the unsided ones (a stray
-    // controller/center bone that slipped the name filter). A true single-eye rig (aveline, glados)
-    // has only center candidates → those are kept.
-    const sidedTop = top.filter((o) => eyeSide(o.name) !== "C");
-    if (sidedTop.length) top = sidedTop;
-    model?.updateWorldMatrix(true, true);
-    const seen = new Set();
-    eyeBones = [];
-    for (const o of top) {
-      const s = eyeSide(o.name);
-      if (s !== "C" && seen.has(s)) continue;
-      seen.add(s);
-      // TRUST NO LOCAL AXIS either: an eye bone's local frame is unknown (it often points DOWN its own
-      // bone axis, so local-Y is the GAZE direction → rotating about it just rolls the eyeball, which is
-      // invisible — that was the "horizontal eye-look does nothing" bug). Derive the anatomical axes from
-      // the bone's PARENT (head/face) world frame — yaw about "up", pitch about "right" (ear-to-ear) —
-      // and convert them into the eye's LOCAL space. Correct on ANY rig + invariant to model rotation.
-      const eyeWq = new THREE.Quaternion();
-      o.getWorldQuaternion(eyeWq);
-      const refWq = new THREE.Quaternion();
-      (o.parent || o).getWorldQuaternion(refWq);
-      const invEye = eyeWq.invert();
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(refWq).applyQuaternion(invEye).normalize();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(refWq).applyQuaternion(invEye).normalize();
-      eyeBones.push({ bone: o, rest: o.quaternion.clone(), up, right });
-    }
-    if (eyeBones.length) console.log("[avatar] eyes:", eyeBones.map((e) => e.bone.name).join(", "));
-    eyeCfg = { ...EYE }; // global eye config (per-model override removed 2026-06-25)
-  }
-  function hasEyes() {
-    return eyeBones.length > 0;
-  }
-  function setLookMode(m) {
-    lookMode = m === "head" || m === "eyes" ? m : "both";
-    try {
-      localStorage.setItem("enigmaAvatar.lookMode", lookMode);
-    } catch {}
-    if (lookMode === "head") restEyes();
-    setStatus("look with: " + lookMode);
-    return lookMode;
-  }
   // (The random idle-emote scheduler that lived here is GONE — user ruling 2026-06-11 "remove all
   // of it": NOTHING fires by itself. Emotes happen only when commanded: tap/pet, menu, bus, AI.)
 
@@ -2222,14 +2051,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return;
     } // peers: mirror the brain's broadcast pose; no animation work
     const active =
-      held ||
-      spinning ||
-      gliding ||
-      cursor.over ||
-      _lookW > 0.01 ||
-      voice.isSpeaking() ||
-      ui.isOpen() ||
-      performance.now() < _wakeUntil; // _lookW: keep head-tracking smooth (not steppy at deep-rest)
+      held || spinning || gliding || cursor.over || voice.isSpeaking() || ui.isOpen() || performance.now() < _wakeUntil;
     if (active && !_wasActive) fpClock = 1;
     _wasActive = active; // idle→active edge: force a fresh grab silhouette so a grab right after waking can't miss a stale mask
     const fps = pickFps(active, _restClock, FPS_ACTIVE, FPS_IDLE, FPS_REST, 6);
@@ -2259,7 +2081,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     pos.set(_bp.x, _bp.y); // derived base (read by look/hit-test math)
     rig.position.set(_bp.x, _bp.y + _motionY, 0); // global-derived base + the local jump hop; bones/springs do the rest
     updateShadow(); // ground-contact patch under the feet (stays grounded through jumps)
-    updateLook(dt); // head tracks the cursor
     stepProcVrm(dt); // proc pose → springs → vrm.update, in the ONE order that survives the VRM humanoid copy-back (#1)
     // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
     // as a collision capsule (props bounce off her), step the world.
@@ -2495,11 +2316,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // reporter, devtools/globals, and connect() all drive. Built HERE so the engine fns it delegates to
   // already exist; mutable state is read through live getters, and things defined LATER (ui ~3047,
   // handleCommand ~3117, the ui* relays ~2964) come in as getters too -- only ever called at runtime.
-  // The single ENGINE STATE CONTAINER — one live view onto the closure's mutable state (see
-  // engine/state.js). The control modules read state through it (engine.proc, engine.model, …) and
-  // receive ONE object instead of ~115 getter/setter thunks; reads are live by construction. The
-  // closure still uses its own locals for now — migrating those reads onto engine (and dropping the
-  // accessors here) is the next stage and needs a live-overlay launch to verify.
+  // The single ENGINE STATE CONTAINER — one live view onto the closure's mutable state. The control
+  // modules read state through it (engine.proc, engine.model, …) and receive ONE object whose
+  // properties are live by construction: getters become live read accessors, statics are stable
+  // in-place objects shared by reference. (Built inline here; this used to live in engine/state.js.)
+  const makeEngineView = (getters = {}, statics = {}) => {
+    const view = { ...statics };
+    for (const k in getters) Object.defineProperty(view, k, { get: getters[k], enumerable: true, configurable: true });
+    return view;
+  };
   const engine = makeEngineView(
     {
       proc: () => proc,
@@ -2512,7 +2337,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       modelDims: () => modelDims,
       springOn: () => springOn,
       facialOn: () => facialOn,
-      lookOn: () => lookOn,
       locked: () => locked,
       rotateMode: () => rotateMode,
       bonesShown: () => bonesShown,
@@ -2520,9 +2344,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       weightMass: () => _weightMass,
       springNeverExtra: () => _springNeverExtra,
       attachObjs: () => attachObjs,
-      lookMode: () => lookMode,
       roleBones: () => roleBones,
-      eyeBones: () => eyeBones,
       platforms: () => platforms,
       curDisp: () => curDisp,
       ui: () => ui,
@@ -2533,15 +2355,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       uiDetach: () => uiDetach,
       uiClearAttachments: () => uiClearAttachments,
     },
-    {
-      cursorIdle: (v) => {
-        _cursorIdle = v;
-      },
-      forceLookUntil: (v) => {
-        _forceLookUntil = v;
-      },
-    },
-    { pos, cursor, LOOK, eyeCfg, CONJURE_ASSETS, rig }
+    { pos, cursor, CONJURE_ASSETS, rig }
   );
 
   const EnigmaAvatar = createControlSurface(engine, {
@@ -2583,10 +2397,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     resolvePropName,
     parseControlTags,
     parseTagArg,
-    lookTarget,
     wake,
-    setLookMode,
-    hasEyes,
     onAiCommand: (action) => flashAiActivity(action), // flash the status line on each ACCEPTED command
   });
   // Answer a 'query' from the AI bus with LIVE ground truth — the overlay is the authority on
@@ -2643,13 +2454,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (moved && _isBrain) wake(0.6); // keep the brain (→ pose broadcast) lively while she's dragged from another monitor
   });
   window.avatarIPC?.onCursor?.((p) => {
-    // a peer display's pointermove, relayed in global DIP → OUR local px (possibly off-window; the look math only needs the direction)
+    // a peer display's pointermove, relayed in global DIP -> OUR local px (possibly off-window)
     if (!_isBrain || !p || !isFinite(p.gx) || !isFinite(p.gy)) return;
     const [lx, ly] = dipToLocalPx(p.gx, p.gy, myOrigin, myBounds, innerWidth, innerHeight);
     cursor.x = lx;
     cursor.y = ly;
     cursor.seen = true;
-    _cursorIdle = 0;
   });
   let _pendingModel = null; // a relayed model that arrived before profiles finished loading
   function applyPeerModel(url) {
@@ -2734,7 +2544,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     springTune: { scope: "all", bound: true, fn: (p) => springTune(p) },
     facialTune: { scope: "all", bound: true, fn: (p) => facialTune(p) },
     setRegionWeight: { scope: "all", bound: true, fn: (r, w) => setRegionWeight(r, w) },
-    setLookMode: { scope: "all", fn: (m) => setLookMode(m) },
     attachMesh: { scope: "all", bound: true, fn: (u, o) => attachMesh(u, o) },
     detachAttachment: { scope: "all", bound: true, fn: (id) => detachAttachment(id) },
     clearAttachments: { scope: "all", bound: true, fn: () => clearAttachments() },
@@ -2797,8 +2606,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiDeleteOutfit = relayed("deleteOutfit"); // outfit presets (Settings → Parts + bus 'outfit')
   const uiSetPlatforms = relayed("setPlatforms"); // AI platforms (bus 'platform')
   const uiSetRegionWeight = relayed("setRegionWeight"),
-    uiSetRotateMode = relayed("setRotateMode"),
-    uiSetLookMode = relayed("setLookMode");
+    uiSetRotateMode = relayed("setRotateMode");
   // attachMesh generates ids from a per-window counter — relayed calls must carry ONE id picked by
   // the initiator, or a window created mid-session (display plugged in) would number its copies
   // differently and a later relayed detach(id) would silently miss there.
@@ -2815,7 +2623,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const relayFlags = {};
   {
     const _setFlag = relayed("setFlag");
-    for (const k of ["springOn", "lookOn", "facialOn", "locked"])
+    for (const k of ["springOn", "facialOn", "locked"])
       Object.defineProperty(relayFlags, k, {
         get: () => flags[k],
         set: (v) => {
@@ -2911,9 +2719,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     getYaw: () => getRot().y, // back-compat (Y axis only)
     getRotateMode: () => rotateMode,
     setRotateMode: uiSetRotateMode, // drag-to-spin: a Settings toggle (auto-disarmed on panel close) + Alt+drag + AI/bus
-    getLookMode: () => lookMode,
-    setLookMode: uiSetLookMode,
-    hasEyes: () => hasEyes(), // cursor-look mode (head/eyes/both) for Settings
     springRegions: () => springRegions(),
     setRegionWeight: uiSetRegionWeight, // per-area jiggle weights for Settings
     morphs: () => allMorphsInfo(),
@@ -2955,7 +2760,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiSetRegionWeight,
     uiSetMorphValue,
     uiSetRotateMode,
-    uiSetLookMode,
     uiSetBoneLabel,
     uiHighlightBone,
     uiDeleteOutfit,
@@ -3010,8 +2814,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     cursor.x = e.clientX;
     cursor.y = e.clientY;
     cursor.seen = true;
-    _cursorIdle = 0;
-    computeOver(); // reset the look timer — WITHOUT this the cursor-look gate (_cursorIdle<2.5) never opens, so she never tracks the cursor
+    computeOver(); // recompute hover/grab state for the new cursor position
     if (!_isBrain && window.avatarIPC?.cursorMoved) {
       // relay to the brain (~30Hz) so she watches the cursor on THIS monitor too
       const now = performance.now();

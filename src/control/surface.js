@@ -8,11 +8,10 @@
 //
 // WIRING: avatar.js calls createControlSurface(engine, services) once, after the engine functions
 // exist. Two arguments keep it correct:
-//   * `engine` — the live STATE CONTAINER (engine/state.js). MUTABLE state (proc/facial/spring/model/
+//   * `engine` — the live STATE CONTAINER (built inline in avatar.js). MUTABLE state (proc/facial/spring/model/
 //     vrm/sizeScale/... — all reassigned over the avatar's life) is read through it as engine.proc,
-//     engine.model, … so a method always sees current truth without snapshotting a frozen value. The
-//     two look primitives the render loop reads are written back (engine.cursorIdle / engine.forceLookUntil),
-//     and the stable in-place objects (pos/cursor/LOOK/eyeCfg/CONJURE_ASSETS) are shared off it too.
+//     engine.model, … so a method always sees current truth without snapshotting a frozen value.
+//     The stable in-place objects (pos/cursor/CONJURE_ASSETS) are shared off it too.
 //     Things defined LATER in avatar.js (ui, handleCommand, the ui* relays) are live accessors on
 //     engine — only ever read at runtime (settings/state/connect), never at build.
 //   * `services` — the stable delegate functions/behavior (glideTo, applySize, recolor, onAiCommand, …).
@@ -59,14 +58,11 @@ export function createControlSurface(engine, services) {
     resolvePropName,
     parseControlTags,
     parseTagArg,
-    lookTarget,
     wake,
-    setLookMode,
-    hasEyes,
     onAiCommand, // notified with the action name of each ACCEPTED command (drives the activity flash)
   } = services;
   // Stable in-place state objects (mutated, never reassigned) — read straight off the live container.
-  const { pos, cursor, LOOK, eyeCfg, CONJURE_ASSETS } = engine;
+  const { pos, cursor, CONJURE_ASSETS } = engine;
 
   const EnigmaAvatar = {
     // (clip-playback API — actions / play / loopClip / playAnim / stopAnim — removed with the clip-library purge 2026-06-25)
@@ -109,7 +105,6 @@ export function createControlSurface(engine, services) {
         toggles: {
           spring: engine.springOn,
           facial: engine.facialOn,
-          look: engine.lookOn,
           locked: engine.locked,
           rotateMode: engine.rotateMode,
           menu: engine.ui.isOpen(),
@@ -256,32 +251,9 @@ export function createControlSurface(engine, services) {
           }
           wake(3);
           did.push("pose");
-        } else if (type === "look") {
-          const lt = lookTarget(arg, innerWidth, innerHeight); // pure resolver (exported + regression-tested): named dir OR explicit px,py with minus signs preserved
-          if (lt) {
-            EnigmaAvatar.lookAt(lt.x, lt.y);
-            did.push("look:" + lt.label);
-          } else did.push("look-skip:" + arg); // unrecognized -> HONEST no-op, not a false 'look:'+arg success
         } else did.push("skip:" + type); // an [emotion]/unknown tag: body expressions were purged — the AI authors emotion via pose/flex layers now
       }
       return { say: clean, performed: did };
-    },
-    lookTune: (p) => Object.assign(LOOK, p), // tune/flip cursor-look (gainX/Y, flipX/Y, maxX/Y)
-    lookMode: (m) => setLookMode(m),
-    getLookMode: () => engine.lookMode,
-    hasEyes: () => hasEyes(), // head / eyes / both
-    eyeTune: (p) => Object.assign(eyeCfg, p), // adjust eye-look feel live (gain/flip/max — flip if eyes point wrong). Global now; not persisted per-model.
-    lookAt: (px, py) => {
-      // force gaze at a screen point (AI / test). #18: opens a short forced channel so it drives even with cursor-follow off, and reports whether the gaze ACTUALLY drove.
-      cursor.x = px == null || !Number.isFinite(+px) ? innerWidth / 2 : +px; // coerce: a bus lookAt with NaN/Infinity/string must not poison the look smoother (would freeze cursor-look until reload)
-      cursor.y = py == null || !Number.isFinite(+py) ? innerHeight / 2 : +py;
-      cursor.seen = true;
-      engine.cursorIdle = 0;
-      engine.forceLookUntil = performance.now() + 1200;
-      wake(2);
-      const proc = engine.proc;
-      const drove = !!(proc && proc.setLook); // a model with no head/eye look channel can't gaze — say so honestly instead of faking success
-      return { lookAt: [Math.round(cursor.x), Math.round(cursor.y)], drove, channel: engine.lookMode };
     },
     facialTune: (p) => facialTune(p), // saved per-avatar (jaw axis/open)
     mouth: (a) => {

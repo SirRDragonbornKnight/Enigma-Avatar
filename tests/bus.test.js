@@ -3,7 +3,7 @@
 // INTENT (blueprint sec 5/8 + sec 3 "verify by numbers"): the bus is the AI control plane. A driver
 // sends {action, ...} and the registry dispatches action -> handler. These tests assert what the move
 // set MUST do for an AI to drive her, not how the table is built:
-//   * the motion-core vocabulary is reachable by name (pose/layer/fingers/lookAt/conjure/perform)
+//   * the motion-core vocabulary is reachable by name (pose/layer/fingers/conjure/perform)
 //     plus the introspection verbs (capabilities/query) the spec's "verify by numbers" path needs;
 //   * an unknown/garbage action is an HONEST no-op (undefined, never a throw) — never a false success;
 //   * answer-handlers RETURN to the caller; void handlers reply undefined (the load-bearing split);
@@ -41,7 +41,7 @@ function makeRegistry() {
   const relayNames = [
     "uiAttach,uiDetach,uiClearAttachments,uiTuneAttachment,uiSpringTune,uiFacialTune,uiShowSkeleton",
     "uiRecolor,uiResetColors,uiSetMeshVisible,uiSetRot,uiSetRotAxis,uiSetRegionWeight,uiSetMorphValue",
-    "uiSetRotateMode,uiSetLookMode,uiSetBoneLabel,uiHighlightBone,uiDeleteOutfit,uiSaveOutfit",
+    "uiSetRotateMode,uiSetBoneLabel,uiHighlightBone,uiDeleteOutfit,uiSaveOutfit",
     "uiWearOutfit,uiSetPlatforms,uiHueShift",
   ]
     .join(",")
@@ -58,7 +58,7 @@ test("the motion-core move set is reachable by action name", () => {
   // An AI driving her must be able to address each motion primitive + the introspection verbs.
   // If a future edit drops one of these from the table, the brain loses that ability silently — bite.
   const { COMMANDS } = makeRegistry();
-  for (const action of ["pose", "fingers", "look", "move", "conjure", "perform", "capabilities", "query"]) {
+  for (const action of ["pose", "fingers", "move", "conjure", "perform", "capabilities", "query"]) {
     assert.equal(typeof COMMANDS[action], "function", `move set must expose '${action}'`);
   }
 });
@@ -124,17 +124,6 @@ test("move routes on its args: {px,py} = pixel-exact, {to} = by name (merged mov
   assert.deepEqual(EA.goTo.calls[1], ["center"], "no args -> goTo('center')");
 });
 
-test("look routes on its args: {mode} sets the channel, {at}/{px,py} forces a gaze (merged lookMode+lookAt)", () => {
-  const { handleCommand, EA, deps } = makeRegistry();
-  handleCommand({ action: "look", mode: "eyes" });
-  assert.deepEqual(deps.uiSetLookMode.calls[0], ["eyes"], "a mode -> uiSetLookMode");
-  assert.equal(EA.lookAt.calls.length, 0, "setting the mode does NOT also force a gaze");
-  handleCommand({ action: "look", at: [300, 400] });
-  assert.deepEqual(EA.lookAt.calls[0], [300, 400], "{at:[x,y]} -> lookAt(x,y)");
-  handleCommand({ action: "look", px: 5, py: 6 });
-  assert.deepEqual(EA.lookAt.calls[1], [5, 6], "{px,py} also forces a gaze");
-});
-
 test("morph drives+SAVES by default; {save:false} is a transient probe (merged morph+setMorph)", () => {
   // BITE: the save split is the whole point of the merge — flip the default and one of these fails.
   const { handleCommand, EA, deps } = makeRegistry();
@@ -160,7 +149,7 @@ test("query('actions') self-reports the live move set (the 'what can I send?' ve
   const actions = handleCommand({ action: "query", what: "actions" });
   assert.ok(Array.isArray(actions), "query:actions returns a list");
   assert.deepEqual(actions, Object.keys(COMMANDS).sort(), "it reports exactly the live table, sorted");
-  assert.ok(actions.includes("move") && actions.includes("look"), "the merged verbs are advertised");
+  assert.ok(actions.includes("move"), "the merged verbs are advertised");
   assert.ok(!actions.includes("moveTo"), "retired verbs are NOT advertised");
 });
 

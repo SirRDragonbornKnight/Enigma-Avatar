@@ -128,7 +128,6 @@ function supportedActions(cascade, face, mats, _springs) {
   const r = new Set(cascade.matched);
   const motion = {
     poseRoles: cascade.matched.slice(), // drive any of these via `pose` / `layer` motion layers
-    look: r.has("head") ? "head + eyes track a screen point (lookAt)" : "no head role — no look",
     fingers:
       r.has("left_hand") || r.has("right_hand")
         ? "per-finger curl via `fingers` (if the resolved hand carries finger bones)"

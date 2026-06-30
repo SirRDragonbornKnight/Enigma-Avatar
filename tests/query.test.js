@@ -28,7 +28,6 @@ function makeReporter(over = {}) {
     sizeScale: 1,
     weightMass: null,
     springNeverExtra: [],
-    eyeBones: [],
     ...over,
   };
   // `live` IS the engine state container (the reporter reads engine.facial / engine.proc / … off it);

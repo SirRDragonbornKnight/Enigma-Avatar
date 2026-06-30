@@ -31,7 +31,6 @@ test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
     createUI(api).showSettings();
     const cases = [
       ["Spring physics", "springOn"],
-      ["Look at cursor", "lookOn"],
       ["Face (blink", "facialOn"],
       ["Lock in place", "locked"],
     ]; // ("Idle motion" checkbox removed 2026-06-12 with the whole idle system; the random-emotes checkbox went 2026-06-11 — nothing fires by itself)
@@ -416,29 +415,6 @@ test("rotate-by-drag is a TOGGLE (arms setRotateMode) and the Idle section is GO
       "no Idle section / sliders / re-seed button anywhere"
     );
     assert.ok(!checkboxByLabel("Idle motion"), "the Idle motion toggle is gone (nothing to toggle)");
-  } finally {
-    dom.cleanup();
-  }
-});
-
-test("Look-with dropdown (head/eyes/both) calls setLookMode when the model has eyes", () => {
-  const dom = installDOM();
-  try {
-    const { api, calls } = makeApi();
-    createUI(api).showSettings();
-    let sel = null;
-    for (const span of S().querySelectorAll("span"))
-      if (span.textContent.includes("Look with") && span.parentElement) {
-        sel = span.parentElement.querySelector("select");
-        break;
-      }
-    assert.ok(sel, "Look-with dropdown present (model has eyes)");
-    sel.value = "eyes";
-    fire(sel, "change");
-    assert.ok(
-      calls.some((c) => c[0] === "setLookMode" && c[1] === "eyes"),
-      "→ setLookMode('eyes')"
-    );
   } finally {
     dom.cleanup();
   }

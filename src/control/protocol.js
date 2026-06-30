@@ -3,8 +3,8 @@
 // protocol.js — the AI bus wire protocol as ONE typed contract (Stage 4, item 2).
 //
 // The bus is JSON {action, ...} over ws://127.0.0.1:8765. Until now the shape of each command lived
-// implicitly in four places at once — the JS dispatch (control/bus.js), and the three Python drivers
-// (say.py / avbus.py / brain.py) — with every handler hand-parsing its own args. This module is the
+// implicitly in several places at once — the JS dispatch (control/bus.js), and the Python drivers
+// (say.py / avbus.py) — with every handler hand-parsing its own args. This module is the
 // single source of truth: the `BusCommand` union below documents+types every verb, `BusReply` is the
 // request/reply envelope, and `Capabilities` is exactly what `query:"capabilities"` returns. The two
 // runtime exports (`ACTIONS`, `QUERY_KINDS`) are cross-checked against the live registry/reporter by
@@ -20,7 +20,6 @@
 // ── MOTION ───────────────────────────────────────────────────────────────────
 /** @typedef {{ action: "pose", parts?: Record<string, number[]>, flex?: Record<string, number[]>, weight?: number, amp?: number, speed?: number, dur?: number, env?: number[], id?: string, clear?: string | boolean } & WithReqId} PoseCommand */
 /** @typedef {{ action: "fingers", side?: "L" | "R" | "both", curl?: number | null, spec?: Record<string, number> } & WithReqId} FingersCommand */
-/** @typedef {{ action: "look", mode?: "head" | "eyes" | "both", at?: [number, number], px?: number, py?: number, value?: string } & WithReqId} LookCommand */
 /** @typedef {{ action: "impulse", region: string, dur?: number } & WithReqId} ImpulseCommand */
 /** @typedef {{ action: "perform", text: string } & WithReqId} PerformCommand */
 
@@ -72,7 +71,7 @@
 /**
  * Any command a driver can send over the bus. The body's handleCommand dispatches on `action`;
  * an unknown/garbage action is an honest no-op (never a throw).
- * @typedef {PoseCommand | FingersCommand | LookCommand | ImpulseCommand | PerformCommand
+ * @typedef {PoseCommand | FingersCommand | ImpulseCommand | PerformCommand
  *   | SayCommand | StopCommand | MouthCommand | BlinkCommand
  *   | ConjureCommand | BallCommand
  *   | MoveCommand | SizeCommand | RotateCommand | RotateModeCommand | MonitorCommand | PlatformCommand
@@ -95,7 +94,7 @@
  * @typedef {{
  *   roles: string[],
  *   flexRoles: string[],
- *   channels: { pose: boolean, flex: boolean, look: boolean, layers: boolean, fingers: { L: string[], R: string[] } },
+ *   channels: { pose: boolean, flex: boolean, layers: boolean, fingers: { L: string[], R: string[] } },
  *   limits: Record<string, unknown>,
  *   units: { offsets: "radians", flex: "radians", limits: "degrees" },
  *   fsign: number
@@ -107,7 +106,7 @@
  * registry itself, "state" is the default full-state report).
  * @typedef {"materials" | "meshes" | "regions" | "bones" | "morphs" | "rotation" | "facial" | "model"
  *   | "where" | "capabilities" | "caps" | "roles" | "joints" | "stance" | "iktest" | "grip" | "outfits"
- *   | "platforms" | "bounds" | "weights" | "eyegaze" | "state"} QueryKind
+ *   | "platforms" | "bounds" | "weights" | "state"} QueryKind
  */
 
 /**
@@ -130,7 +129,6 @@ export const ACTIONS = Object.freeze([
   "hue",
   "impulse",
   "load",
-  "look",
   "mesh",
   "monitor",
   "morph",
@@ -183,7 +181,6 @@ export const QUERY_KINDS = Object.freeze([
   "platforms",
   "bounds",
   "weights",
-  "eyegaze",
   "state",
 ]);
 
@@ -222,7 +219,7 @@ const REQUIRED_FIELDS = {
  * STRUCTURAL validation of a raw inbound bus message against the contract: it must be an object, carry
  * a known string `action`, and include that verb's required field. It deliberately does NOT coerce or
  * range-check argument VALUES — per this repo's "guard at the engine boundary, not the caller" rule,
- * numeric/shape sanitization stays where a value ENTERS an engine (setLayer / setMouth / lookAt / the
+ * numeric/shape sanitization stays where a value ENTERS an engine (setLayer / setMouth / the
  * loader). So this complements those guards; it does not replace them, and it is intentionally not
  * wired to reject at connect() (the bus stays leniently honest-no-op). Use it for observability, a
  * future strict mode, or driver-side pre-flight.

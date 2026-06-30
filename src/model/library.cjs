@@ -6,8 +6,8 @@
 //   const lib = createLibrary({ modelsDir, manifestPath, runPython, scriptDir });
 //
 // Invariants enforced here (audit #4):
-//   • NO bundled/built-in models (copyright) — models/ is the whole library; the launch default is
-//     the procedural avatar (default_avatar.js). Any model is deletable.
+//   • NO bundled/built-in models (copyright) — models/ is the whole library; with no models present
+//     the overlay shows a no-model message (no placeholder). Any model is deletable.
 //   • an import never clobbers an existing folder — it disambiguates the slug instead
 //   • removeModel MOVES to models/_trash/ (recoverable) and only edits the manifest AFTER the move
 //   • ids that aren't a clean basename are rejected (no `..`/separator path escapes)
@@ -20,8 +20,8 @@ const path = require("path");
 // fall through to GLTFLoader and die with a misleading "not valid JSON" — so they're excluded.
 const MESH_EXT = new Set([".glb", ".gltf", ".vrm", ".fbx"]);
 // NO bundled built-in models — the shipped repo must NOT reference third-party / copyrighted
-// avatars. Every model is just a user-supplied folder under models/; the launch default is the
-// procedural avatar (default_avatar.js) until a bespoke 3D avatar is made. Every model is deletable.
+// avatars. Every model is just a user-supplied folder under models/; with no models present the
+// overlay shows a no-model message (no placeholder) until one is added. Every model is deletable.
 const SKIP_DIR = (n) => n.startsWith(".") || n.startsWith("_"); // _trash, _thumbs, dotfolders
 const slug = (s) =>
   (s || "model")

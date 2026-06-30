@@ -86,7 +86,7 @@ export function makeApi(over = {}) {
     (...args) => {
       calls.push([name, ...args]);
     };
-  const flags = { springOn: true, lookOn: true, facialOn: true, locked: false }; // (idleOn / idleBehaviorOn died with the idle system, 2026-06-12)
+  const flags = { springOn: true, facialOn: true, locked: false }; // (idleOn / idleBehaviorOn died with the idle system, 2026-06-12)
   const profile = { colors: {}, hue: {}, spring: {} };
   const api = {
     THREE: StubTHREE,
@@ -181,9 +181,6 @@ export function makeApi(over = {}) {
     },
     getRotateMode: () => false,
     setRotateMode: rec("setRotateMode"),
-    hasEyes: () => true,
-    getLookMode: () => "both",
-    setLookMode: rec("setLookMode"),
     // soft-body jiggle areas present on the mock model: an NSFW one, a normal one, and CLOTH
     // (which the Settings panel must split into its own section).
     springRegions: () => [

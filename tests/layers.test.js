@@ -97,7 +97,7 @@ test("capabilities reports this model's resolved roles + channels", () => {
   const cap = buildProceduralRig(fullBiped(), {}).capabilities();
   assert.ok(cap.roles.includes("head") && cap.roles.includes("left_arm"), "roles list the resolved bones");
   assert.ok(cap.flexRoles.includes("left_arm"), "arms are flex-able");
-  assert.ok(cap.channels.pose && cap.channels.look && cap.channels.layers, "core channels present");
+  assert.ok(cap.channels.pose && cap.channels.layers, "core channels present");
   assert.equal(
     cap.units && cap.units.offsets,
     "radians",

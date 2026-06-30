@@ -4,7 +4,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../src/rig/rig.js";
-import { buildDefaultAvatar } from "../src/model/default_avatar.js";
 import {
   fullBiped,
   blenderBiped,
@@ -272,15 +271,11 @@ test("a VRM gap falls through to the name tier", () => {
   assert.equal(r.source.chest, "name", "chest should be filled by the name tier when VRM lacks it");
 });
 
-// ── No-model marker (user decision 2026-06-26: the self-made character is RETIRED) ──
-// buildDefaultAvatar() now returns an INERT, empty Group — no skeleton, no body bones.
-// When no .glb is loaded, avatar.js raises a DOM "add a model" hint instead of rendering
-// a figure. So the marker MUST resolve to ZERO roles (nothing for the compositor to drive),
-// and rig.js must degrade honestly on a boneless scene rather than throwing.
-test("the retired no-model marker is inert: zero bones resolve, no roles, no crash", () => {
-  const { scene } = buildDefaultAvatar();
-  assert.equal(scene.userData.isNoModelMarker, true, "default build is the inert marker");
+// ── Boneless-scene safety: rig.js must degrade honestly on a scene with no bones (the no-model
+// path renders an empty group + a DOM "add a model" hint), resolving ZERO roles, never throwing.
+test("rig resolution on a boneless scene is inert: zero bones resolve, no roles, no crash", () => {
+  const scene = new THREE.Group();
   const r = resolveRig(scene);
-  assert.deepEqual(r.matched, [], "an empty marker resolves no roles");
+  assert.deepEqual(r.matched, [], "an empty scene resolves no roles");
   assert.deepEqual(r.report.bySource, {}, "no bones matched from any tier");
 });

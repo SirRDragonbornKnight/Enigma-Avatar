@@ -6,7 +6,6 @@
     python enigma-avatar/say.py move 300 400        # move to screen x,y (pixels)
     python enigma-avatar/say.py goto center         # ease to a named anchor (center / topleft / cursor / ...)
     python enigma-avatar/say.py monitor next        # hop the overlay to the next monitor (or `monitor 1`)
-    python enigma-avatar/say.py look 800 400        # aim her gaze at a screen point
     python enigma-avatar/say.py fingers R 1         # curl the right hand to a fist (0 = open, `none` = release to grip)
     python enigma-avatar/say.py perform "Hi! [pose:right_arm=1.0]"   # drive motion from inline-tagged speech (the AI's channel)
     python enigma-avatar/say.py say file:///C:/tmp/speech.wav        # play a WAV + lip-sync the jaw/mouth
@@ -129,8 +128,6 @@ def _parse(argv: list[str]) -> dict | None:
         }  # explicit screen.getAllDisplays() index (use the menu to see which is which)
     if head == "goto":  # ease to a named anchor: `goto center` / topleft / topright / cursor ...
         return {"action": "move", "to": argv[1] if len(argv) > 1 else "center"}
-    if head == "look":  # aim her gaze at a screen point: `look 800 400`
-        return {"action": "look", "px": float(argv[1]), "py": float(argv[2])}
     if (
         head == "fingers"
     ):  # curl a hand 0..1, or `none` to release to the reactive grip: `fingers R 1` / `fingers L none`
