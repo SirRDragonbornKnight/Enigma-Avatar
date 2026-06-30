@@ -6,7 +6,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import pkg from "../src/model/library.js"; // CJS module → default import is bullet-proof across cjs-interop
+import pkg from "../src/model/library.cjs"; // CJS module → default import is bullet-proof across cjs-interop
 const { createLibrary } = pkg;
 
 function sandbox() {

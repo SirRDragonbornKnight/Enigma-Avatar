@@ -1,4 +1,4 @@
-// foreground.js — "is a real fullscreen app (game / video / presentation) on screen right now?"
+// foreground.cjs — "is a real fullscreen app (game / video / presentation) on screen right now?"
 //
 // WHY THIS EXISTS: the overlay is always-on-top at the "screen-saver" level and used to re-assert
 // that every 4s. An always-on-top window forced above an EXCLUSIVE-fullscreen game evicts the game

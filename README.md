@@ -25,10 +25,10 @@ The tree groups files by concern (folderized 2026-06-29; see `TODO.md` "Restruct
 
 ```
 index.html              page shell (importmap + loads src/avatar.js)
-shell/                  Electron MAIN process: main.js, preload.js, foreground.js
+shell/                  Electron MAIN process: main.cjs, preload.cjs, foreground.cjs
 src/
   avatar.js             the renderer orchestrator (entry; wires everything below)
-  model/                loader.js, library.js, default_avatar.js
+  model/                loader.js, library.cjs, default_avatar.js
   rig/                  rig.js, skinweights.js, region.js, face-geometry.js, mouth-geometry.js
   motion/               procedural.js, spring.js, conjure.js, physics.js, motionmath.js
   face/                 facial.js          audio/  voice.js
@@ -55,7 +55,7 @@ bone_limits.json, models.json, mod.json, package.json   (config/data stay at roo
 - `control.js` -- parses `perform`'s inline speech tags (`[emotion]`/`[conjure:x]`/`[pose:role=val]`/`[look:dir]`) into motion + the clean TTS line.
 - `ui.js` -- the right-click menu + Settings dialog (all the DOM). Numerical inputs (no sliders); capability-driven attach-bone picker.
 - `default_avatar.js` -- the **inert no-model marker** (an empty `NoModelMarker` group, 0 bones / 0 roles); when no model is loaded the overlay shows an ASCII DOM hint to add a `.glb`.
-- `main.js` + `preload.js` + `package.json` -- the Electron shell (transparent, click-through overlay) + model-import dialog.
+- `main.cjs` + `preload.cjs` + `package.json` -- the Electron shell (transparent, click-through overlay) + model-import dialog.
 - `bus.py` -- local WebSocket relay (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar.
 - `say.py` -- CLI to drive the avatar (model swap, size, `fingers`, `perform`, `snap`, **say** a WAV, **demo**); fails honestly on bad args, ASCII help.
 - `speak.py` -- **Kokoro TTS -> lip-sync**: synthesize text and have the avatar speak it.

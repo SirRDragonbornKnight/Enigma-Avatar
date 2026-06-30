@@ -49,7 +49,7 @@ const LOCK_THROUGH = process.env.ENIGMA_AVATAR_CLICKTHROUGH === "1";
 // out of my game" bug). Driven by foreground.watch() below; honest no-op if detection is unavailable.
 let _fsActive = false;
 let _stopFsWatch = null; // stop fn for the fullscreen-state poll (cleared on quit)
-const foreground = require("./foreground");
+const foreground = require("./foreground.cjs");
 // The avatar's single source-of-truth position, in virtual-desktop DIP. Every window
 // renders her relative to its own display origin. Initialised onto the primary at launch.
 let gPos = { x: 0, y: 0 };
@@ -75,7 +75,7 @@ let currentModelUrl = null; // last model the brain loaded → peers mirror it
 const ROOT = path.resolve(__dirname, "..");
 const MODELS_DIR = path.join(ROOT, "models");
 const MANIFEST = path.join(ROOT, "models.json");
-const { createLibrary } = require("../src/model/library.js");
+const { createLibrary } = require("../src/model/library.cjs");
 // Try a python interpreter (only needed to import a .unitypackage) — injected into the library.
 function runPython(args) {
   for (const py of [process.env.PYTHON, "python", "py"].filter(Boolean)) {
@@ -339,7 +339,7 @@ function makeWindow(display, isBrain, peerCount) {
     // window isn't focused — so on a secondary monitor she'd stop drawing and a transparent frame
     // reads as "she vanished." Keep the loop alive on every screen regardless of focus.
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       // OS-level renderer sandbox. The renderer parses UNTRUSTED model files (FBX/glTF) through

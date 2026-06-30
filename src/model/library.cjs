@@ -1,4 +1,4 @@
-// library.js — the model LIBRARY: pure-ish fs logic for discovering, importing, and removing
+// library.cjs — the model LIBRARY: pure-ish fs logic for discovering, importing, and removing
 // models under models/. Extracted from main.js so it can be UNIT-TESTED with a temp dir (the
 // riskiest code — folder scans + copies + the trash move — was previously untestable inside the
 // Electron main process). main.js wires the real paths; tests/library.test.js wires a sandbox.

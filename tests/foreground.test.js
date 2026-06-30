@@ -5,7 +5,7 @@
 // SHQueryUserNotificationState poll itself is validated separately under Electron.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import foreground from "../shell/foreground.js";
+import foreground from "../shell/foreground.cjs";
 
 const { isFullscreenState, makeEdgeDetector, queryFullscreen, watch } = foreground;
 

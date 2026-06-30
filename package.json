@@ -2,8 +2,9 @@
   "name": "enigma-avatar",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Desktop Mate-style companion: any rigged glTF/GLB/VRM/FBX floating on a transparent, always-on-top desktop overlay (spring physics, facial lip-sync, emotes).",
-  "main": "shell/main.js",
+  "main": "shell/main.cjs",
   "scripts": {
     "start": "electron .",
     "test": "node --test",
@@ -12,7 +13,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run lint && npm run typecheck && npm run format:check && npm test",
+    "check:py": "python -m pytest tests/ -q",
+    "check": "npm run lint && npm run typecheck && npm run format:check && npm test && npm run check:py",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {

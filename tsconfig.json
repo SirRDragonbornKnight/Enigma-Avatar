@@ -14,6 +14,6 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["**/*.js", "**/*.mjs"],
+  "include": ["**/*.js", "**/*.mjs", "**/*.cjs"],
   "exclude": ["node_modules", "outputs", "tests/__pycache__", "**/__pycache__"]
 }
