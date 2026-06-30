@@ -5,11 +5,13 @@ props/
 rl/
 
 # Generated / per-user runtime state (regenerated on use).
-# profiles.json: per-avatar setups (attachments, tuned physics, colors)
-# models.json:  user-added model manifest (points into the ignored models/)
-# outputs/:     synthesized speech wavs, etc.
+# profiles.json:      per-avatar setups (attachments, tuned physics, colors)
+# models.json:         user-added model manifest (points into the ignored models/)
+# window-state.json:   her last monitor + on-screen spot (restored at launch)
+# outputs/:            synthesized speech wavs, etc.
 profiles.json
 models.json
+window-state.json
 outputs/
 __pycache__/
 *.log

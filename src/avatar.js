@@ -28,7 +28,7 @@ import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } f
 // clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
 // (default_avatar.js's buildDefaultAvatar is retired — #13: no model loaded shows a DOM message via
 //  enterNoModel(), not a self-made character. Nothing here imports it anymore.)
-import { norm360, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
+import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
 // bootstrap below (no renderer / DOM needed), letting tests assert the REAL ordering, not a fake.
@@ -182,10 +182,18 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     shadowMesh.visible = shadowOn && !!model;
     if (!shadowMesh.visible) return;
     const w = Math.max(0.35, (modelDims.w || 1.5) * sizeScale * 1.1);
-    shadowMesh.scale.set(w, w * 0.16, 1); // flat ellipse at the feet line = a floor-contact shadow in the ortho front view
-    shadowMesh.position.set(pos.x, pos.y - w * 0.02, -2); // pos.y = her feet (model is foot-anchored); z behind her
-    const lift = Math.max(0, _motionY); // jumps: the shadow STAYS on the ground and fades with height
-    shadowMesh.material.opacity = 0.55 / (1 + lift * 2.2);
+    // Anchor the shadow to the FLOOR (the visible desk line), not to her feet, so it stays on the
+    // ground and reads as a real cast shadow when she floats up the screen — instead of a dark blob
+    // hovering in mid-air under her. It only follows her feet DOWN, when she's dragged below the desk
+    // line (no floor under her there to catch it). Fades + spreads with height (the classic grounding
+    // cue). Falls back to the feet line until main has sent this window's display geometry (_gReady).
+    const feetY = pos.y + _motionY; // her actual feet, including any jump hop (matches rig.position.y)
+    const floorY = _gReady ? floorWorldY() : feetY;
+    const height = Math.max(0, feetY - floorY); // how far her feet float above the ground (world units)
+    const spread = 1 + Math.min(0.4, height * 0.06); // a higher caster throws a broader, softer patch
+    shadowMesh.scale.set(w * spread, w * 0.16 * spread, 1); // flat ellipse on the floor (ortho front view)
+    shadowMesh.position.set(pos.x, Math.min(feetY, floorY) - w * 0.02, -2); // on the floor when above it; at the feet when below; z behind her
+    shadowMesh.material.opacity = 0.55 / (1 + height * 0.8); // dimmer the higher she floats
   }
   function setShadowOn(v) {
     shadowOn = !!v;
@@ -306,6 +314,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   function gToWorld(gx, gy) {
     const [lx, ly] = dipToLocalPx(gx, gy, myOrigin, myBounds, innerWidth, innerHeight);
     return toWorld(lx, ly);
+  }
+  // World-Y of the visible desk line (work-area bottom of her CURRENT display, under her x). This is
+  // "the ground": the rapier props bounce off it AND the contact shadow rests on it, so both agree on
+  // where the floor is. Mixed-DPI safe (uses this window's own ratio via dipToLocalPx).
+  function floorWorldY() {
+    const wb = curDisp.wb ?? curDisp.y + curDisp.height;
+    const [, lypx] = dipToLocalPx(gPos.x, wb, myOrigin, myBounds, innerWidth, innerHeight);
+    return toWorld(0, lypx).y;
   }
   function localPxToGlobal(cx, cy) {
     const [x, y] = localPxToDip(cx, cy, myOrigin, myBounds, innerWidth, innerHeight);
@@ -2247,15 +2263,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
     // as a collision capsule (props bounce off her), step the world.
     if (physics.count() > 0 && _gReady) {
-      const [, bpx] = dipToLocalPx(
-        gPos.x,
-        curDisp.wb ?? curDisp.y + curDisp.height,
-        myOrigin,
-        myBounds,
-        innerWidth,
-        innerHeight
-      ); // the physics floor matches the visible desk line (work-area bottom), same as her snap floor
-      const fy = toWorld(0, bpx).y + 0.02;
+      const fy = floorWorldY() + 0.02; // the physics floor matches the visible desk line — the same ground the contact shadow rests on
       if (_floorWY === null || Math.abs(fy - _floorWY) > 1e-3) {
         _floorWY = fy;
         physics.setFloor(fy);
@@ -2895,10 +2903,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     setRotAxis: uiSetRotAxis,
     setRot: uiSetRot,
     getRot: () => getRot(), // 3-axis rotation for Settings
+    signed180, // 0..360 storage -> signed (-180,180] for the Settings fields, so the user can rotate either direction
     setYaw: (deg) => uiSetRotAxis("y", deg),
     getYaw: () => getRot().y, // back-compat (Y axis only)
     getRotateMode: () => rotateMode,
-    setRotateMode: uiSetRotateMode, // drag-to-spin (AI/bus only since 2026-06-11 — the user path is Alt+drag)
+    setRotateMode: uiSetRotateMode, // drag-to-spin: a Settings toggle (auto-disarmed on panel close) + Alt+drag + AI/bus
     getLookMode: () => lookMode,
     setLookMode: uiSetLookMode,
     hasEyes: () => hasEyes(), // cursor-look mode (head/eyes/both) for Settings

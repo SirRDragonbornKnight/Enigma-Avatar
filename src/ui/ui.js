@@ -8,6 +8,9 @@
 //                 refreshModelList, containsEvent, ...) — see the full return at the bottom of this file.
 export function createUI(api) {
   const { THREE, BASE_H, rig, avatarIPC, setStatus, baseName, kindOf, profileFor, flags } = api;
+  // 0..360 stored rotation -> signed (-180,180] for the Settings fields, so the user can dial the
+  // OTHER direction (negative = left/down), not just climb 0..360. Identity fallback if not provided.
+  const signed180 = api.signed180 || ((v) => v);
   // Body emotes + the gesture/motion catalog were PURGED 2026-06-25 ("purge means purge") — the AI now
   // authors ALL motion via the compositor (pose/flex/perform). The only menu actions left are the rapier
   // ball-physics toys (NOT gestures): throw / drop / clear.
@@ -572,9 +575,9 @@ export function createUI(api) {
         const t = document.createElement("span");
         t.textContent = axis.toUpperCase();
         t.style.cssText = "opacity:.5;font-size:10px;";
-        const n = numInput(r0[axis] || 0, {
-          min: "0",
-          max: "360",
+        const n = numInput(signed180(r0[axis] || 0), {
+          min: "-180", // signed: negative turns her the OTHER way (left / down), not only right / up
+          max: "180",
           step: "15",
           title:
             "rotate " + axis.toUpperCase() + " — " + (axis === "x" ? "pitch" : axis === "y" ? "yaw" : "roll") + " °",
@@ -597,10 +600,15 @@ export function createUI(api) {
       };
       rotWrap.appendChild(rst);
       body.appendChild(sRow("Rotate °", rotWrap));
-      // Rotate-by-drag is a MODIFIER now, not a mode — the armed mode hijacked plain drag
-      // ("can't move her, can rotate"; 2026-06-11). Alt can't be left on by accident.
+      // Rotate-by-drag TOGGLE (user request 2026-06-30: "make rotate a toggle instead of the Alt
+      // button"). Arm it and a drag on her body spins her instead of moving the window. SAFE because
+      // hideSettings() auto-disarms it (line ~1314) — the armed mode can never outlive the panel and
+      // hijack a later move-drag, which was the 2026-06-11 "can't move her, can rotate" failure that
+      // demoted it to Alt-only. Alt+drag still works too, for a quick spin without arming.
+      if (api.setRotateMode && api.getRotateMode)
+        body.appendChild(sCheck("Rotate by dragging her", api.getRotateMode(), (on) => api.setRotateMode(on)));
       const rotHint = document.createElement("div");
-      rotHint.textContent = "Rotate by hand: hold Alt and drag her (↔ turn, ↕ tilt)";
+      rotHint.textContent = "Turn her by hand: arm the toggle and drag her — or hold Alt and drag (↔ turn, ↕ tilt)";
       rotHint.style.cssText = "padding:4px 0 2px;opacity:.55;font-size:11px;";
       body.appendChild(rotHint);
     }

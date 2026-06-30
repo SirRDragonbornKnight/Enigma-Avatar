@@ -2,7 +2,16 @@
 // save, the spring weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
 import { test } from "node:test";
 import assert from "node:assert";
-import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, dipToLocalPx, localPxToDip } from "../src/util/mathutil.js";
+import {
+  norm360,
+  signed180,
+  rotFromProfile,
+  rotToSave,
+  regionFeel,
+  pickFps,
+  dipToLocalPx,
+  localPxToDip,
+} from "../src/util/mathutil.js";
 
 // (the ambientAmp + idle-v4 primitive tests died with the idle system, 2026-06-12)
 
@@ -53,6 +62,18 @@ test("norm360 wraps any angle into [0,360)", () => {
   assert.strictEqual(norm360(undefined), 0); // junk → 0
   assert.strictEqual(norm360(NaN), 0);
   assert.strictEqual(norm360("90"), 90);
+});
+
+test("signed180 maps angles into (-180,180] so the rotate fields can go the OTHER way", () => {
+  assert.strictEqual(signed180(0), 0);
+  assert.strictEqual(signed180(15), 15);
+  assert.strictEqual(signed180(180), 180); // boundary stays positive
+  assert.strictEqual(signed180(181), -179);
+  assert.strictEqual(signed180(345), -15); // a left turn reads as negative, not 345
+  assert.strictEqual(signed180(360), 0);
+  assert.strictEqual(signed180(-15), -15); // already-negative input round-trips
+  assert.strictEqual(signed180(undefined), 0); // junk → 0
+  assert.strictEqual(signed180(NaN), 0);
 });
 
 test("rotFromProfile reads {x,y,z} and migrates legacy yaw → Y", () => {

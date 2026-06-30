@@ -238,6 +238,7 @@ function setGlobalPos(x, y, clamp) {
   gPos.x = p.x;
   gPos.y = p.y;
   publishPos();
+  savePosSoon(); // remember her monitor + spot across launches (drag / nudge / tray / bus / "monitor" all route here)
 }
 
 // --- click-through arbiter --------------------------------------------------
@@ -432,9 +433,13 @@ function makeWindow(display, isBrain, peerCount) {
 function createWindowSet() {
   const ds = displays();
   const primId = primaryDisplay().id;
-  // Start her on the primary, centre-lower (feet on the deck).
+  // Start her on the primary, centre-lower (feet on the deck) — unless a previous run saved a
+  // position, in which case reopen on THAT monitor / spot (clamped into the current union so a
+  // since-removed monitor can't strand her off-screen).
   const pb = primaryDisplay().bounds;
   gPos = { x: pb.x + pb.width / 2, y: pb.y + pb.height * 0.62 };
+  const savedPos = loadSavedPos();
+  if (savedPos) gPos = clampToUnion(savedPos.x, savedPos.y);
   windows = ds.map((d) => ({
     displayId: d.id,
     win: makeWindow(d, d.id === primId, ds.length - 1),
@@ -581,6 +586,29 @@ async function importProp() {
     return { error: "copy failed: " + (e && e.message) };
   }
   return { id: name, url: `./props/${name}/${path.basename(mesh)}` };
+}
+
+// Remember WHERE she was (which monitor + spot on it) across launches, so "I moved her to my second
+// screen" sticks instead of snapping back to the primary every start. Stored as virtual-desktop DIP
+// in a tiny state file; RESTORED clamped into the CURRENT display union at launch, so a monitor that
+// was unplugged / rearranged since last run can never strand her off-screen (clampToUnion snaps her
+// back onto a real display). Debounced because gPos changes at drag frame-rate.
+const STATE_PATH = path.join(ROOT, "window-state.json");
+let _stateTimer = null;
+function loadSavedPos() {
+  try {
+    const j = JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+    if (j && j.pos && isFinite(j.pos.x) && isFinite(j.pos.y)) return { x: j.pos.x, y: j.pos.y };
+  } catch {} // no file yet / unreadable -> fall back to the primary-centre default
+  return null;
+}
+function savePosSoon() {
+  clearTimeout(_stateTimer);
+  _stateTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y } }, null, 2));
+    } catch {}
+  }, 800);
 }
 
 // Persist the per-avatar profiles (attachments + tuned physics) as a real file the
@@ -1102,6 +1130,14 @@ if (!app.requestSingleInstanceLock()) {
 // something else entirely (a bare exit with none of these logged = external kill / OS shutdown).
 app.on("before-quit", () => {
   _quitting = true;
+  // Flush a pending position write NOW — a move in the last debounce window (0.8s) must still persist.
+  if (_stateTimer) {
+    clearTimeout(_stateTimer);
+    _stateTimer = null;
+    try {
+      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y } }, null, 2));
+    } catch {}
+  }
   console.error("[main] before-quit (uptime " + (process.uptime() | 0) + "s)");
 });
 app.on("will-quit", () => {

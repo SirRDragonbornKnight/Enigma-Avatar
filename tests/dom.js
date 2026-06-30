@@ -175,6 +175,10 @@ export function makeApi(over = {}) {
     setRotAxis: rec("setRotAxis"),
     setRot: rec("setRot"),
     getRot: () => ({ x: 0, y: 0, z: 0 }),
+    signed180: (v) => {
+      const n = (((+v || 0) % 360) + 360) % 360;
+      return n > 180 ? n - 360 : n;
+    },
     getRotateMode: () => false,
     setRotateMode: rec("setRotateMode"),
     hasEyes: () => true,

@@ -8,6 +8,15 @@ export function norm360(v) {
   return (((+v || 0) % 360) + 360) % 360;
 }
 
+// Map any angle to the signed range (-180, 180] — a DISPLAY transform for the Settings rotate
+// fields so the user can dial the OTHER direction (left / down) as negative degrees instead of
+// only being able to climb 0..360 (right / up). Storage stays norm360 (canonical): signed180(345)
+// === -15, and both feed rig.rotation to the same pose. Pure / unit-tested.
+export function signed180(v) {
+  const n = norm360(v);
+  return n > 180 ? n - 360 : n;
+}
+
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 // (ambientAmp — the ambient-idle depth→amplitude curve — was deleted with the idle system, 2026-06-12.)

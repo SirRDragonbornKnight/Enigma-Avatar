@@ -202,6 +202,29 @@ test("Rotate X/Y/Z fields call setRotAxis per axis (all 3 axes)", () => {
   }
 });
 
+test("Rotate fields go BOTH directions: signed display + a negative min (rotate her the other way)", () => {
+  const dom = installDOM();
+  try {
+    // A saved 345°/15° left/right turn must read back as the SIGNED -15 / +15 the user can dial down past 0.
+    const { api } = makeApi({ getRot: () => ({ x: 345, y: 15, z: 0 }) });
+    createUI(api).showSettings();
+    let row = null;
+    for (const span of S().querySelectorAll("span"))
+      if (span.textContent.includes("Rotate °") && span.parentElement) {
+        row = span.parentElement;
+        break;
+      }
+    assert.ok(row, "Rotate row exists");
+    const nums = [...row.querySelectorAll("input[type=number]")];
+    assert.strictEqual(nums[0].value, "-15", "X 345 stored → shown as -15 (the OTHER direction), not 345");
+    assert.strictEqual(nums[1].value, "15", "Y 15 stays +15");
+    assert.strictEqual(nums[0].min, "-180", "min is negative so the spinner can rotate left/down past 0");
+    assert.strictEqual(nums[0].max, "180", "max 180");
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("Rotate ↺ reset calls setRot(0,0,0)", () => {
   const dom = installDOM();
   try {
@@ -365,16 +388,25 @@ test("Cloth has its OWN weight section (fabric is separate from the body jiggle)
   }
 });
 
-test("rotate is Alt+drag (no mode checkbox) and the Idle section is GONE (idle deleted 2026-06-12)", () => {
+test("rotate-by-drag is a TOGGLE (arms setRotateMode) and the Idle section is GONE (idle deleted 2026-06-12)", () => {
   const dom = installDOM();
   try {
     const m = makeApi();
     createUI(m.api).showSettings();
-    // The MODE checkbox is gone — armed, it hijacked plain drag ("can't move her, can rotate"; 2026-06-11).
-    assert.ok(!checkboxByLabel("Rotate by dragging"), "rotate MODE checkbox removed");
+    // The toggle is back (user request 2026-06-30: "make rotate a toggle instead of the Alt button").
+    // Safe because hideSettings() auto-disarms it — see the disarm-on-close test below.
+    const cb = checkboxByLabel("Rotate by dragging her");
+    assert.ok(cb, "rotate-by-drag toggle exists");
+    cb.checked = true;
+    fire(cb, "change");
+    assert.ok(
+      m.calls.some((c) => c[0] === "setRotateMode" && c[1] === true),
+      "ticking it → setRotateMode(true)"
+    );
+    // Alt+drag still works too, so the hint mentions it.
     assert.ok(
       [...document.querySelectorAll("div")].some((d) => /hold Alt and drag/i.test(d.textContent || "")),
-      "Alt+drag hint shown instead"
+      "Alt+drag hint still shown"
     );
     // The whole idle system was deleted (user order 2026-06-12) — NO idle UI may exist.
     assert.ok(
