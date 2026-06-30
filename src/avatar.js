@@ -17,6 +17,7 @@ import { parseControlTags, parseTagArg, resolvePropName } from "./control/contro
 import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar control surface (facade the bus/query/devtools drive)
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
+import { makeEngineView } from "./engine/state.js"; // one live state container the control modules read through (replaces ~115 thunks)
 import { buildSpringBones } from "./motion/spring.js";
 import { createPhysics } from "./motion/physics.js";
 import { buildFacial } from "./face/facial.js";
@@ -2494,7 +2495,56 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // reporter, devtools/globals, and connect() all drive. Built HERE so the engine fns it delegates to
   // already exist; mutable state is read through live getters, and things defined LATER (ui ~3047,
   // handleCommand ~3117, the ui* relays ~2964) come in as getters too -- only ever called at runtime.
-  const EnigmaAvatar = createControlSurface({
+  // The single ENGINE STATE CONTAINER — one live view onto the closure's mutable state (see
+  // engine/state.js). The control modules read state through it (engine.proc, engine.model, …) and
+  // receive ONE object instead of ~115 getter/setter thunks; reads are live by construction. The
+  // closure still uses its own locals for now — migrating those reads onto engine (and dropping the
+  // accessors here) is the next stage and needs a live-overlay launch to verify.
+  const engine = makeEngineView(
+    {
+      proc: () => proc,
+      facial: () => facial,
+      spring: () => spring,
+      model: () => model,
+      vrm: () => vrm,
+      sizeScale: () => sizeScale,
+      held: () => held,
+      modelDims: () => modelDims,
+      springOn: () => springOn,
+      facialOn: () => facialOn,
+      lookOn: () => lookOn,
+      locked: () => locked,
+      rotateMode: () => rotateMode,
+      bonesShown: () => bonesShown,
+      curKey: () => curKey,
+      weightMass: () => _weightMass,
+      springNeverExtra: () => _springNeverExtra,
+      attachObjs: () => attachObjs,
+      lookMode: () => lookMode,
+      roleBones: () => roleBones,
+      eyeBones: () => eyeBones,
+      platforms: () => platforms,
+      curDisp: () => curDisp,
+      ui: () => ui,
+      handleCommand: () => handleCommand,
+      aiPaused: () => !aiControlOn, // kill-switch: connect() drops inbound commands while true
+      uiLoadModel: () => uiLoadModel,
+      uiAttach: () => uiAttach,
+      uiDetach: () => uiDetach,
+      uiClearAttachments: () => uiClearAttachments,
+    },
+    {
+      cursorIdle: (v) => {
+        _cursorIdle = v;
+      },
+      forceLookUntil: (v) => {
+        _forceLookUntil = v;
+      },
+    },
+    { pos, cursor, LOOK, eyeCfg, CONJURE_ASSETS, rig }
+  );
+
+  const EnigmaAvatar = createControlSurface(engine, {
     glideTo,
     nudge,
     goTo,
@@ -2537,44 +2587,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     wake,
     setLookMode,
     hasEyes,
-    pos,
-    cursor,
-    LOOK,
-    eyeCfg,
-    CONJURE_ASSETS,
-    getProc: () => proc,
-    getFacial: () => facial,
-    getSpring: () => spring,
-    getModel: () => model,
-    getVrm: () => vrm,
-    getSizeScale: () => sizeScale,
-    getHeld: () => held,
-    getModelDims: () => modelDims,
-    getSpringOn: () => springOn,
-    getFacialOn: () => facialOn,
-    getLookOn: () => lookOn,
-    getLocked: () => locked,
-    getRotateMode: () => rotateMode,
-    getBonesShown: () => bonesShown,
-    getCurKey: () => curKey,
-    getWeightMass: () => _weightMass,
-    getAttachObjs: () => attachObjs,
-    getLookMode: () => lookMode,
-    getRoleBones: () => roleBones,
-    getUi: () => ui,
-    getHandleCommand: () => handleCommand,
-    getAiPaused: () => !aiControlOn, // kill-switch: connect() drops inbound commands while this is true
     onAiCommand: (action) => flashAiActivity(action), // flash the status line on each ACCEPTED command
-    getUiLoadModel: () => uiLoadModel,
-    getUiAttach: () => uiAttach,
-    getUiDetach: () => uiDetach,
-    getUiClearAttachments: () => uiClearAttachments,
-    setCursorIdle: (v) => {
-      _cursorIdle = v;
-    },
-    setForceLookUntil: (v) => {
-      _forceLookUntil = v;
-    },
   });
   // Answer a 'query' from the AI bus with LIVE ground truth — the overlay is the authority on
   // what it actually loaded (current model, facial/mouth mode, materials by index, roles).

@@ -78,45 +78,22 @@ function makeSurface(over = {}) {
   const voice = { speak: spy(), stop: spy() };
   const conjurer = { spawn: spy("cid"), clear: spy(), dismiss: spy(), moveTo: spy(), ids: spy([]) };
 
-  const surface = createControlSurface({
-    ...fn,
-    physics,
-    voice,
-    conjurer,
+  // `engine` IS the live state object: the surface reads engine.proc / engine.model / … so mutating
+  // `live` between calls proves the live reads; engine.cursorIdle = v writes straight back to it. The
+  // stable in-place objects are assigned on so the factory can destructure them at build.
+  const engine = Object.assign(live, {
     pos,
     cursor,
     LOOK: {},
     eyeCfg: {},
     CONJURE_ASSETS: { ball: "ball.glb" },
-    getProc: () => live.proc,
-    getFacial: () => live.facial,
-    getSpring: () => live.spring,
-    getModel: () => live.model,
-    getVrm: () => live.vrm,
-    getSizeScale: () => live.sizeScale,
-    getHeld: () => live.held,
-    getModelDims: () => live.modelDims,
-    getSpringOn: () => live.springOn,
-    getFacialOn: () => live.facialOn,
-    getLookOn: () => live.lookOn,
-    getLocked: () => live.locked,
-    getRotateMode: () => live.rotateMode,
-    getBonesShown: () => live.bonesShown,
-    getCurKey: () => live.curKey,
-    getWeightMass: () => live.weightMass,
-    getAttachObjs: () => live.attachObjs,
-    getLookMode: () => live.lookMode,
-    getRoleBones: () => live.roleBones,
-    getUi: () => live.ui,
-    getHandleCommand: () => live.handleCommand,
-    getAiPaused: () => live.aiPaused,
+  });
+  const surface = createControlSurface(engine, {
+    ...fn,
+    physics,
+    voice,
+    conjurer,
     onAiCommand: (a) => live.onAiCommand(a),
-    getUiLoadModel: () => live.uiLoadModel,
-    getUiAttach: () => live.uiAttach,
-    getUiDetach: () => live.uiDetach,
-    getUiClearAttachments: () => live.uiClearAttachments,
-    setCursorIdle: (v) => (live.cursorIdle = v),
-    setForceLookUntil: (v) => (live.forceLookUntil = v),
   });
   return { surface, live, fn, pos, cursor, physics, voice, conjurer };
 }

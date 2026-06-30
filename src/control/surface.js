@@ -6,21 +6,21 @@
 // or read engine state; the real work lives in the modules it calls. Co-locating it here puts the
 // whole AI control plane (surface + bus + query) in one folder.
 //
-// WIRING: avatar.js calls createControlSurface(api) once, after the engine functions exist. Because
-// it is the hub of the closure, the api is large. Two rules keep it correct:
-//   * MUTABLE engine state (proc/facial/spring/model/vrm/sizeScale/... — all reassigned over the
-//     avatar's life) is read through getter thunks, snapshotted at the TOP of each method so the body
-//     stays verbatim and always sees current truth; never frozen values.
-//   * Things defined LATER in avatar.js (ui at ~3047, handleCommand at ~3117) come in as getters too
-//     (getUi/getHandleCommand) — only ever called at runtime (settings/state/connect), never at build.
-//   * `pos`/`cursor`/`LOOK`/`eyeCfg`/`CONJURE_ASSETS` are stable objects mutated in place, passed
-//     directly. `lookAt` also WRITES two primitives the render loop reads (_cursorIdle/_forceLookUntil)
-//     — those come in as setter thunks (setCursorIdle/setForceLookUntil).
+// WIRING: avatar.js calls createControlSurface(engine, services) once, after the engine functions
+// exist. Two arguments keep it correct:
+//   * `engine` — the live STATE CONTAINER (engine/state.js). MUTABLE state (proc/facial/spring/model/
+//     vrm/sizeScale/... — all reassigned over the avatar's life) is read through it as engine.proc,
+//     engine.model, … so a method always sees current truth without snapshotting a frozen value. The
+//     two look primitives the render loop reads are written back (engine.cursorIdle / engine.forceLookUntil),
+//     and the stable in-place objects (pos/cursor/LOOK/eyeCfg/CONJURE_ASSETS) are shared off it too.
+//     Things defined LATER in avatar.js (ui, handleCommand, the ui* relays) are live accessors on
+//     engine — only ever read at runtime (settings/state/connect), never at build.
+//   * `services` — the stable delegate functions/behavior (glideTo, applySize, recolor, onAiCommand, …).
 import * as THREE from "three";
 
-export function createControlSurface(api) {
+export function createControlSurface(engine, services) {
   const {
-    // delegate functions (stable)
+    // delegate functions + behavior (stable — the engine's verbs)
     glideTo,
     nudge,
     goTo,
@@ -63,46 +63,10 @@ export function createControlSurface(api) {
     wake,
     setLookMode,
     hasEyes,
-    // stable objects (mutated in place)
-    pos,
-    cursor,
-    LOOK,
-    eyeCfg,
-    CONJURE_ASSETS,
-    // live-state getters (read at call time)
-    getProc,
-    getFacial,
-    getSpring,
-    getModel,
-    getVrm,
-    getSizeScale,
-    getHeld,
-    getModelDims,
-    getSpringOn,
-    getFacialOn,
-    getLookOn,
-    getLocked,
-    getRotateMode,
-    getBonesShown,
-    getCurKey,
-    getWeightMass,
-    getAttachObjs,
-    getLookMode,
-    getRoleBones,
-    getUi,
-    getHandleCommand,
-    getAiPaused, // kill-switch: when true, drop EVERY inbound bus command before it dispatches
     onAiCommand, // notified with the action name of each ACCEPTED command (drives the activity flash)
-    // ui* relays are defined LATER in avatar.js (~2964) than this factory's call site (~2446), so they
-    // come in as getters too — only ever invoked at runtime (load/attach/detach), never at build.
-    getUiLoadModel,
-    getUiAttach,
-    getUiDetach,
-    getUiClearAttachments,
-    // setter thunks (lookAt writes primitives the render loop reads)
-    setCursorIdle,
-    setForceLookUntil,
-  } = api;
+  } = services;
+  // Stable in-place state objects (mutated, never reassigned) — read straight off the live container.
+  const { pos, cursor, LOOK, eyeCfg, CONJURE_ASSETS } = engine;
 
   const EnigmaAvatar = {
     // (clip-playback API — actions / play / loopClip / playAnim / stopAnim — removed with the clip-library purge 2026-06-25)
@@ -114,23 +78,23 @@ export function createControlSurface(api) {
     goTo: (target) => goTo(target), // move by NAME ("center","topleft","cursor",…) — AI movement without pixel math
     where: () => whereAmI(), // her screen-px position + screen size + cursor (AI spatial awareness)
     setSize: (s) => applySize(s),
-    size: () => getSizeScale(),
+    size: () => engine.sizeScale,
     load(url) {
-      getUiLoadModel()(url, url);
+      engine.uiLoadModel(url, url);
     }, // relayed — a devtools/global load must reach every window like any other
     matched: () => {
-      const proc = getProc();
+      const proc = engine.proc;
       return proc ? proc.matched : [];
     },
     state: () => {
-      const proc = getProc(),
-        spring = getSpring(),
-        facial = getFacial(),
-        vrm = getVrm();
+      const proc = engine.proc,
+        spring = engine.spring,
+        facial = engine.facial,
+        vrm = engine.vrm;
       return {
-        held: getHeld(),
-        size: +getSizeScale().toFixed(2),
-        dims: [+(getModelDims().w || 0).toFixed(2), +(getModelDims().h || 0).toFixed(2)],
+        held: engine.held,
+        size: +engine.sizeScale.toFixed(2),
+        dims: [+(engine.modelDims.w || 0).toFixed(2), +(engine.modelDims.h || 0).toFixed(2)],
         pos: [+pos.x.toFixed(2), +pos.y.toFixed(2)],
         screen: [innerWidth, innerHeight],
         screenPos: posScreen(),
@@ -141,14 +105,14 @@ export function createControlSurface(api) {
         layers: proc && proc.layerIds ? proc.layerIds() : [],
         springBones: spring ? spring.names : [],
         facial: facial ? { mode: facial.mode, info: facial.info } : null,
-        attachments: getAttachObjs().map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })),
+        attachments: engine.attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })),
         toggles: {
-          spring: getSpringOn(),
-          facial: getFacialOn(),
-          look: getLookOn(),
-          locked: getLocked(),
-          rotateMode: getRotateMode(),
-          menu: getUi().isOpen(),
+          spring: engine.springOn,
+          facial: engine.facialOn,
+          look: engine.lookOn,
+          locked: engine.locked,
+          rotateMode: engine.rotateMode,
+          menu: engine.ui.isOpen(),
         },
       };
     },
@@ -176,7 +140,7 @@ export function createControlSurface(api) {
     },
     poseLayer: (c = {}) => {
       // AI compositor: set ONE motion layer {parts,flex,dur,weight,env,id}; {clear:true} removes it
-      const proc = getProc();
+      const proc = engine.proc;
       if (!proc?.setLayer) return { error: "no procedural rig on this model" };
       const id = String(c.id || "ai_pose");
       if (c.clear) {
@@ -203,7 +167,7 @@ export function createControlSurface(api) {
     },
     layer: (c = {}) => {
       // AI compositor: manage the layer stack — op add|clear|clearAll
-      const proc = getProc();
+      const proc = engine.proc;
       if (!proc?.setLayer) return { error: "no procedural rig on this model" };
       const op = String(c.op || (c.clear ? "clear" : "add")).toLowerCase();
       if (op === "clearall") {
@@ -231,7 +195,7 @@ export function createControlSurface(api) {
     },
     fingers: (c = {}) => {
       // AI per-finger hand pose: {side:"L"|"R"|"both", curl: number(all) | {thumb|index|…|0..N: 0..1, default?} | null(release to grip)}
-      const proc = getProc();
+      const proc = engine.proc;
       if (!proc?.setFingers) return { error: "no procedural rig on this model" };
       const side = c.side || "R";
       proc.setFingers(side, c.curl !== undefined ? c.curl : c.spec);
@@ -239,11 +203,11 @@ export function createControlSurface(api) {
       return { side, fingers: proc.fingerNames(side) };
     },
     capabilities: () => {
-      const proc = getProc();
+      const proc = engine.proc;
       return proc ? proc.capabilities() : null;
     }, // what the brain can drive on THIS model (roles, flex-able limbs, fingers, channels, limits)
     layers: () => {
-      const proc = getProc();
+      const proc = engine.proc;
       return proc ? proc.layerIds() : [];
     },
     conjure: (c = {}) => {
@@ -269,7 +233,7 @@ export function createControlSurface(api) {
     },
     perform: (text) => {
       // P4 substrate: tagged speech -> motion + the clean line to TTS
-      const proc = getProc();
+      const proc = engine.proc;
       const { clean, tags } = parseControlTags(text);
       const did = [];
       for (const { type, arg } of tags) {
@@ -304,7 +268,7 @@ export function createControlSurface(api) {
     },
     lookTune: (p) => Object.assign(LOOK, p), // tune/flip cursor-look (gainX/Y, flipX/Y, maxX/Y)
     lookMode: (m) => setLookMode(m),
-    getLookMode: () => getLookMode(),
+    getLookMode: () => engine.lookMode,
     hasEyes: () => hasEyes(), // head / eyes / both
     eyeTune: (p) => Object.assign(eyeCfg, p), // adjust eye-look feel live (gain/flip/max — flip if eyes point wrong). Global now; not persisted per-model.
     lookAt: (px, py) => {
@@ -312,21 +276,21 @@ export function createControlSurface(api) {
       cursor.x = px == null || !Number.isFinite(+px) ? innerWidth / 2 : +px; // coerce: a bus lookAt with NaN/Infinity/string must not poison the look smoother (would freeze cursor-look until reload)
       cursor.y = py == null || !Number.isFinite(+py) ? innerHeight / 2 : +py;
       cursor.seen = true;
-      setCursorIdle(0);
-      setForceLookUntil(performance.now() + 1200);
+      engine.cursorIdle = 0;
+      engine.forceLookUntil = performance.now() + 1200;
       wake(2);
-      const proc = getProc();
+      const proc = engine.proc;
       const drove = !!(proc && proc.setLook); // a model with no head/eye look channel can't gaze — say so honestly instead of faking success
-      return { lookAt: [Math.round(cursor.x), Math.round(cursor.y)], drove, channel: getLookMode() };
+      return { lookAt: [Math.round(cursor.x), Math.round(cursor.y)], drove, channel: engine.lookMode };
     },
     facialTune: (p) => facialTune(p), // saved per-avatar (jaw axis/open)
     mouth: (a) => {
-      const facial = getFacial();
+      const facial = engine.facial;
       const n = +a;
       if (facial && isFinite(n)) facial.setMouth(n);
     }, // 0..1 jaw/mouth open — coerce + guard (the bus is stringly-typed; a NaN would freeze the smoother)
     setMorph: (i, v) => {
-      const model = getModel();
+      const model = engine.model;
       const amt = v == null ? 1 : +v;
       if (!isFinite(amt)) return 0;
       let n = 0;
@@ -340,7 +304,7 @@ export function createControlSurface(api) {
       return n;
     }, // probe morphs BY INDEX (name-free) to find the mouth; NaN never reaches the GPU
     morphCount: () => {
-      const model = getModel();
+      const model = engine.model;
       let n = 0;
       model?.traverse((o) => {
         if (o.isMesh && o.morphTargetInfluences) n = Math.max(n, o.morphTargetInfluences.length);
@@ -349,11 +313,11 @@ export function createControlSurface(api) {
     }, // how many morph targets to probe across
     say: (url, opts) => voice.speak(url, opts), // play speech audio + lip-sync
     stopSpeak: () => voice.stop(),
-    attach: (url, opts) => getUiAttach()(url, opts), // prop/accessory → bone (opts: bone,pos,rot,scale) — relayed (consistent ids + every window's copy)
-    detach: (id) => getUiDetach()(id),
-    clearAttachments: () => getUiClearAttachments()(),
+    attach: (url, opts) => engine.uiAttach(url, opts), // prop/accessory → bone (opts: bone,pos,rot,scale) — relayed (consistent ids + every window's copy)
+    detach: (id) => engine.uiDetach(id),
+    clearAttachments: () => engine.uiClearAttachments(),
     attachments: () =>
-      getAttachObjs().map((a) => ({
+      engine.attachObjs.map((a) => ({
         id: a.id,
         category: a.category,
         url: a.url,
@@ -365,11 +329,11 @@ export function createControlSurface(api) {
       })),
     tuneAttachment: (id, opts) => tuneAttachment(id, opts), // live placement: {bone,pos:[x,y,z],rot:[deg],scale}
     showSkeleton: (on) => showSkeleton(on), // overlay the rig to inspect bones; persists
-    bonesShown: () => getBonesShown(),
+    bonesShown: () => engine.bonesShown,
     snap: (opts) => snapshot(opts || {}), // capture the avatar in isolation → PNG (inspect)
     settings: (open) => {
-      if (open === false) getUi().hideSettings();
-      else getUi().showSettings();
+      if (open === false) engine.ui.hideSettings();
+      else engine.ui.showSettings();
     }, // open/close Settings — tray escape hatch (reach it when she can't be clicked) + AI
     materials: () =>
       allMaterialsInfo().map(({ m, mesh }, index) => ({
@@ -382,7 +346,7 @@ export function createControlSurface(api) {
     hueShift: (name, deg) => hueShift(name, deg), // rotate a part's hue (keeps detail); saved
     resetColors: () => resetColors(), // restore every part's original loaded color (+ clear saved tints/hue)
     meshes: () => {
-      const lab = profileFor(getCurKey()).meshLabels || {};
+      const lab = profileFor(engine.curKey).meshLabels || {};
       return allMeshesInfo().map(({ mesh, name }, index) => ({
         index,
         name: name || null,
@@ -394,10 +358,10 @@ export function createControlSurface(api) {
     setMeshLabel: (i, label) => setMeshLabel(i, label), // give a part a legible name (saved per avatar)
     bones: () => {
       // every bone: raw name + user label + resolved role + REAL mesh influence (Settings naming / AI addressing)
-      const lab = profileFor(getCurKey()).boneLabels || {};
-      const roleBones = getRoleBones();
-      const model = getModel();
-      const _weightMass = getWeightMass();
+      const lab = profileFor(engine.curKey).boneLabels || {};
+      const roleBones = engine.roleBones;
+      const model = engine.model;
+      const _weightMass = engine.weightMass;
       const roleOf = {};
       for (const r in roleBones) if (roleBones[r]) roleOf[roleBones[r].name] = r;
       const out = [];
@@ -424,7 +388,7 @@ export function createControlSurface(api) {
     morphs: () => allMorphsInfo(), // [{index,name,value}] — the model's own shape keys (toggles/expressions)
     setMorphValue: (i, v) => setMorphValue(i, v), // drive a morph by index 0..1; saved (vs setMorph = transient probe)
     rotateMode: (on) => setRotateMode(on),
-    getRotateMode: () => getRotateMode(), // drag-to-spin mode on/off
+    getRotateMode: () => engine.rotateMode, // drag-to-spin mode on/off
     connect(url = "ws://127.0.0.1:8765") {
       try {
         const ws = new WebSocket(url);
@@ -440,7 +404,7 @@ export function createControlSurface(api) {
           // Kill-switch: while AI control is paused, NOTHING the bus sends runs — drop it before
           // dispatch (queries included: paused means fully inert, revealing nothing). A reqId driver
           // still gets an honest "paused" reply so it isn't left hanging.
-          if (getAiPaused && getAiPaused()) {
+          if (engine.aiPaused) {
             if (c.reqId != null) {
               try {
                 ws.send(
@@ -458,7 +422,7 @@ export function createControlSurface(api) {
           let result;
           try {
             if (onAiCommand) onAiCommand(c.action); // surface the accepted command (no-surprises indicator)
-            result = getHandleCommand()(c);
+            result = engine.handleCommand(c);
             // A few handlers are async (e.g. `snap` resolves the written PNG's path); await before we
             // reply so a reqId driver gets the real result, not a serialized Promise. Sync handlers
             // return non-thenables and are untouched. Dispatch already ran synchronously above, so

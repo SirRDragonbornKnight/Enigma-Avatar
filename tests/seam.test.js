@@ -125,7 +125,7 @@ const BUS_COMMANDS = [
 ];
 
 test("seam: the EnigmaAvatar facade surface is unchanged", () => {
-  const ea = createControlSurface({});
+  const ea = createControlSurface({}, {});
   assert.deepEqual(
     Object.keys(ea).sort(),
     SURFACE_METHODS,
