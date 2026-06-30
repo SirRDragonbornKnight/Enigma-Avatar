@@ -3,6 +3,7 @@
 Guidance for Claude Code working in this repo. Keep it short.
 
 ## What this is
+
 **Enigma Avatar** — an Electron + Three.js transparent, always-on-top, click-through desktop pet that
 drives any `.glb`/`.gltf`/`.vrm`/`.fbx` with **pure procedural** motion (no canned animation),
 composited from masked, weighted pose/flex layers fed over a local WebSocket bus. It is the **body**;
@@ -11,6 +12,7 @@ composited from masked, weighted pose/flex layers fed over a local WebSocket bus
 meet ONLY at the bus (`ws://127.0.0.1:8765`).
 
 ## Setup / build / test — run these first
+
 - Node tests: `node --test` (Node built-in runner; ~274 tests, some skip without the real model
   library). `node --check <file>.js` for a quick syntax pass.
 - Python tests: `python -m pytest tests/test_avatar_*.py -q` (the bus CSWSH origin-gate + bone data).
@@ -19,8 +21,9 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
   first run. No admin.
 
 ## Load-bearing rules (do not weaken)
+
 - **Authoritative spec lives OUTSIDE the repo:** `C:\Users\SirKn\3d Avatar\The project is to make a 3d
-  model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/recode against the
+model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/recode against the
   SPEC's intent, NOT against what the code currently does — passing tests often just enshrine wrong
   behavior. Loading from that external dir MUST keep working (no path-restricting the loader).
 - **Control plane = the local WebSocket bus** (`python/bus.py`), driven by `python/say.py` (fire-and-forget)
@@ -42,6 +45,7 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
   `python/speak.py` loads it locally. Don't reintroduce a dependency on the engine's `mods/voice`.
 
 ## The control plane (`src/control/`) — and why it's a "facade"
+
 `EnigmaAvatar` (in `src/control/surface.js`) is the single control object every driver shares:
 (1) the **AI bus** dispatches onto it (`bus.js`), (2) **devtools/console** drive it via
 `window.EnigmaAvatar`, (3) **in-process** callers (UI, hotkeys, the `query.js` reporter) call it
@@ -50,7 +54,7 @@ directly. It has owned this role since the first avatar commit (`1f92ad0`).
 It is a **facade** in the design-pattern sense — a flat set of stable verbs (`recolor`, `lookAt`,
 `poseLayer`, `conjure`, …) that **forward** to the engine internals, which live in the big
 `avatar.js` closure with all their shared state (`model`, `proc`, `rig`, profiles). "Facade" means
-*delegating front door*, NOT *broken/fake* — these methods do the real thing. This is deliberate and
+_delegating front door_, NOT _broken/fake_ — these methods do the real thing. This is deliberate and
 correct: it gives the AI **one object to learn** and a contract that stays stable while internals
 change (the spec's "AI-extendability" thesis). Don't "fix" the delegation by inlining engine logic
 into the surface or by duplicating state — that's the anti-goal.
@@ -62,11 +66,13 @@ frozen values) and a few render-loop primitives as setter thunks — so a handle
 truth. Each has an intent-first, mutation-checked test (`tests/{surface,bus,query}.test.js`).
 
 ## Working style
+
 - "Make a plan first" means present the plan and **stop for approval** — don't build it in the same pass.
 - **Fix in place, don't compensate** — change the wrong code; don't bolt on shims/wrappers/fallbacks.
 - Verify load-bearing numbers/line-refs with a direct tool call BEFORE relaying them.
 
 ## Repo layout (folderized 2026-06-29)
+
 `shell/` = Electron main process · `src/` = renderer engine, grouped by concern
 (`model/ rig/ motion/ face/ audio/ interaction/ control/ ui/ util/`, entry `src/avatar.js`)
 · `python/` = bus + CLIs · `voice/` = vendored TTS · config/data (`*.json`, `index.html`) at
@@ -74,4 +80,5 @@ root. Full tree + per-file roles in `README.md`. `src/avatar.js` is still a ~3.6
 orchestrator closure pending decomposition — see `TODO.md` "Restructure".
 
 ## Project state
+
 `STATUS.md` (what works + how to launch) · `TODO.md` (backlog / audit log).

@@ -72,7 +72,19 @@ test("one name per concept: the retired verbs/aliases are GONE (not silently sti
   // 2026-06-29 redesign merged 4 duplicate pairs + renamed 2 + dropped 4 aliases. A driver that learns
   // the move set must not find two names for one thing. If any of these reappear, the merge regressed.
   const { COMMANDS, handleCommand } = makeRegistry();
-  for (const dead of ["moveTo", "goTo", "lookAt", "lookMode", "setMorph", "layer", "setDisplay", "setMesh", "screenshot", "caps", "hand"]) {
+  for (const dead of [
+    "moveTo",
+    "goTo",
+    "lookAt",
+    "lookMode",
+    "setMorph",
+    "layer",
+    "setDisplay",
+    "setMesh",
+    "screenshot",
+    "caps",
+    "hand",
+  ]) {
     assert.equal(COMMANDS[dead], undefined, `'${dead}' must be retired, not aliased`);
     assert.equal(handleCommand({ action: dead }), undefined, `'${dead}' dispatches to an honest no-op`);
   }

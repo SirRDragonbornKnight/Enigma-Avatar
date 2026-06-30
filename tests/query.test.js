@@ -64,7 +64,11 @@ test("query('facial') is honest when there is no face rig", () => {
   const { aq, live } = makeReporter({ facial: null });
   assert.deepEqual(aq("facial"), { mode: "none", lipSync: false }, "no facial -> honest 'none', not a throw");
   live.facial = { mode: "jaw", info: { axis: "x" } };
-  assert.deepEqual(aq("facial"), { mode: "jaw", info: { axis: "x" }, lipSync: true }, "a real mode reports lipSync=true");
+  assert.deepEqual(
+    aq("facial"),
+    { mode: "jaw", info: { axis: "x" }, lipSync: true },
+    "a real mode reports lipSync=true"
+  );
 });
 
 test("query('capabilities') returns the driver's capabilities, or null when no rig resolved", () => {

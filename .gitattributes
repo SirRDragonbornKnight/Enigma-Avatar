@@ -1,0 +1,17 @@
+# Normalize all text to LF in the repo AND the working tree, so the prettier `endOfLine: lf`
+# gate is stable on Windows (core.autocrlf checkouts otherwise show every file as CRLF-dirty).
+* text=auto eol=lf
+
+# Binaries — never touch line endings (tracked: the tray icon; the rest are gitignored model assets).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.glb binary
+*.fbx binary
+*.bin binary
+*.wav binary
+*.tga binary
+*.ktx2 binary

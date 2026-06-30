@@ -5,3 +5,6 @@ assets
 vendor
 package-lock.json
 *.min.js
+# Large hand-maintained backlog/audit log; prettier can't converge on it (non-idempotent) and
+# reformatting a 100KB+ log adds churn for no value. Keep it out of the format gate.
+TODO.md

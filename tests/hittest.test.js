@@ -73,8 +73,18 @@ test("buildSilhouette: reused outMask is fully cleared between passes (zero-allo
   const SW = 6,
     SH = 6;
   const out = new Uint8Array(SW * SH);
-  buildSilhouette(rgba(SW, SH, () => true), SW, SH, out); // fill everything (ok:false but mask written)
-  const r2 = buildSilhouette(rgba(SW, SH, (x, y) => x === 1 && y === 1), SW, SH, out);
+  buildSilhouette(
+    rgba(SW, SH, () => true),
+    SW,
+    SH,
+    out
+  ); // fill everything (ok:false but mask written)
+  const r2 = buildSilhouette(
+    rgba(SW, SH, (x, y) => x === 1 && y === 1),
+    SW,
+    SH,
+    out
+  );
   assert.equal(r2.ok, true);
   // only (1,1) should remain marked; stale bits from pass 1 must be gone
   let marked = 0;
@@ -115,8 +125,14 @@ test("overSilhouette: grab tolerance pulls a near pixel into range", () => {
 
 test("fallbackGrabHandle: avatar off this window -> click-through", () => {
   const r = fallbackGrabHandle({
-    cxp: -500, cyp: 50, edgeX: -450, topY: 0,
-    innerWidth: 800, innerHeight: 600, cursorX: 10, cursorY: 10,
+    cxp: -500,
+    cyp: 50,
+    edgeX: -450,
+    topY: 0,
+    innerWidth: 800,
+    innerHeight: 600,
+    cursorX: 10,
+    cursorY: 10,
   });
   assert.equal(r.over, false);
   assert.deepEqual(r.rect, [0, 0, 0, 0]);
@@ -125,8 +141,14 @@ test("fallbackGrabHandle: avatar off this window -> click-through", () => {
 test("fallbackGrabHandle: width clamped to maxHalfW, cursor at center is over", () => {
   // huge width probe -> clamped to maxHalfW (80); realistic head-above-feet topY
   const r = fallbackGrabHandle({
-    cxp: 400, cyp: 500, edgeX: 4000, topY: 200,
-    innerWidth: 800, innerHeight: 600, cursorX: 400, cursorY: 500,
+    cxp: 400,
+    cyp: 500,
+    edgeX: 4000,
+    topY: 200,
+    innerWidth: 800,
+    innerHeight: 600,
+    cursorX: 400,
+    cursorY: 500,
   });
   const [mnx, , mxx] = r.rect;
   assert.equal(mxx - mnx, 160, "width capped at 2*maxHalfW");
@@ -137,8 +159,14 @@ test("fallbackGrabHandle: handle height is capped at 60% of the window", () => {
   const ih = 600;
   // topY far above the base would make a 480px-tall handle; must clamp to 360 (60%)
   const r = fallbackGrabHandle({
-    cxp: 400, cyp: 500, edgeX: 450, topY: 50,
-    innerWidth: 800, innerHeight: ih, cursorX: 400, cursorY: 500,
+    cxp: 400,
+    cyp: 500,
+    edgeX: 450,
+    topY: 50,
+    innerWidth: 800,
+    innerHeight: ih,
+    cursorX: 400,
+    cursorY: 500,
   });
   const [, mny, , mxy] = r.rect;
   assert.equal(mxy - mny, ih * 0.6, "height capped at exactly 60% of window");
@@ -147,8 +175,14 @@ test("fallbackGrabHandle: handle height is capped at 60% of the window", () => {
 
 test("fallbackGrabHandle: tiny width probe is floored to minHalfW", () => {
   const r = fallbackGrabHandle({
-    cxp: 400, cyp: 300, edgeX: 401, topY: 280,
-    innerWidth: 800, innerHeight: 600, cursorX: 800, cursorY: 300,
+    cxp: 400,
+    cyp: 300,
+    edgeX: 401,
+    topY: 280,
+    innerWidth: 800,
+    innerHeight: 600,
+    cursorX: 800,
+    cursorY: 300,
   });
   assert.equal(r.rect[2] - r.rect[0], 56, "width floored at 2*minHalfW (28)");
   assert.equal(r.over, false, "cursor far to the right is outside the small handle");

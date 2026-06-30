@@ -40,15 +40,16 @@ real bus drive.**
 
 **Phases 2-5 (OPEN -- must be done WITH a live launch between carves):** decompose the
 ~3.6k-line `src/avatar.js` orchestrator closure into modules (`src/scene/`, `src/control/bus.js`
-+ `surface.js`, `src/appearance/*`, `src/interaction/input.js`). NOT safe to do blind:
 
-- **Deferred-reference web.** The bus `COMMANDS` table reads `ui` + ~20 `ui*` relays defined
+- `surface.js`, `src/appearance/*`, `src/interaction/input.js`). NOT safe to do blind:
+
+* **Deferred-reference web.** The bus `COMMANDS` table reads `ui` + ~20 `ui*` relays defined
   ~700 lines LATER; only deferred (runtime) execution makes it legal. Any extraction must
   rebuild that graph via a deps object and be INVOKED after the deps exist (TDZ/order traps).
-- **Live mutable state.** Handlers read `let`s reassigned elsewhere (`facial`, `spring`,
+* **Live mutable state.** Handlers read `let`s reassigned elsewhere (`facial`, `spring`,
   `platforms`, `bonesShown`, `rotateMode`, `springOn`, `curDisp`) -- pass them as live
   thunks/getters, NEVER frozen values, or a bus command silently breaks.
-- **No glue test coverage + no headless Electron.** Tests cover the pure modules, not the
+* **No glue test coverage + no headless Electron.** Tests cover the pure modules, not the
   dispatch table or the SAFETY-critical hit-test/input/click-through -- and Electron can't be
   launched in the agent shell. So each carve needs the user to launch & spot-check (esp.
   click-through) before the next. Suggested order (leaf-first): bus registry -> control
@@ -74,7 +75,7 @@ already DONE in the tree -- the doc had drifted. Left checked here as a record; 
 are genuinely open.
 
 - [x] **(SAFETY) Periodic main-side re-arbitration -- DONE.** `shell/main.js` runs `_healTimer =
-      setInterval(applyInteractive, 1000)`, and `applyInteractive` fails OPEN when a renderer's last
+  setInterval(applyInteractive, 1000)`, and `applyInteractive` fails OPEN when a renderer's last
       `over:true` report is older than `REPORT_STALE_MS` (hung-renderer self-heal). The sender's
       `_overByWin` entry is cleared on both `render-process-gone` and reload. (Verified main.js:208-210,
       592, 1007-1012.)
@@ -88,9 +89,9 @@ are genuinely open.
       (Minor leftover: `tests/dom.js` mock still omits `importDropped`/`setInteractive` -- only matters if a
       future test drives those through the mock.)
 - [~] **Folder rename is label-only -- BY DESIGN, not a gap.** `src/model/library.js` `renameModel`
-      updates the manifest label only and deliberately leaves the folder/URL/profile key intact (so URLs
-      and per-avatar profiles keyed by URL don't break); documented in the comment at its head. A true
-      folder+URL+profile migration is a feature, not a defect -- only do it on an explicit ask.
+  updates the manifest label only and deliberately leaves the folder/URL/profile key intact (so URLs
+  and per-avatar profiles keyed by URL don't break); documented in the comment at its head. A true
+  folder+URL+profile migration is a feature, not a defect -- only do it on an explicit ask.
 - [ ] **No speech bubble** for spoken lines (none in any source).
 - [ ] **Multi-mesh divergent-morph UI** + morph/lip-sync index collision -- only the bounded
       "primary group" morph path exists (Low).

@@ -187,5 +187,8 @@ test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 v
   assert.ok(a > 0.01, `60fps tail must visibly deflect (got ${a.toFixed(4)} rad)`);
   assert.ok(b > 0.01, `120fps tail must visibly deflect (got ${b.toFixed(4)} rad)`);
   const rel = Math.abs(a - b) / Math.max(a, b);
-  assert.ok(rel < 0.15, `deflection must agree across frame-rates (60fps ${a.toFixed(4)} vs 120fps ${b.toFixed(4)} rad, rel diff ${(rel * 100).toFixed(1)}%)`);
+  assert.ok(
+    rel < 0.15,
+    `deflection must agree across frame-rates (60fps ${a.toFixed(4)} vs 120fps ${b.toFixed(4)} rad, rel diff ${(rel * 100).toFixed(1)}%)`
+  );
 });
