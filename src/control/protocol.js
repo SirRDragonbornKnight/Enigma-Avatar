@@ -195,3 +195,48 @@ export const QUERY_KINDS = Object.freeze([
 export function isAction(action) {
   return typeof action === "string" && ACTIONS.includes(action);
 }
+
+/**
+ * Verbs with a field that MUST be present to be actionable (derived from the BusCommand contract:
+ * every member's non-optional field besides `action`). Verbs with only optional fields aren't listed.
+ * @type {Record<string, string>}
+ */
+const REQUIRED_FIELDS = {
+  impulse: "region",
+  perform: "text",
+  say: "url",
+  mouth: "value",
+  size: "value",
+  load: "url",
+  hue: "name",
+  regionWeight: "region",
+  outfit: "name",
+  attach: "url",
+  tuneAttachment: "id",
+  nameBone: "bone",
+  highlightBone: "bone",
+  query: "what",
+};
+
+/**
+ * STRUCTURAL validation of a raw inbound bus message against the contract: it must be an object, carry
+ * a known string `action`, and include that verb's required field. It deliberately does NOT coerce or
+ * range-check argument VALUES — per this repo's "guard at the engine boundary, not the caller" rule,
+ * numeric/shape sanitization stays where a value ENTERS an engine (setLayer / setMouth / lookAt / the
+ * loader). So this complements those guards; it does not replace them, and it is intentionally not
+ * wired to reject at connect() (the bus stays leniently honest-no-op). Use it for observability, a
+ * future strict mode, or driver-side pre-flight.
+ * @param {unknown} raw
+ * @returns {{ ok: true, command: BusCommand } | { ok: false, reason: string }}
+ */
+export function validateCommand(raw) {
+  if (typeof raw !== "object" || raw === null) return { ok: false, reason: "not an object" };
+  const action = /** @type {{ action?: unknown }} */ (raw).action;
+  if (typeof action !== "string") return { ok: false, reason: "missing string 'action'" };
+  if (!isAction(action)) return { ok: false, reason: `unknown action '${action}'` };
+  const req = REQUIRED_FIELDS[action];
+  if (req && /** @type {Record<string, unknown>} */ (raw)[req] === undefined) {
+    return { ok: false, reason: `'${action}' requires '${req}'` };
+  }
+  return { ok: true, command: /** @type {BusCommand} */ (raw) };
+}
