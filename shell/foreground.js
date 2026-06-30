@@ -60,10 +60,12 @@ function queryFullscreen() {
   }
 }
 
-// Pure: wrap onChange so it fires only when the boolean flips (exported for tests). Primed to null,
-// so the very first value always counts as an edge.
-function makeEdgeDetector(onChange) {
-  let last = null;
+// Pure: wrap onChange so it fires only when the boolean flips (exported for tests). `initial` seeds
+// the "last" value: null (default) makes the very first value an edge; pass `false` so a launch into
+// the normal desktop fires NOTHING (only a real fullscreen-at-launch, false->true, is an edge). The
+// watch() poll seeds `false` on purpose — see its call site for why the spurious startup edge is harmful.
+function makeEdgeDetector(onChange, initial = null) {
+  let last = initial;
   return (v) => {
     if (v !== last) {
       last = v;
@@ -79,9 +81,20 @@ function makeEdgeDetector(onChange) {
 // is injectable for tests; production uses the real SHQueryUserNotificationState poll.
 function watch(onChange, intervalMs = 1000, queryFn = queryFullscreen) {
   if (!_available) return () => {};
-  const feed = makeEdgeDetector(onChange);
+  // Seed `false` (assumed-normal): a launch into the normal desktop must NOT fire a spurious
+  // onChange(false). main.js calls watch() SYNCHRONOUSLY right after createWindowSet (windows still
+  // show:false, not yet composited), so that startup callback runs applyTopmost() BEFORE first
+  // composite. At that point _fsActive is false and the windows are already topmost, so the only
+  // effective call is win.moveTop(). OBSERVED on this box (RTX 5090): moveTop() before a transparent
+  // overlay's first composite leaves its WebGL canvas permanently un-presented on screen while
+  // capturePage() still returns the rendered frame -> "she renders but the overlay is blank". (Likely
+  // the layered/DirectComposition surface is set up wrong when reordered pre-paint; the exact DWM
+  // mechanism is inferred, not instrumented.) The same moveTop AFTER first composite is harmless
+  // (the 4s re-assert tick, and a game-yield reclaim -- both audited present-stable). A game already
+  // fullscreen at launch is still caught: false->true is an edge and yields.
+  const feed = makeEdgeDetector(onChange, false);
   const tick = () => feed(queryFn());
-  tick(); // prime immediately (handles "a game is already fullscreen at launch")
+  tick(); // prime: only fires if a game is ALREADY fullscreen at launch (false->true)
   const t = setInterval(tick, intervalMs);
   if (t.unref) t.unref(); // never keep the process alive just for this poll
   return () => {

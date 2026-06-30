@@ -29,6 +29,18 @@ test("makeEdgeDetector — fires onChange only on the transition edge, with the 
   assert.deepEqual(calls, [false, true, false]);
 });
 
+test("makeEdgeDetector — seeded with false, a launch into the normal desktop fires nothing", () => {
+  // The watch() poll seeds `false` so a no-fullscreen launch produces NO startup edge (the spurious
+  // onChange(false) ran applyTopmost on the transparent overlay before first composite -> blank canvas).
+  const calls = [];
+  const feed = makeEdgeDetector((v) => calls.push(v), false);
+  feed(false); // same as seed -> no edge
+  feed(false);
+  feed(true); // a game appears -> edge
+  feed(false); // game gone -> edge
+  assert.deepEqual(calls, [true, false]);
+});
+
 test("makeEdgeDetector — an onChange that throws never breaks the detector", () => {
   let n = 0;
   const feed = makeEdgeDetector(() => {
@@ -50,13 +62,15 @@ test(
   "watch — edge-only delivery through the poll loop (injected query)",
   { skip: foreground.available ? false : "fullscreen detection unavailable on this platform" },
   async () => {
-    const seq = [false, false, true, true, false]; // duplicates must collapse to 3 edges
+    // Seeded false: the leading normal-desktop ticks fire NOTHING (no spurious startup edge); only the
+    // real game appearing (true) and leaving (false) are edges.
+    const seq = [false, false, true, true, false]; // duplicates collapse; leading false != an edge
     let i = 0;
     const fakeQuery = () => seq[Math.min(i++, seq.length - 1)];
     const calls = [];
     const stop = watch((v) => calls.push(v), 5, fakeQuery);
     await new Promise((r) => setTimeout(r, 80)); // let several 5ms ticks consume the sequence
     stop();
-    assert.deepEqual(calls, [false, true, false]);
+    assert.deepEqual(calls, [true, false]);
   }
 );
