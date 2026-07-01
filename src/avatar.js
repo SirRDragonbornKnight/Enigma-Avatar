@@ -412,7 +412,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     } else return null;
     setGlide(g[0], g[1]);
     wake(1.2);
-    setStatus("→ " + (typeof target === "string" ? target : Math.round(target.px) + "," + Math.round(target.py)));
+    setStatus("-> " + (typeof target === "string" ? target : Math.round(target.px) + "," + Math.round(target.py)));
     return [Math.round(g[0] - curDisp.x), Math.round(g[1] - curDisp.y)];
   }
   function whereAmI() {
@@ -512,7 +512,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       locked = v;
     },
   };
-  let _downX = -999; // grab/spin press-origin guard (the _downY tap-detector died with the poke chain, #11)
 
   // --- SIZE POLICY (one place) ------------------------------------------------
   // There is ONE size value (sizeScale), persisted per model. Three entry points
@@ -535,7 +534,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       try {
         localStorage.setItem(SIZE_KEY, JSON.stringify(sizeByModel));
       } catch {} // ONE writer — a peer's fitToScreen must not clobber the shared size store with its module-load-stale copy
-    setStatus(`size ×${sizeScale.toFixed(2)}`);
+    setStatus(`size x${sizeScale.toFixed(2)}`);
   }
   const resizeBy = (m) => applySize(sizeScale * m);
   // Keep the avatar fitting the screen: a too-large saved size makes the head/feet clip
@@ -1018,7 +1017,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       showOnboarding();
       return;
     } // #13: no-model state (inert marker + DOM message), NOT a self-made character
-    setStatus(`loading ${label || url} …`);
+    setStatus(`loading ${label || url} ...`);
     loadAsset(
       url,
       (asset) => {
@@ -1216,8 +1215,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         }
         attachObjs.push(a);
         if (!opts._restore) saveAttachments();
-        console.log("[avatar] attached", baseName(url), "→", a.attachedTo);
-        setStatus(`attached ${baseName(url)} → ${a.attachedTo}`);
+        console.log("[avatar] attached", baseName(url), "->", a.attachedTo);
+        setStatus(`attached ${baseName(url)} -> ${a.attachedTo}`);
       },
       (err) => setStatus(`attach failed: ${err?.message || err}`),
       { kind: opts.kind || kindOf(url) }
@@ -1363,7 +1362,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     p.colors[key] = hex;
     saveProfileSoon();
     if (typeof target === "number")
-      setStatus(`recolor #${target}${m && m.name ? " (" + m.name + ")" : ""} → ${hex} · ${n} hit`);
+      setStatus(`recolor #${target}${m && m.name ? " (" + m.name + ")" : ""} -> ${hex}; ${n} hit`);
     return n;
   }
   // Re-apply saved tints on load. A key is either a material NAME or a "#<index>" handle (how an
@@ -1428,7 +1427,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     hitMask = null;
     computeFootprint();
     refreshDims(); // silhouette changed → re-scan the grab footprint + the dims (shadow/walls/capsule)
-    setStatus(`mesh #${i}${it.name ? " (" + it.name + ")" : ""} → ${on ? "shown" : "hidden"}`);
+    setStatus(`mesh #${i}${it.name ? " (" + it.name + ")" : ""} -> ${on ? "shown" : "hidden"}`);
     return 1;
   }
   function applyMeshVisibility() {
@@ -1637,7 +1636,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (v === 1) delete p.regions[region];
     else p.regions[region] = v; // 1 == default → don't bloat the profile with no-op entries
     saveProfileSoon();
-    setStatus(`${region} jiggle → ${v.toFixed(2)}`);
+    setStatus(`${region} jiggle -> ${v.toFixed(2)}`);
     return v;
   }
 
@@ -1692,7 +1691,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (amt <= 0) delete p.morphs[i];
     else p.morphs[i] = amt; // default (0) → don't persist
     saveProfileSoon();
-    setStatus(`morph #${i}${morphNameAt(i) ? " (" + morphNameAt(i) + ")" : ""} → ${amt.toFixed(2)} · ${nHit} mesh`);
+    setStatus(`morph #${i}${morphNameAt(i) ? " (" + morphNameAt(i) + ")" : ""} -> ${amt.toFixed(2)}; ${nHit} mesh`);
     return nHit;
   }
   function applyMorphs() {
@@ -1819,7 +1818,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const SPIN_DEG_PER_PX = 0.8;
   function setRotateMode(on) {
     rotateMode = on == null ? !rotateMode : !!on;
-    setStatus("rotate-by-drag " + (rotateMode ? "on — drag: ↔ turn, ↕ tilt" : "off"));
+    setStatus("rotate-by-drag " + (rotateMode ? "on - drag: left/right turn, up/down tilt" : "off"));
     return rotateMode;
   }
   // target rotation from the live drag delta (yaw from horizontal travel, pitch from vertical; roll held)
@@ -2268,7 +2267,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (w > 8 && h > 8) rect = { x, y, width: w, height: h };
     }
     const r = await window.avatarIPC.capture({ rect, name: opts.name });
-    if (r && r.ok) setStatus(`snap ✓ ${r.width}×${r.height} → ${r.path}`);
+    if (r && r.ok) setStatus(`snap ok ${r.width}x${r.height} -> ${r.path}`);
     else setStatus("snap failed: " + (r && r.error));
     console.log("[avatar] snap:", JSON.stringify(r));
     return r;
@@ -2862,7 +2861,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
             cb(n);
           } catch {}
         }
-        _downX = -999;
         return;
       }
       setStatus("bone pick cancelled");
@@ -2876,24 +2874,19 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
           _spinX = cursor.x;
           _spinY = cursor.y;
           _spinRot = getRot();
-          _downX = cursor.x;
           window.avatarIPC?.dragStart?.(0, 0, true); // register the spin HOLD with main → arbiter freezes on this window (capture survives bezels; no position follow)
         } else {
           // GRAB: main drives her global position from the OS cursor until release → seamless across monitors
           held = true;
-          _downX = cursor.x;
           const g = localPxToGlobal(cursor.x, cursor.y);
           window.avatarIPC?.dragStart?.(g.x - gPos.x, g.y - gPos.y); // grab offset in DIP → she stays pinned under the cursor across the bezel
           gGlide = null;
           gliding = false;
         }
-      } else {
-        _downX = -999;
       }
     } else {
       ui.hideSettings();
       ui.hideGallery(); // clicking empty space dismisses the working panels (any window)
-      _downX = -999;
     }
   });
   addEventListener("pointerup", (e) => {
@@ -2901,7 +2894,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       spinning = false;
       uiSetRot(_spinTo(e));
       window.avatarIPC?.dragEnd?.();
-      _downX = -999;
       wake(2);
       return;
     } // commit the dragged rotation (persists + re-scans silhouette) + end the spin hold; hold full rate so the hair settles
@@ -2909,7 +2901,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // (#11: the peer-tap poke send was DELETED — a tap has no canned reaction; nothing to route to the brain.)
     held = false;
     fpClock = 1;
-    _downX = -999;
     wake(2);
   });
   // Win+L / UAC / pointer-capture loss mid-drag: pointerup never arrives — release the main-owned
@@ -2925,7 +2916,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       spinning = false;
       window.avatarIPC?.dragEnd?.("cancel");
     }
-    _downX = -999;
   };
   addEventListener("pointercancel", _abortInput);
   addEventListener("blur", _abortInput);
@@ -3014,12 +3004,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // gallery next launch). Browser/no-path → fall back to a transient blob load (this session only).
     const paths = [...files].map((f) => f.path).filter(Boolean);
     if (paths.length && window.avatarIPC?.importDropped) {
-      setStatus("adding dropped model …");
+      setStatus("adding dropped model ...");
       window.avatarIPC
         .importDropped(paths)
         .then((res) => {
           if (!res || res.error || !res.url) {
-            setStatus("add failed (" + (res?.error || "?") + ") — loading temporarily");
+            setStatus("add failed (" + (res?.error || "?") + ") - loading temporarily");
             loadFiles(files);
             return;
           }
@@ -3075,7 +3065,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }; // #13: inert marker + DOM message, not a self-made character
     const tryLoad = (url, label) => {
       if (seq !== _loadSeq) return; // a user keypress already loaded something → don't override it
-      setStatus(`loading ${label || url} …`);
+      setStatus(`loading ${label || url} ...`);
       loadAsset(
         url,
         (asset) => {

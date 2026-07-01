@@ -8,7 +8,12 @@ Usage:  python tools/test_battery.py [models|behavior|all]   (default all)
 Report: prints a table + writes %TEMP%/avatar_battery_report.json
 """
 
-import asyncio, hashlib, json, sys, tempfile, time
+import asyncio
+import hashlib
+import json
+import sys
+import tempfile
+import time
 from pathlib import Path
 import websockets
 
@@ -123,7 +128,8 @@ async def behavior(bus, url):
     a = await bus.snap("bat_still_a.png")
     await asyncio.sleep(6)
     b = await bus.snap("bat_still_b.png")
-    h = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest() if p else "?"
+    def h(p):
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest() if p else "?"
     r["stillness"] = "IDENTICAL" if a and b and h(a) == h(b) else f"DIFFER {h(a)[:8]} vs {h(b)[:8]}"
     # motion compositor end-to-end: pose/flex layers + per-finger curl (no gesture/emote catalog now)
     await bus.cmd({"action": "pose", "flex": {"right_arm": [1.1], "right_forearm": [0.6]}, "dur": 2.0, "id": "bat"})

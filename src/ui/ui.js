@@ -6,6 +6,8 @@
 //
 // createUI(api) → the menu / Settings / gallery control surface (showMenu, showSettings,
 //                 refreshModelList, containsEvent, ...) — see the full return at the bottom of this file.
+import { ROLES as CANON_ROLES } from "../rig/rig.js"; // the 19 canonical roles — single source of truth (no hand-copy to drift)
+
 export function createUI(api) {
   const { THREE, BASE_H, rig, avatarIPC, setStatus, baseName, kindOf, profileFor, flags } = api;
   // 0..360 stored rotation -> signed (-180,180] for the Settings fields, so the user can dial the
@@ -20,29 +22,8 @@ export function createUI(api) {
     { name: "clearballs", label: "Clear balls" },
   ];
 
-  // The 19 canonical humanoid roles (source of truth: rig.js ROLES — kept in sync; this is the
-  // attach-picker's universe). Only used to derive which roles the CURRENT body resolved.
-  const CANON_ROLES = [
-    "hips",
-    "spine",
-    "chest",
-    "neck",
-    "head",
-    "left_shoulder",
-    "left_arm",
-    "left_forearm",
-    "left_hand",
-    "right_shoulder",
-    "right_arm",
-    "right_forearm",
-    "right_hand",
-    "left_leg",
-    "left_shin",
-    "left_foot",
-    "right_leg",
-    "right_shin",
-    "right_foot",
-  ];
+  // CANON_ROLES (the attach-picker's universe of 19 canonical roles) is imported from rig.js above,
+  // so it can never drift from the resolver's own list. Only used to derive which roles THIS body resolved.
   // Resolved roles for THIS body, from the live role query. getRoleInfo() reports `missing`
   // (role names the rig didn't resolve); the picker offers everything EXCEPT those. If `matched`
   // ever arrives as a name array, prefer it directly. No role query -> empty (only "no bone").
@@ -628,7 +609,7 @@ export function createUI(api) {
     const clothRegion = regions.find((r) => r.region === "cloth");
     if (bodyRegions.length) {
       body.appendChild(divider());
-      body.appendChild(sectionHead("Jiggle — the soft-body bone CHAINS (✓ = moves; slider = how much)"));
+      body.appendChild(sectionHead("Jiggle — the soft-body bone CHAINS (✓ = moves; number = how much)"));
       for (const rg of bodyRegions)
         body.appendChild(
           chainRow((REGION_LABEL[rg.region] || rg.region) + " ·" + rg.count, rg.weight, (v) =>

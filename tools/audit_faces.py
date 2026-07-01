@@ -12,7 +12,12 @@
 #
 # Output: human table on stdout + tools/face_audit.json for the implementation pass.
 # Usage: python tools/audit_faces.py [modelsDir]   (default: ../models relative to this file)
-import sys, os, json, struct, re, base64
+import sys
+import os
+import json
+import struct
+import re
+import base64
 import numpy as np
 
 # ---- regexes mirrored VERBATIM from facial.js (keep byte-for-byte in sync when simulating) ----

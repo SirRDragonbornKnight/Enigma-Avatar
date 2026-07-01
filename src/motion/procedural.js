@@ -611,10 +611,11 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     return target;
   };
   function applyLayers(dt) {
-    if (!layers.size) {
-      if (_vstate.size) _vstate.clear(); // no layers -> nothing applied this frame; forget velocity history (next layer starts fresh from 0)
-      return;
-    }
+    // Nothing driving AND nothing to release -> idle at base. But if layers were just cleared while
+    // a role still holds a nonzero offset, DON'T early-out: fall through so the release loop below
+    // eases each role's velocity history to 0 at its speed_limit (velocity-continuous on release,
+    // #28) instead of snapping to base in one frame. Each role self-deletes from _vstate at 0.
+    if (!layers.size && !_vstate.size) return;
     _acc.clear();
     const acc = (role) => {
       let e = _acc.get(role);

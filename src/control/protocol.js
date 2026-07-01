@@ -105,7 +105,7 @@
  * The `what` values `query` understands (answered by control/query.js; "actions" is answered by the
  * registry itself, "state" is the default full-state report).
  * @typedef {"materials" | "meshes" | "regions" | "bones" | "morphs" | "rotation" | "facial" | "model"
- *   | "where" | "capabilities" | "caps" | "roles" | "joints" | "stance" | "iktest" | "grip" | "outfits"
+ *   | "where" | "capabilities" | "caps" | "roles" | "joints" | "stance" | "grip" | "outfits"
  *   | "platforms" | "bounds" | "weights" | "state"} QueryKind
  */
 
@@ -175,7 +175,6 @@ export const QUERY_KINDS = Object.freeze([
   "roles",
   "joints",
   "stance",
-  "iktest",
   "grip",
   "outfits",
   "platforms",

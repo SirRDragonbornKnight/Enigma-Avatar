@@ -28,7 +28,7 @@ PY_DIR = AVATAR_DIR / "python"  # speak.py lives under python/ (voice/ stays at 
 if str(PY_DIR) not in sys.path:
     sys.path.insert(0, str(PY_DIR))
 
-import speak  # the thin client under test (no Kokoro import at module load)
+import speak  # noqa: E402  (thin client under test; importable only after PY_DIR is on sys.path above)
 
 
 def _load_voice_module():

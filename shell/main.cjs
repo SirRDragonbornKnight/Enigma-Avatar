@@ -1168,7 +1168,7 @@ app.on("window-all-closed", () => {
   // this check that fired window-all-closed → quit — the app silently killed ITSELF on any
   // display event (the long-unexplained "died cleanly unattended, exit 0" mystery).
   if (_rebuilding) {
-    console.error("[main] window-all-closed during rebuild — continuing");
+    console.error("[main] window-all-closed during rebuild - continuing");
     return;
   }
   console.error("[main] window-all-closed -> quit");

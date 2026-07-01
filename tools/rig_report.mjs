@@ -236,20 +236,20 @@ function report(file, showBones) {
   try {
     gltf = readGltfJson(file);
   } catch (e) {
-    console.log(`\n■ ${key}\n  ✗ ${e.message}`);
+    console.log(`\n# ${key}\n  x ${e.message}`);
     return null;
   }
   const snap = buildSnapshot(gltf);
   if (!snap.length) {
-    console.log(`\n■ ${key}\n  (no skin/joints — static mesh, correctly un-rigged)`);
+    console.log(`\n# ${key}\n  (no skin/joints - static mesh, correctly un-rigged)`);
     return { key, matched: [], static: true };
   }
   const r = runCascade(gltf, snap);
-  const tag = r.isVRM ? " · VRM" : "";
-  console.log(`\n■ ${key}${tag}`);
+  const tag = r.isVRM ? " (VRM)" : "";
+  console.log(`\n# ${key}${tag}`);
   console.log(`  bones: ${snap.length}   roles: ${r.matched.length}/19   by ${JSON.stringify(r.bySource)}`);
   if (r.unresolved.length) console.log(`  unresolved: ${r.unresolved.join(", ")}`);
-  else console.log(`  ✓ all 19 roles resolved`);
+  else console.log(`  ok - all 19 roles resolved`);
   if (showBones) {
     let minY = Infinity,
       maxY = -Infinity;
@@ -261,7 +261,7 @@ function report(file, showBones) {
     for (const s of snap) {
       const pct = Math.round(((s.pos.y - minY) / H) * 100);
       const role = Object.keys(r.roleIds).find((k) => r.roleIds[k] === s.id);
-      console.log(`    ${String(pct).padStart(3)}%  ${s.name}${role ? `   → ${role} [${r.source[role]}]` : ""}`);
+      console.log(`    ${String(pct).padStart(3)}%  ${s.name}${role ? `   -> ${role} [${r.source[role]}]` : ""}`);
     }
   }
   return { key, matched: r.matched, unresolved: r.unresolved };
@@ -289,16 +289,16 @@ function main() {
     console.log("no models found under " + MODELS);
     return;
   }
-  console.log(`rig cascade report — ${targets.length} model(s)`);
+  console.log(`rig cascade report - ${targets.length} model(s)`);
   const results = targets.map((f) => report(f, showBones)).filter(Boolean);
   const full = results.filter((r) => r.matched.length === 19).length;
   const partial = results.filter((r) => !r.static && r.matched.length > 0 && r.matched.length < 19);
   console.log(
-    `\n── ${full}/${results.length} fully rigged (19/19)` +
+    `\n-- ${full}/${results.length} fully rigged (19/19)` +
       (partial.length
-        ? ` · ${partial.length} partial: ${partial.map((r) => path.basename(path.dirname(r.key)) + " " + r.matched.length).join(", ")}`
+        ? ` - ${partial.length} partial: ${partial.map((r) => path.basename(path.dirname(r.key)) + " " + r.matched.length).join(", ")}`
         : "") +
-      " ──"
+      " --"
   );
 }
 

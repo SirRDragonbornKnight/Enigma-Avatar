@@ -112,7 +112,14 @@ def extract_tree(pkg_path: str, out_dir: str) -> int:
         rel = pathname.replace("\\", "/").lstrip("/")
         rel = os.path.splitdrive(rel)[1].lstrip("/")  # drop a leading drive letter (C:/...) on Windows
         dest = os.path.realpath(os.path.join(out_root, rel))
-        if os.path.commonpath([out_root, dest]) != out_root:
+        # commonpath() raises ValueError when the two paths can't be compared (e.g. a crafted
+        # Windows device/extended-length prefix like \\?\C:\... survives into `dest`). Treat any
+        # such raise as "escapes" -> skip+warn, never fall through to a write.
+        try:
+            escapes = os.path.commonpath([out_root, dest]) != out_root
+        except ValueError:
+            escapes = True
+        if escapes:
             print(f"skip (path escapes output dir): {pathname}", file=sys.stderr)
             continue
         os.makedirs(os.path.dirname(dest), exist_ok=True)

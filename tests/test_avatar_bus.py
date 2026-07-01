@@ -26,9 +26,9 @@ if str(PY_DIR) not in sys.path:
     sys.path.insert(0, str(PY_DIR))
 
 websockets = pytest.importorskip("websockets")
-from websockets.exceptions import InvalidHandshake
+from websockets.exceptions import InvalidHandshake  # noqa: E402  (after importorskip guard)
 
-import bus
+import bus  # noqa: E402  (importable only after PY_DIR is on sys.path above)
 
 
 async def _handshake_accepted(origin: str | None) -> bool:

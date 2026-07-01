@@ -3,8 +3,14 @@ whether it's a skin joint (deforms the mesh), and its local rotation (squat-era 
 as big quats). Pure stdlib; JSON chunk only. Usage: python dump_leg_tree.py <model.glb> [regex]
 """
 
-import json, re, struct, sys
+import json
+import re
+import struct
+import sys
 
+if len(sys.argv) < 2:
+    print("usage: python dump_bone_tree.py <model.glb> [regex]", file=sys.stderr)
+    raise SystemExit(2)
 path = sys.argv[1]
 pat = re.compile(sys.argv[2] if len(sys.argv) > 2 else r"thigh|shin|leg|foot|toe|knee", re.I)
 

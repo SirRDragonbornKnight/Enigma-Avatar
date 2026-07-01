@@ -8,7 +8,10 @@ morphs, rotateMode, morph, setMesh, rename...).
   python tools/avbus.py "[{\"action\":\"query\",\"what\":\"regions\",\"reqId\":1}]"
 """
 
-import asyncio, json, os, sys
+import asyncio
+import json
+import os
+import sys
 import websockets
 
 

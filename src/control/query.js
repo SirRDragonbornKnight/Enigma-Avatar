@@ -49,7 +49,6 @@ export function createQueryReporter(engine, services) {
     if (what === "roles") return proc ? { bones: proc.roleBones(), flex: proc.flexAxes() } : null; // DIAGNOSTIC: role → actual bone name + flex axes
     if (what === "joints") return proc ? proc.jointAngles() : null; // DIAGNOSTIC: live knee/elbow angles
     if (what === "stance") return proc?.stance ? proc.stance() : null; // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
-    if (what === "iktest") return proc?.ikTest ? proc.ikTest() : null; // DIAGNOSTIC: per-arm IK residual to the clap center (proves the solver per side)
     if (what === "grip") return proc?.gripState ? proc.gripState() : null; // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
     if (what === "outfits") return { outfits: outfitNames(), hiddenMeshes: profileFor(curKey).hiddenMeshes || [] }; // the saved looks + the live hidden set
     if (what === "platforms")

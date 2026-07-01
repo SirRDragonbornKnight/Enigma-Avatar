@@ -159,7 +159,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
   no longer stomps the AI pose). The suite asserts INTENT, not current behavior. Current count:
-  **278 pass / 0 fail / 11 skipped** (2026-06-30; +the move-set bus/query tests and the AI-control kill-switch gate test since the 186 mark).
+  **261 pass / 0 fail / 11 skipped** (2026-06-30; +the move-set bus/query tests and the AI-control kill-switch gate test since the 186 mark).
 - **`node tools/rig_report.mjs`** -- headless cascade inspector: extracts each model's REAL bone snapshot from
   its glTF JSON (names + world positions + hierarchy, no WebGL / no mesh decode) and runs the SAME tiers the
   engine uses (incl. the tier-3.5 `resolveBetween` step + the current facial regexes + a blink-channel probe),

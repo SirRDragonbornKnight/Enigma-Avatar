@@ -23,9 +23,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import socket
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -362,20 +362,33 @@ class SystemTTS:
         return True
 
     def speak(self, text: str) -> bool:
+        # Never build a shell string from `text` (it is caller/LLM-authored): pass it as an
+        # argv element or via stdin so `$(...)`, `;`, backticks etc. are spoken literally, never
+        # executed (no SAPI/PowerShell/shell injection). No `shell=True` anywhere here.
+        text = text or ""
         try:
-            text_safe = (text or "").replace('"', "'")
             if self.platform == "win32":
+                # Read the utterance from STDIN inside PowerShell -> the text is never
+                # interpolated into the script body.
                 ps = (
                     "Add-Type -AssemblyName System.Speech; "
                     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                    f'$s.Speak("{text_safe}")'
+                    "$s.Speak([Console]::In.ReadToEnd())"
                 )
-                os.system(f'powershell -Command "{ps}"')
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps],
+                    input=text,
+                    text=True,
+                    check=False,
+                )
             elif self.platform == "darwin":
-                os.system(f'say "{text_safe}"')
+                subprocess.run(["say", text], check=False)  # list form: no shell
             else:
-                # Linux: try espeak / spd-say if installed; else log.
-                code = os.system(f'espeak "{text_safe}" 2>/dev/null')
+                # Linux: espeak if installed; else honest log.
+                try:
+                    code = subprocess.run(["espeak", text], check=False).returncode
+                except FileNotFoundError:
+                    code = 1
                 if code != 0:
                     logger.warning("SystemTTS: no espeak on Linux; install espeak-ng or use Kokoro provider")
                     return False

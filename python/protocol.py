@@ -23,7 +23,7 @@ ACTIONS: tuple[str, ...] = (
 # The `what` values the `query` verb accepts (plus "actions", handled by the registry itself).
 QUERY_KINDS: tuple[str, ...] = (
     "materials", "meshes", "regions", "bones", "morphs", "rotation", "facial", "model", "where",
-    "capabilities", "caps", "roles", "joints", "stance", "iktest", "grip", "outfits", "platforms",
+    "capabilities", "caps", "roles", "joints", "stance", "grip", "outfits", "platforms",
     "bounds", "weights", "state",
 )
 
