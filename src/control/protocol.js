@@ -211,7 +211,8 @@ const REQUIRED_FIELDS = {
   tuneAttachment: "id",
   nameBone: "bone",
   highlightBone: "bone",
-  query: "what",
+  // `query` is NOT here: a missing `what` is answered with the full state() snapshot (query.js's
+  // fall-through) — the contract must not reject a command the running system answers.
 };
 
 /**

@@ -252,7 +252,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return false;
     }
   })();
-  fetch("./bone_limits.json")
+  // Resolved BEFORE any rig build (loadModel awaits it): buildProceduralRig captures the table at
+  // call time, so a first load that won this fetch's race used to build with {} — no joint caps and
+  // no speed clamp — until the next model switch. Absent/corrupt file still resolves to {} (inert
+  // limits, honest degrade), never a blocked load.
+  const BONE_LIMITS_READY = fetch("./bone_limits.json")
     .then((r) => r.json())
     .then((j) => (BONE_LIMITS = j))
     .catch(() => {});
@@ -1021,12 +1025,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     loadAsset(
       url,
       (asset) => {
-        if (seq === _loadSeq) {
-          curKey = url;
-          _peerRetries[url] = 0;
-          onModelLoaded(asset);
-          clearOnboarding();
-        }
+        // await the joint-limit table before building — a rig built off the not-yet-fetched table
+        // would run uncapped (no joint limits, no speed clamp) until the next switch
+        BONE_LIMITS_READY.then(() => {
+          if (seq === _loadSeq) {
+            curKey = url;
+            _peerRetries[url] = 0;
+            onModelLoaded(asset);
+            clearOnboarding();
+          }
+        });
       }, // commit curKey only on the WINNING load — a failed load must not misroute saves + `query model` onto a model that isn't on screen
       (err) => {
         if (seq !== _loadSeq) return;
@@ -2397,7 +2405,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     parseControlTags,
     parseTagArg,
     wake,
-    onAiCommand: (action) => flashAiActivity(action), // flash the status line on each ACCEPTED command
+    // flash the status line on each ACCEPTED command — gate on the live verb table (isBusAction,
+    // bound below with the registry) so an unknown action the bus no-ops does NOT flash "accepted"
+    onAiCommand: (action) => {
+      if (isBusAction(action)) flashAiActivity(action);
+    },
   });
   // Answer a 'query' from the AI bus with LIVE ground truth — the overlay is the authority on
   // what it actually loaded (current model, facial/mouth mode, materials by index, roles).
@@ -2738,7 +2750,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // object, and the ui* relays all exist — so the handlers' references resolve. Mutable engine state
   // (facial/spring/springOn/bonesShown/rotateMode/platforms/curDisp are reassigned over the avatar's
   // life) is passed as live getter thunks, never frozen, so a handler always sees current truth.
-  const { handleCommand } = createBusRegistry(engine, {
+  const { COMMANDS: BUS_COMMANDS, handleCommand } = createBusRegistry(engine, {
     EnigmaAvatar,
     ui,
     wake,
@@ -2767,6 +2779,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiSetPlatforms,
     uiHueShift,
   });
+  const isBusAction = (a) => typeof a === "string" && typeof BUS_COMMANDS[a] === "function"; // the no-surprises flash gates on this
 
   addEventListener("contextmenu", (e) => {
     // works in EVERY window — the menu opens where she was clicked; mutations relay

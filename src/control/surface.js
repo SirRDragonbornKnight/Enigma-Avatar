@@ -393,7 +393,7 @@ export function createControlSurface(engine, services) {
           }
           let result;
           try {
-            if (onAiCommand) onAiCommand(c.action); // surface the accepted command (no-surprises indicator)
+            if (onAiCommand) onAiCommand(c.action); // no-surprises indicator (the callback gates on the live verb table, so unknown actions don't flash)
             result = engine.handleCommand(c);
             // A few handlers are async (e.g. `snap` resolves the written PNG's path); await before we
             // reply so a reqId driver gets the real result, not a serialized Promise. Sync handlers

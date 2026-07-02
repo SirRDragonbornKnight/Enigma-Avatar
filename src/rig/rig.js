@@ -76,10 +76,9 @@ export function roleOfName(raw) {
   return side ? `${side}_${part}` : null; // limbs need a side
 }
 
-export function resolveNames(snap, excludeIds = new Set()) {
+export function resolveNames(snap) {
   const roleIds = {};
   for (const b of snap) {
-    if (excludeIds.has(b.id)) continue;
     const r = roleOfName(b.name);
     if (r && roleIds[r] == null) roleIds[r] = b.id; // first match wins (traversal order)
   }
@@ -133,12 +132,11 @@ const legRoles = (side) => [`${side}_leg`, `${side}_shin`, `${side}_foot`];
 // spring physics — so geometry never mislabels them. Returns { role: id }.
 export function resolveGeometry(snap, opts = {}) {
   const existing = opts.existing || {};
-  const exclude = opts.excludeIds || new Set();
   const out = {};
   if (snap.length < 4) return out;
 
   const pos = (id) => snap[id].pos;
-  const kids = (id) => snap[id].children.filter((c) => !exclude.has(c));
+  const kids = (id) => snap[id].children;
   let minX = Infinity,
     minY = Infinity,
     minZ = Infinity,
@@ -193,7 +191,6 @@ export function resolveGeometry(snap, opts = {}) {
     let best = null,
       bestScore = -1;
     for (const s of snap) {
-      if (exclude.has(s.id)) continue;
       const ry = relY(s.id);
       if (ry < 0.3 || ry > 0.72) continue; // pelvis sits ~50–65% up; allow leggy rigs
       if (Math.abs(s.pos.x - cx) > 0.12 * W) continue;
@@ -407,21 +404,21 @@ export function resolveRig(model, vrm = null) {
     }
   };
 
-  const excludeIds = new Set(); // (the per-model override.exclude that populated this was removed 2026-06-25; the tiers still accept the hook)
-
+  // (the per-model override force/exclude tier was removed 2026-06-25 — the excludeIds hook the
+  // tiers used to thread through was dead scaffolding and is gone with it)
   if (vrm?.humanoid?.getRawBoneNode) {
     // tier 1
     for (const [vrmName, role] of VRM_TO_ROLE) {
       const node = safeVrmBone(vrm, vrmName);
       const id = node ? boneToId.get(node) : null;
-      if (id != null && !excludeIds.has(id)) fill(role, id, "vrm");
+      if (id != null) fill(role, id, "vrm");
     }
   }
-  const nameIds = resolveNames(snap, excludeIds); // tier 2
+  const nameIds = resolveNames(snap); // tier 2
   for (const role in nameIds) fill(role, nameIds[role], "name");
   if (ROLES.some((r) => roleIds[r] == null)) {
     // tier 3 (only if gaps)
-    const geo = resolveGeometry(snap, { existing: roleIds, excludeIds });
+    const geo = resolveGeometry(snap, { existing: roleIds });
     for (const role in geo) fill(role, geo[role], "geometry");
   }
   resolveBetween(snap, roleIds, source); // tier 3.5: structural middle-joint repair (joint-style "shoulder" = upper arm)

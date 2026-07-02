@@ -117,6 +117,28 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   }
 
   // Natural ARM rest — after the trunk; skipped entirely on lying binds.
+  // The bind's own LATERAL axis (rig space, leveled) — measured from a mirrored pair like the
+  // flexion-axis code below, NOT assumed to be rig-X: on a rig modelled facing +/-X the hardcoded
+  // X put the "slightly out" arm tilt on the fore/aft axis, zeroed the lateral spread, and
+  // degenerated outSign (dR.x ~ 0 for both arms -> both tilted the SAME way). No pair -> +X (the
+  // old assumption, still right for simple rigs).
+  const _latR = (() => {
+    for (const [l, r] of [
+      ["left_shoulder", "right_shoulder"],
+      ["left_arm", "right_arm"],
+      ["left_leg", "right_leg"],
+    ]) {
+      if (!bones[l] || !bones[r]) continue;
+      bones[l].getWorldPosition(_aw);
+      bones[r].getWorldPosition(_cw);
+      _dir.copy(_cw).sub(_aw);
+      if (_dir.lengthSq() < 1e-6) continue;
+      const d = rigDir(_dir.normalize()).clone();
+      d.y = 0; // lateral = horizontal in rig space (the trunk was just leveled above)
+      if (d.lengthSq() > 1e-4) return d.normalize();
+    }
+    return new THREE.Vector3(1, 0, 0);
+  })();
   const aimArm = (armRole, childRole) => {
     const a = bones[armRole],
       c = bones[childRole];
@@ -127,8 +149,10 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     if (_dir.lengthSq() < 1e-8) return;
     const dR = rigDir(_dir.normalize()); // rig-space arm direction
     if (dR.y < -0.7) return; // already hanging steeply down → leave it (wide ~30° arms like 51dc still get normalized)
-    const outSign = dR.x >= 0 ? 1 : -1;
-    _tgt.set(outSign * 0.34, -0.94, 0).normalize(); // ~70° below horizontal, slightly out (rig space)
+    const outSign = dR.dot(_latR) >= 0 ? 1 : -1;
+    _tgt.copy(_latR).multiplyScalar(outSign * 0.34);
+    _tgt.y = -0.94;
+    _tgt.normalize(); // ~70° below horizontal, slightly out along the MEASURED lateral axis (rig space)
     const wq = worldRot(_wq.setFromUnitVectors(dR, _tgt));
     a.parent.getWorldQuaternion(_pq); // express it in the bone's LOCAL space: inv(P) * wq * P
     const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);

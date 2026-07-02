@@ -29,6 +29,13 @@ HOST, PORT = "127.0.0.1", 8765
 CLIENTS: set = set()
 _CLOSING: set = set()  # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
 
+# Reply routing: reqIds are producer-chosen with no namespacing, so a broadcast reply lets two
+# concurrent drivers consume each other's answers. Remember who asked (reqId -> client) and send
+# the matching reply ONLY to them; replies to a reqId nobody registered fall back to broadcast
+# (a promiscuous listener keeps working). Bounded FIFO so abandoned reqIds can't grow forever.
+PENDING: dict = {}  # reqId -> requesting client (dicts preserve insertion order = FIFO eviction)
+PENDING_MAX = 512
+
 # Local-trust boundary (CSWSH gate). Native clients (the overlay, avbus.py, modkit) send NO Origin
 # header; Electron's file-loaded page sends "file://" or the opaque "null". A web page the user happens
 # to visit sends its http(s) origin -> refuse it at the handshake. Keep this list tight: anything that
@@ -52,28 +59,46 @@ async def _handler(ws) -> None:
                 # AND replies (two-way: the overlay answers a
                 # {"action":"query",...} with {"type":"reply",...})
             data = json.dumps(cmd)
+            req_id = cmd.get("reqId")
+            if isinstance(req_id, (str, int)) and cmd.get("type") == "reply":
+                target = PENDING.pop(req_id, None)
+                if target is not None:
+                    if target in CLIENTS and target is not ws:
+                        await _send(target, data)
+                    continue  # routed (or the requester already left) — nobody else gets it
+                # unregistered reqId -> fall through to broadcast
+            elif isinstance(req_id, (str, int)):
+                PENDING[req_id] = ws  # a request expecting an answer — route its reply back here
+                while len(PENDING) > PENDING_MAX:
+                    PENDING.pop(next(iter(PENDING)))
             for c in list(CLIENTS):
                 if c is ws:
                     continue  # don't echo back to the producer
-                try:
-                    # 1s cap: one stuck consumer (frozen renderer, full TCP buffer) must not
-                    # head-of-line-block every other producer/consumer on the hub forever.
-                    await asyncio.wait_for(c.send(data), timeout=1.0)
-                except Exception:
-                    CLIENTS.discard(c)
-                    # CLOSE it too — a merely-discarded socket stays open, so the overlay still
-                    # believes it's connected and never auto-reconnects (silently severed).
-                    try:
-                        t = asyncio.ensure_future(c.close())
-                        _CLOSING.add(t)  # keep a ref (else the loop may drop the task)
-                        t.add_done_callback(_CLOSING.discard)
-                    except Exception:
-                        pass
+                await _send(c, data)
     except Exception:
         pass  # a dropped client must not crash the hub
     finally:
         CLIENTS.discard(ws)
+        for k in [k for k, v in PENDING.items() if v is ws]:
+            PENDING.pop(k, None)  # a leaving client's pending replies have nowhere to go
         print(f"avatar bus: client left ({len(CLIENTS)} now)", file=sys.stderr, flush=True)
+
+
+async def _send(c, data: str) -> None:
+    """Send with the 1s cap: one stuck consumer (frozen renderer, full TCP buffer) must not
+    head-of-line-block every other producer/consumer on the hub forever."""
+    try:
+        await asyncio.wait_for(c.send(data), timeout=1.0)
+    except Exception:
+        CLIENTS.discard(c)
+        # CLOSE it too — a merely-discarded socket stays open, so the overlay still
+        # believes it's connected and never auto-reconnects (silently severed).
+        try:
+            t = asyncio.ensure_future(c.close())
+            _CLOSING.add(t)  # keep a ref (else the loop may drop the task)
+            t.add_done_callback(_CLOSING.discard)
+        except Exception:
+            pass
 
 
 def serve(host: str = HOST, port: int = PORT):

@@ -52,6 +52,10 @@ export function createBusRegistry(engine, services) {
   } = services;
 
   const COMMANDS = {
+    // Null prototype: action names come off the wire, and a plain object literal inherits
+    // Object.prototype — {action:"toString"} would dispatch and {action:"hasOwnProperty"} would
+    // throw. With no prototype, every non-verb is the same honest no-op.
+    __proto__: null,
     // --- MOTION ------------------------------------------------------------------------------------
     pose: (c) => {
       // compositor: set ONE motion layer {parts,flex,dur,weight,env,id}. Clearing is folded in here
@@ -211,7 +215,7 @@ export function createBusRegistry(engine, services) {
    */
   function handleCommand(c) {
     const fn = c && typeof c.action === "string" ? COMMANDS[c.action] : null;
-    return fn ? fn(c) : undefined; // unknown/garbage action -> silent no-op (matches the old fall-through)
+    return typeof fn === "function" ? fn(c) : undefined; // unknown/garbage action -> silent no-op (matches the old fall-through)
   }
 
   return { COMMANDS, handleCommand };

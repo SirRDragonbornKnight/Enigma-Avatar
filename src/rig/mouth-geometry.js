@@ -30,12 +30,24 @@ export function detectMouthMorph(model, opts = {}) {
 
   // Head region cut along world-up. World is Y-up in three.js (the loader/node hierarchy already
   // rotated a Z-up source), so default up = +Y; honor a caller bodyUp only if it's a real vector.
+  // ONE frame throughout: the cut, the head filter, and the jaw-drop score all project onto this
+  // same axis (the cut used to be along `up` while the loop compared raw world Y — a latent
+  // mismatch for any non-Y bodyUp).
+  const up = opts.bodyUp && opts.bodyUp.isVector3 ? opts.bodyUp.clone().normalize() : new THREE.Vector3(0, 1, 0);
   const box = new THREE.Box3().setFromObject(model);
+  let hiTop = -Infinity,
+    hiBot = Infinity; // bbox extremes ALONG up (with the +Y default: exactly box.max.y / box.min.y)
+  const _c = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    _c.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+    const h = _c.dot(up);
+    if (h > hiTop) hiTop = h;
+    if (h < hiBot) hiBot = h;
+  }
   const head = opts.headBone && opts.headBone.isObject3D ? opts.headBone : null;
   let headCut;
   if (head) {
     // #26 head-anchored: span = head bone origin -> topmost vertex; region = above headY-0.35*span.
-    const up = opts.bodyUp && opts.bodyUp.isVector3 ? opts.bodyUp.clone().normalize() : new THREE.Vector3(0, 1, 0);
     const origin = head.getWorldPosition(new THREE.Vector3());
     const _w = new THREE.Vector3();
     let span = 0;
@@ -49,11 +61,10 @@ export function detectMouthMorph(model, opts = {}) {
       }
     });
     // span<=0 means nothing sits above the head bone (degenerate rig) -> fall back to bbox top.
-    headCut = span > 1e-6 ? origin.dot(up) - 0.35 * span : box.max.y - 0.35 * Math.max(1e-6, box.max.y - box.min.y);
+    headCut = span > 1e-6 ? origin.dot(up) - 0.35 * span : hiTop - 0.35 * Math.max(1e-6, hiTop - hiBot);
   } else {
     // Legacy: top 35% of the world bounding box (no head bone to anchor on).
-    const H = Math.max(1e-6, box.max.y - box.min.y);
-    headCut = box.max.y - 0.35 * H;
+    headCut = hiTop - 0.35 * Math.max(1e-6, hiTop - hiBot);
   }
 
   const _v = new THREE.Vector3();
@@ -76,9 +87,10 @@ export function detectMouthMorph(model, opts = {}) {
       let down = 0;
       for (let v = 0; v < N; v += stride) {
         _v.fromBufferAttribute(pos, v).applyMatrix4(mesh.matrixWorld); // world rest position
-        if (_v.y < headCut) continue; // head only
+        if (_v.dot(up) < headCut) continue; // head only (same up-axis as the cut)
         _v.fromBufferAttribute(d, v).applyMatrix3(_lin); // world-space displacement
-        if (_v.y < 0) down += -_v.y; // downward → jaw drop
+        const dn = -_v.dot(up);
+        if (dn > 0) down += dn; // downward (along -up) → jaw drop
       }
       allScores.push(down);
       if (down > bestS) {

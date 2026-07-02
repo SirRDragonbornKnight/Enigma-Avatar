@@ -194,21 +194,19 @@ export function runCascade(gltf, snap) {
       source[role] = tier;
     }
   };
-  const excludeIds = new Set(); // (per-model override.exclude removed 2026-06-25; kept empty so the tiers' signatures are unchanged)
-
   const vrm = vrmRoleNodes(gltf); // tier 1
   if (vrm)
     for (const [role, node] of Object.entries(vrm)) {
       const id = idByNode.get(node);
-      if (id != null && !excludeIds.has(id)) fill(role, id, "vrm");
+      if (id != null) fill(role, id, "vrm");
     }
 
-  const nameIds = resolveNames(snap, excludeIds); // tier 2
+  const nameIds = resolveNames(snap); // tier 2
   for (const role in nameIds) fill(role, nameIds[role], "name");
 
   if (ROLES.some((r) => roleIds[r] == null)) {
     // tier 3 (only if gaps)
-    const geo = resolveGeometry(snap, { existing: roleIds, excludeIds });
+    const geo = resolveGeometry(snap, { existing: roleIds });
     for (const role in geo) fill(role, geo[role], "geometry");
   }
   resolveBetween(snap, roleIds, source); // tier 3.5: middle-joint repair (joint-style "shoulder" = upper arm); snap carries parent/children

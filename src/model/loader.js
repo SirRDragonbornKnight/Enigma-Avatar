@@ -147,8 +147,8 @@ export function loadAsset(url, onOk, onErr, opts = {}) {
         const vrm = g.userData?.vrm || null;
         if (vrm) {
           VRMUtils.removeUnnecessaryJoints?.(vrm.scene);
-          vrm.scene.rotation.y = Math.PI;
-        } // VRM faces -Z → turn to camera
+          VRMUtils.rotateVRM0?.(vrm);
+        } // VRM 0.x binds facing -Z -> rotateVRM0 turns ONLY those to camera; VRM 1.0 already faces +Z and an unconditional PI flipped it away
         onOk({ scene: vrm ? vrm.scene : g.scene || g.scenes?.[0], animations: g.animations || [], vrm });
       },
       undefined,

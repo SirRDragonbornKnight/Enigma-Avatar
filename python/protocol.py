@@ -42,7 +42,8 @@ REQUIRED_FIELDS: dict[str, str] = {
     "tuneAttachment": "id",
     "nameBone": "bone",
     "highlightBone": "bone",
-    "query": "what",
+    # `query` is NOT here: a missing `what` is answered with the full state() snapshot (the
+    # contract must not reject a command the running system answers) — same note in protocol.js.
 }
 
 
