@@ -19,6 +19,25 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 
 ### 0) Restructure (conceptual rebuild) -- Phase 1 DONE, Phases 2-5 OPEN
 
+**THE TARGET SHAPE (decided with the user 2026-07-02): "everything is a peer".** A headless
+SIMULATION CORE (rig resolution + layer compositor + springs + rapier + facial) runs in an Electron
+`utilityProcess`, ticks without DOM/GPU, and emits the same flat pose buffer peers already consume.
+EVERY window -- including today's "brain" -- becomes a ~150-line view: load model, apply buffer,
+render, hit-test. The bus + all state live with the sim/main. What this DELETES outright: the
+avatar.js closure, the brain/peer asymmetry, UI_CMDS relay scopes, the mid-switch stale queue,
+localStorage, browser-mode fallbacks, the dual accessor bridges. What it ADDS once the core is
+clean: IK (reach/point over the 19 roles), rapier-jointed ragdoll, an MCP wrapper for the bus,
+schema-first protocol generation. Staged order, each stage COMPLETE + gated + smoke-proven:
+  S0 (DONE 2026-07-02): `npm run smoke` -- launch the real overlay, drive it over the bus, assert
+     NUMERIC receipts (boot / limits / strict wire / elbow bend+release / snap). 6/6 on first run.
+  S1: extract the sim modules from the avatar.js closure into headless `src/engine/` with explicit
+     state (several sessions; per-subsystem, gate + smoke after each carve).
+  S2: move the hosted sim to a utilityProcess; demote every window to a peer; bus to main.
+     (The relays, the queue, and the closure die together this day.)
+  S3: one state store in main (localStorage + browser fallbacks removed).
+  S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
+  S5: IK + ragdoll on the clean core.
+
 **Phase 1 (DONE 2026-06-29):** folderized the flat repo into `shell/` + `src/<concern>/` +
 `python/` with zero logic changes; all refs repointed; green at every headless layer
 (node --test 236/11, pytest 14, eslint 0, tsc 0). The ONE thing headless can't prove is the

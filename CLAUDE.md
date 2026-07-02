@@ -13,10 +13,13 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
 
 ## Setup / build / test — run these first
 
-- Node tests: `node --test` (Node built-in runner; ~278 tests, some skip without the real model
+- Node tests: `node --test` (Node built-in runner; ~280 tests, some skip without the real model
   library). `node --check <file>.js` for a quick syntax pass.
 - Python tests: `python -m pytest tests/ -q` (bus origin-gate + reply routing, protocol mirror,
   bone data, voice service).
+- **Live smoke: `npm run smoke`** -- launches the REAL overlay, drives it over the bus, and asserts
+  numeric receipts (boot / limits / strict wire / elbow bend / snap), then cleans up. Run it after
+  any change a unit test can't see (shell, protocol handler, boot, bus). `--keep` leaves her up.
 - Console output must be **ASCII** (the Windows cp1252 console can't print `→`, `—`, etc.).
 - Launch the overlay: `Start-Avatar.ps1` (or `Enigma Avatar.bat`). Portable Node + Electron install on
   first run. No admin.
