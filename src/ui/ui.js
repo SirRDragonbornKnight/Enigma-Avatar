@@ -1589,7 +1589,7 @@ export function createUI(api) {
           BALL_ACTIONS.map((m) => ({ label: m.label, onClick: () => api.ball(m.name) }))
         )
       ); // rapier ball-physics toys (the Express emotes + gesture catalog were purged 2026-06-25 — motion is AI-authored)
-    // Resize = scroll wheel (or +/- keys); monitor = drag across an edge or Ctrl+Alt+M.
+    // Resize = scroll wheel (or +/- keys); monitor = drag across an edge or Ctrl+Shift+Alt+M.
     menu.appendChild(menuSep());
     menu.appendChild(
       menuRow("Settings…", {
@@ -1601,7 +1601,12 @@ export function createUI(api) {
     );
     if (avatarIPC?.quit) {
       menu.appendChild(menuSep());
-      menu.appendChild(menuRow("Quit avatar", { accel: "Ctrl+Alt+Q", danger: true, onClick: () => avatarIPC.quit() }));
+      menu.appendChild(
+        // accel label MUST match the real registration in shell/main.cjs (Ctrl+SHIFT+Alt — plain
+        // Ctrl+Alt IS AltGr on EU layouts, the 2026-06-12 fix). The menu said "Ctrl+Alt+Q" for
+        // three weeks; caught in a model-zoo snap 2026-07-02.
+        menuRow("Quit avatar", { accel: "Ctrl+Shift+Alt+Q", danger: true, onClick: () => avatarIPC.quit() })
+      );
     }
   }
   function showMenu(x, y) {

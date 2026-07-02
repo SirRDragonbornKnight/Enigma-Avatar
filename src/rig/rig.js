@@ -55,19 +55,27 @@ export function roleOfName(raw) {
   // Side: left/right word or _l_/.l boundary, PLUS Blender ".L"/".R" tags that three.js
   // de-dotted on import into a glued uppercase L/R (upper_arm.L → "upper_armL"). Without
   // this every Blender/Rigify limb loses its side and stays in the bind T-pose (Toy Chica).
+  // Daz Genesis (model-zoo 2026-07-02): the side tag is a BARE leading lowercase l/r glued to a
+  // capitalized part — lShldrBend, rThighBend, lFoot. Neither the word-boundary rule nor the
+  // Blender de-dot rule sees it, so every Daz limb lost its side and the whole body went undriven
+  // (zhu_yuan: 4/19 roles from 493 bones).
   let side = "";
-  if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n) || /[a-z]L([_.]|\d|$)/.test(raw)) side = "left";
-  else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw)) side = "right";
+  if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n) || /[a-z]L([_.]|\d|$)/.test(raw) || /^l[A-Z]/.test(raw)) side = "left";
+  else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw) || /^r[A-Z]/.test(raw))
+    side = "right";
   const has = (re) => re.test(n);
   // Center bones are never side-tagged; a sided match (Bip_Pelvis_L/R) is an auxiliary
   // bone — reject it so the true center bone wins regardless of traversal order.
   if (has(/hips?|pelvis/)) return side ? null : "hips";
   if (has(/upperchest|chest/)) return side ? null : "chest";
-  if (has(/spine|lowerback|waist|spine2/)) return side ? null : "spine";
+  if (has(/spine|lowerback|waist|spine2|abdomen/)) return side ? null : "spine"; // abdomen = Daz spine
   if (has(/neck/)) return side ? null : "neck";
   if (has(/head/)) return side ? null : "head";
   let part = null;
-  if (has(/shoulder|clavicle/)) part = "shoulder";
+  if (has(/shoulder|clavicle|collar|shldr/)) part = "shoulder";
+  // collar/shldr = Daz clavicle + upper arm ("lCollar" wins the shoulder role first; "lShldrBend"
+  // also maps shoulder but arrives second, so the between-repair then correctly fills the ARM
+  // role with it — Collar -> ShldrBend -> ForearmBend has ShldrBend as the bone between.)
   else if (has(/forearm|elbow|lower[_ ]?arm/)) part = "forearm";
   else if (has(/hand|wrist/)) part = "hand";
   else if (has(/upper[_ ]?arm/) || (has(/arm(?!ature)/) && !has(/forearm/)))

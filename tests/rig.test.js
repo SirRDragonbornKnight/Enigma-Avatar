@@ -209,6 +209,24 @@ test("resolveBetween (in isolation): fills the middle joint from a shoulder+fore
   );
 });
 
+test("Daz Genesis naming resolves: leading-l/r sides, Collar/ShldrBend shoulders, abdomen spine", () => {
+  // zhu_yuan lesson (4/19 -> 19/19): Daz tags sides as a BARE lowercase l/r glued to the part.
+  assert.equal(roleOfName("lThighBend_05"), "left_leg");
+  assert.equal(roleOfName("rShin_023"), "right_shin");
+  assert.equal(roleOfName("lFoot_08"), "left_foot");
+  assert.equal(roleOfName("lCollar_063"), "left_shoulder", "Daz Collar = the clavicle");
+  assert.equal(
+    roleOfName("lShldrBend_064"),
+    "left_shoulder",
+    "ShldrBend maps shoulder too — arrives second, so the between-repair promotes it to the ARM"
+  );
+  assert.equal(roleOfName("lShldrTwist_065"), null, "twist bones still never win a role");
+  assert.equal(roleOfName("lForearmBend_066"), "left_forearm");
+  assert.equal(roleOfName("abdomenLower_059"), "spine", "Daz abdomen = spine");
+  assert.equal(roleOfName("lowerBack"), "spine", "leading lowercase l NOT followed by a capital is not a side tag");
+  assert.equal(roleOfName("rib_1"), null, "nor is a leading r");
+});
+
 test("accessory bones never steal a role by substring: ...Pad / ...Jiggle are SKIPPED (FNaF lesson)", () => {
   // R_ShoulderPad_jnt came BEFORE R_Shoulder_jnt in traversal order and stole right_shoulder.
   assert.equal(roleOfName("R_ShoulderPad_jnt_045"), null, "armor pad is not the shoulder");
