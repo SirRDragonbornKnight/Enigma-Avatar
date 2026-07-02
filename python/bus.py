@@ -29,12 +29,17 @@ HOST, PORT = "127.0.0.1", 8765
 CLIENTS: set = set()
 _CLOSING: set = set()  # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
 
-# Reply routing: reqIds are producer-chosen with no namespacing, so a broadcast reply lets two
-# concurrent drivers consume each other's answers. Remember who asked (reqId -> client) and send
-# the matching reply ONLY to them; replies to a reqId nobody registered fall back to broadcast
-# (a promiscuous listener keeps working). Bounded FIFO so abandoned reqIds can't grow forever.
-PENDING: dict = {}  # reqId -> requesting client (dicts preserve insertion order = FIFO eviction)
+# Reply routing: reqIds are producer-chosen, so two overlapping drivers can collide (avbus.py's
+# documented convention is literally "reqId": 1) and a broadcast reply would let them consume each
+# other's answers. The hub REWRITES every request's reqId to a unique hub id before relaying and
+# rewrites it back on the matching reply, delivering it ONLY to the asker — collisions are
+# structurally impossible, and both ends still see their own ids. Replies whose reqId matches no
+# pending hub id fall back to broadcast. Trade-off (deliberate): a promiscuous bus monitor sees
+# every REQUEST and unrouted replies, but not routed replies. Bounded FIFO so abandoned ids can't
+# grow forever.
+PENDING: dict = {}  # hub reqId -> (requesting client, its original reqId); insertion order = FIFO
 PENDING_MAX = 512
+_req_seq = 0  # hub reqId counter
 
 # Local-trust boundary (CSWSH gate). Native clients (the overlay, avbus.py, modkit) send NO Origin
 # header; Electron's file-loaded page sends "file://" or the opaque "null". A web page the user happens
@@ -58,19 +63,25 @@ async def _handler(ws) -> None:
                 continue  # ignore non-objects; relay any dict — commands
                 # AND replies (two-way: the overlay answers a
                 # {"action":"query",...} with {"type":"reply",...})
-            data = json.dumps(cmd)
             req_id = cmd.get("reqId")
-            if isinstance(req_id, (str, int)) and cmd.get("type") == "reply":
-                target = PENDING.pop(req_id, None)
-                if target is not None:
+            if cmd.get("type") == "reply" and req_id is not None:
+                hit = PENDING.pop(req_id, None) if isinstance(req_id, str) else None
+                if hit is not None:
+                    target, orig = hit
                     if target in CLIENTS and target is not ws:
-                        await _send(target, data)
-                    continue  # routed (or the requester already left) — nobody else gets it
-                # unregistered reqId -> fall through to broadcast
-            elif isinstance(req_id, (str, int)):
-                PENDING[req_id] = ws  # a request expecting an answer — route its reply back here
+                        cmd["reqId"] = orig  # hand the asker back its OWN id
+                        await _send(target, json.dumps(cmd))
+                    continue  # routed (or the asker already left) — nobody else gets it
+                # reply to no pending hub id -> fall through to broadcast
+            elif req_id is not None:
+                global _req_seq
+                _req_seq += 1
+                hub_id = f"hub:{_req_seq}"
+                PENDING[hub_id] = (ws, req_id)  # route the matching reply back here
                 while len(PENDING) > PENDING_MAX:
                     PENDING.pop(next(iter(PENDING)))
+                cmd["reqId"] = hub_id
+            data = json.dumps(cmd)
             for c in list(CLIENTS):
                 if c is ws:
                     continue  # don't echo back to the producer

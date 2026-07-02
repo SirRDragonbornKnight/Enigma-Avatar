@@ -52,6 +52,8 @@ def test_validate_command_structural():
     assert ok is False and "'say' requires 'url'" in reason
     # structural only: a non-numeric value is still structurally valid (coercion is the engine's job)
     assert protocol.validate_command({"action": "size", "value": "huge"}) == (True, None)
+    # bare query = full state() snapshot (query.js fall-through) — must validate in BOTH mirrors
+    assert protocol.validate_command({"action": "query"}) == (True, None)
 
 
 def test_is_action():

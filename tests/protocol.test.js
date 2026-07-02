@@ -38,6 +38,7 @@ test("validateCommand accepts well-formed commands and names what's wrong otherw
   assert.deepEqual(validateCommand({ action: "pose" }), { ok: true, command: { action: "pose" } }); // all-optional verb
   assert.equal(validateCommand({ action: "say", url: "file:///x.wav" }).ok, true);
   assert.equal(validateCommand({ action: "query", what: "model" }).ok, true);
+  assert.equal(validateCommand({ action: "query" }).ok, true); // bare query = full state() (query.js fall-through) — the contract must not reject what the system answers
 
   // not an object / no action
   assert.deepEqual(validateCommand(null), { ok: false, reason: "not an object" });

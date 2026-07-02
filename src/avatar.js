@@ -252,14 +252,36 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return false;
     }
   })();
-  // Resolved BEFORE any rig build (loadModel awaits it): buildProceduralRig captures the table at
-  // call time, so a first load that won this fetch's race used to build with {} — no joint caps and
-  // no speed clamp — until the next model switch. Absent/corrupt file still resolves to {} (inert
-  // limits, honest degrade), never a blocked load.
-  const BONE_LIMITS_READY = fetch("./bone_limits.json")
-    .then((r) => r.json())
-    .then((j) => (BONE_LIMITS = j))
-    .catch(() => {});
+  // Read a local sibling JSON. XHR, NOT fetch: the overlay page is file:// (main.cjs win.loadFile)
+  // and fetch() rejects file:// in the Electron renderer (voice.js learned the same lesson) — the
+  // old fetch calls here failed EVERY live launch while http-served tests passed. Resolves null on
+  // any failure (missing/unparseable), never rejects.
+  const readLocalJson = (url) =>
+    new Promise((resolve) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.onload = () => {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            resolve(null);
+          }
+        };
+        xhr.onerror = () => resolve(null);
+        xhr.send();
+      } catch {
+        resolve(null);
+      }
+    });
+  // Resolved BEFORE any rig build (onModelLoaded awaits it): buildProceduralRig captures the table
+  // at call time, so a first load that won this read's race used to build with {} — no joint caps
+  // and no speed clamp — until the next model switch. Absent/corrupt file still resolves to {}
+  // (inert limits, honest degrade — but now LOUDLY), never a blocked load.
+  const BONE_LIMITS_READY = readLocalJson("./bone_limits.json").then((j) => {
+    if (j) BONE_LIMITS = j;
+    else console.warn("[avatar] bone_limits.json unreadable -> no joint/speed caps");
+  });
   // Per-model rig overrides REMOVED 2026-06-25 (user: "nothing made specifically for any avatar").
   // The rig resolver (rig.js) is purely generic: VRM -> name -> geometry. No per-model data path.
 
@@ -601,6 +623,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
 
   function onModelLoaded(asset) {
+    // EVERY load path funnels here (loadModel, drag-drop loadFile/loadFiles, startup tryLoad) — so
+    // THIS is where the build awaits the joint-limit table; gating only loadModel left startup and
+    // drag-drop building uncapped rigs when they won the read's race. Queued builds run in call
+    // order (same resolved promise -> FIFO microtasks) and each starts with disposeModel(), so
+    // last-caller-wins is preserved.
+    BONE_LIMITS_READY.then(() => _buildModelGuarded(asset));
+  }
+  function _buildModelGuarded(asset) {
     // BOUNDARY GUARD: the rig/facial build below can throw on a corrupt/degenerate model (resolveRig,
     // buildProceduralRig, buildFacial, the bind-normalization math). Inside the loader's async onLoad a
     // throw escapes PAST onErr as an unhandled rejection, leaving a HALF-STATE: old model already
@@ -1025,16 +1055,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     loadAsset(
       url,
       (asset) => {
-        // await the joint-limit table before building — a rig built off the not-yet-fetched table
-        // would run uncapped (no joint limits, no speed clamp) until the next switch
-        BONE_LIMITS_READY.then(() => {
-          if (seq === _loadSeq) {
-            curKey = url;
-            _peerRetries[url] = 0;
-            onModelLoaded(asset);
-            clearOnboarding();
-          }
-        });
+        if (seq === _loadSeq) {
+          curKey = url;
+          _peerRetries[url] = 0;
+          onModelLoaded(asset); // awaits BONE_LIMITS_READY inside — every load path shares that gate
+          clearOnboarding();
+        }
       }, // commit curKey only on the WINNING load — a failed load must not misroute saves + `query model` onto a model that isn't on screen
       (err) => {
         if (seq !== _loadSeq) return;
@@ -1071,17 +1097,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const profileFor = (key) => profiles[key] || (profiles[key] = {});
   async function loadProfiles() {
     const ok = (p) => p && typeof p === "object" && !Array.isArray(p); // a non-object profiles blob would round-trip garbage into every profileFor()
+    // readLocalJson, not fetch: the old fetch failed on every live file:// launch, so profiles.json
+    // (the file the shell saves over IPC) was WRITE-ONLY in production — reads always came from the
+    // localStorage mirror, and a cleared partition silently dropped every profile the file still had.
+    const j = await readLocalJson("./profiles.json");
+    if (ok(j)) {
+      profiles = j;
+      return;
+    }
     try {
-      const r = await fetch("./profiles.json", { cache: "no-store" });
-      if (r.ok) {
-        const j = await r.json();
-        profiles = ok(j) ? j : {};
-        return;
-      }
-    } catch {}
-    try {
-      const j = JSON.parse(localStorage.getItem(PROFILE_KEY));
-      profiles = ok(j) ? j : {};
+      const l = JSON.parse(localStorage.getItem(PROFILE_KEY));
+      profiles = ok(l) ? l : {};
     } catch {
       profiles = {};
     }
