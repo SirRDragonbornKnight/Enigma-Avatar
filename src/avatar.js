@@ -16,6 +16,7 @@ import { createConjure } from "./motion/conjure.js"; // P3: transform-based conj
 import { parseControlTags, parseTagArg, resolvePropName } from "./control/control.js"; // P4: inline bracketed control tags in LLM speech
 import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar control surface (facade the bus/query/devtools drive)
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
+import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable setup (headless engine module, carve S1-a)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
 import { createPhysics } from "./motion/physics.js";
@@ -1075,68 +1076,30 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // (Body-conforming clothing still needs a mesh rigged to a matching skeleton —
   // this covers rigid / bone-attached extras.) Placement (bone + offset) is tunable
   // live via EnigmaAvatar.tuneAttachment(); the defaults are a starting point.
-  // Per-avatar PROFILE (durable): attachments (by category) + tuned spring/facial,
-  // keyed by model URL. Saved to profiles.json via IPC (Electron) with a localStorage
-  // fallback — so each avatar keeps its own setup for next time.
-  const PROFILE_KEY = "enigmaAvatar.profiles";
-  let profiles = {};
-  const profileFor = (key) => profiles[key] || (profiles[key] = {});
-  async function loadProfiles() {
-    const ok = (p) => p && typeof p === "object" && !Array.isArray(p); // a non-object profiles blob would round-trip garbage into every profileFor()
-    // profiles.json (the file the shell saves over IPC) is the durable store; localStorage is only
-    // the no-IPC (plain browser) fallback. In the file:// era this read silently failed on every
-    // live launch and profiles secretly lived in localStorage — the app:// cutover ended that.
-    const j = await readLocalJson("./profiles.json");
-    if (ok(j)) {
-      profiles = j;
-      return;
-    }
-    try {
-      const l = JSON.parse(localStorage.getItem(PROFILE_KEY));
-      profiles = ok(l) ? l : {};
-    } catch {
-      profiles = {};
-    }
-  }
-  let _profileTimer = 0;
-  function saveProfileSoon() {
-    // debounced persist of the whole profiles object (no attachment snapshot)
-    if (window.avatarIPC && !_isBrain) return; // ONE writer: peers apply relayed mutations in-memory only — a peer's partial profiles copy must never clobber profiles.json (browser/no-IPC keeps its localStorage fallback)
-    clearTimeout(_profileTimer);
-    _profileTimer = setTimeout(() => {
-      const data = JSON.stringify(profiles, null, 2);
-      // LOUD degrade: saveProfiles returns {ok}|{error} — swallowing a failed write here loses the
-      // user's tuned attachments/physics on the next launch with zero trace (the bone_limits lesson:
-      // a silent persistence failure can hide for weeks).
-      Promise.resolve(window.avatarIPC?.saveProfiles?.(data))
-        .then((r) => {
-          if (r && r.error) {
-            console.error("[avatar] profiles.json save FAILED:", r.error);
-            window.avatarIPC?.log?.("[avatar] profiles.json save FAILED: " + r.error);
-          }
-        })
-        .catch((e) => console.error("[avatar] profiles.json save FAILED:", e));
+  // Per-avatar PROFILE (durable): attachments (by category) + tuned spring/facial, keyed by model
+  // URL. The store itself is a headless engine module (src/engine/profiles.js — carve S1-a); the
+  // closure only wires its impure edges in as thunks. ONE-writer rule, debounce, mirror fallback,
+  // and the blob-filter all live (and are unit-tested) THERE.
+  const { profileFor, loadProfiles, saveProfileSoon, commitAttachments } = createProfileStore({
+    readJson: () => readLocalJson("./profiles.json"),
+    saveIpc: (data) => window.avatarIPC?.saveProfiles?.(data),
+    isWriter: () => !(window.avatarIPC && !_isBrain), // peers apply relayed mutations in-memory only
+    mirror: (() => {
       try {
-        localStorage.setItem(PROFILE_KEY, data);
+        return localStorage;
+      } catch {
+        return null;
+      }
+    })(),
+    logError: (m) => {
+      console.error(m);
+      try {
+        window.avatarIPC?.log?.(m);
       } catch {}
-    }, 400);
-  }
-  // Snapshot the CURRENT model's live attachments into its profile — called ONLY by
-  // attach mutations, never by recolor/tune. So a recolor fired mid-restore (while
-  // props are still async-loading) can't truncate the saved list (avatar audit #2).
-  function commitAttachments() {
-    profileFor(curKey).attachments = attachObjs
-      .filter((a) => !String(a.url).startsWith("blob:"))
-      .map((a) => ({
-        id: a.id,
-        category: a.category,
-        url: a.url,
-        bone: a.bone,
-        pos: a.pos,
-        rot: a.rot,
-        scale: a.scale,
-      }));
-  }
+    },
+    getKey: () => curKey,
+    getAttachments: () => attachObjs,
+  });
   let attachObjs = []; // live for the current model: [{id,category,url,bone,pos,rot,scale,obj,attachedTo}]
   let _attachSeq = 0;
   const D2R = Math.PI / 180;
