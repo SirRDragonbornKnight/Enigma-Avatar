@@ -45,8 +45,13 @@ const EXPECT = {
   "mal0_scp-1471": 19,
   "fexa_-_fnaf__cryptiacurves": 19,
   "love-taste-toy-chica": 19,
-  fnaf_help_wanted__lolbit: 17,
-  glamrock_mangleupdated: 15,
+  // lolbit/mangle re-measured 2026-07-02 (pad/jiggle SKIP + joint-style arm promotion): still 16
+  // roles each, but the RIGHT 16 — left_arm/right_arm now resolve (driveable over the bus; they
+  // were structurally EMPTY before) and the clavicle-less shoulder slots are honestly vacant.
+  // The old 17/15 described the since-deleted models/ copies; the Desktop and 3d Avatar library
+  // files hash-match each other and both measure 16 via tools/rig_report.mjs.
+  fnaf_help_wanted__lolbit: 16,
+  glamrock_mangleupdated: 16,
   glados: 2,
   grace_howard: 0,
   toothless: 0,

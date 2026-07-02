@@ -43,7 +43,11 @@ export const ROLES = [
 // SKIP: fingers/toes/face/dangly bits, IK helpers, deformation aids — "helper"/"twist"
 // bones must never win a primary role over the real joint (avatar audit #4).
 const SKIP =
-  /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits/i;
+  /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits|jiggle|pads?([^a-z]|$)/i;
+// `pads?` + `jiggle` (model-zoo 2026-07-02): armor/accessory bones CONTAIN role words —
+// "R_ShoulderPad_jnt" stole right_shoulder from the real "R_Shoulder_jnt" purely by traversal
+// order (FNaF lolbit/mangle), and "L_Shoulder_Jiggle_jnt" is a secondary-motion aid, never the
+// joint. The boundary check keeps "paddle"-ish names matchable.
 
 export function roleOfName(raw) {
   const n = raw.toLowerCase();
@@ -350,8 +354,37 @@ export function resolveBetween(snap, roleIds, source) {
       if (source) source[midRole] = "between";
     }
   };
+  // Joint-style PROMOTION (model-zoo 2026-07-02): when the "shoulder" bone DIRECTLY parents the
+  // elbow (Shoulder_jnt -> Elbow_jnt -> Wrist_jnt — no bone in between), that bone spans the
+  // upper-arm segment: it IS the upper arm, there is no clavicle. Without this the arm role
+  // stays empty and the whole arm is UNDRIVEABLE over the bus (FNaF lolbit/mangle). The bone
+  // MOVES to the arm role (never duplicated — two roles on one bone would double-apply offsets);
+  // the shoulder role is honestly vacated, like any rig without clavicles.
+  // CLAVICLE GUARD (geometric, no names): a TRUE clavicle whose rig simply lacks an upper-arm
+  // bone must NOT be promoted (driving it swings the whole girdle from an inboard pivot — the
+  // pinned between-repair intent: never fake a bone that isn't there). The tell is the head
+  // position: a clavicle head sits NEAR the centerline; a joint-style shoulder head sits OUT
+  // at the arm line. Promote only when the head is already well outboard (>=50% of the elbow's
+  // horizontal reach from the body's center).
+  const promote = (midRole, proxRole, distRole) => {
+    if (roleIds[midRole] != null || roleIds[proxRole] == null || roleIds[distRole] == null) return;
+    if (snap[roleIds[distRole]].parent !== roleIds[proxRole]) return; // a middle bone exists (fill's job) or unlinked
+    const cId = roleIds.spine ?? roleIds.chest ?? roleIds.hips ?? roleIds.neck;
+    if (cId == null) return; // no centerline reference -> stay conservative, leave the gap
+    const c = snap[cId].pos;
+    const horiz = (b) => Math.hypot(b.pos.x - c.x, b.pos.z - c.z);
+    if (horiz(snap[roleIds[proxRole]]) < 0.5 * horiz(snap[roleIds[distRole]])) return; // inboard head = true clavicle
+    roleIds[midRole] = roleIds[proxRole];
+    delete roleIds[proxRole];
+    if (source) {
+      source[midRole] = "between";
+      delete source[proxRole];
+    }
+  };
   fill("left_arm", "left_shoulder", "left_forearm"); // upper arm named "shoulder" (joint-style rigs)
   fill("right_arm", "right_shoulder", "right_forearm");
+  promote("left_arm", "left_shoulder", "left_forearm"); // ...and when NO middle bone exists at all
+  promote("right_arm", "right_shoulder", "right_forearm");
   fill("chest", "spine", "neck"); // an upper-torso bone the centerline walk skipped
   fill("left_shin", "left_leg", "left_foot"); // numeric-suffix shin (thigh "L_Leg", shin "L_Leg2" lost the keyword)
   fill("right_shin", "right_leg", "right_foot");

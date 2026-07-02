@@ -209,6 +209,48 @@ test("resolveBetween (in isolation): fills the middle joint from a shoulder+fore
   );
 });
 
+test("accessory bones never steal a role by substring: ...Pad / ...Jiggle are SKIPPED (FNaF lesson)", () => {
+  // R_ShoulderPad_jnt came BEFORE R_Shoulder_jnt in traversal order and stole right_shoulder.
+  assert.equal(roleOfName("R_ShoulderPad_jnt_045"), null, "armor pad is not the shoulder");
+  assert.equal(roleOfName("L_Shoulder_Jiggle_jnt_043"), null, "secondary-motion aid is not the shoulder");
+  assert.equal(roleOfName("R_Shoulder_jnt_046"), "right_shoulder", "the REAL joint still resolves");
+  assert.equal(roleOfName("L_Elbow_Jiggle_jnt_042"), null, "jiggle elbows are not forearms");
+});
+
+test("joint-style promotion: an OUTBOARD 'shoulder' that directly parents the elbow BECOMES the arm", () => {
+  // FNaF-style chain: Shoulder_jnt (head at the arm line) -> Elbow -> Wrist, no upper-arm bone.
+  // The shoulder bone spans the upper-arm segment, so it takes the ARM role (else the whole arm
+  // is undriveable over the bus) and the shoulder role is honestly vacated.
+  const arm = (pfx, sx) =>
+    makeBone(
+      pfx + "_Shoulder_jnt",
+      [sx * 0.3, 0.1, 0],
+      [
+        makeBone(
+          pfx + "_Elbow_jnt",
+          [sx * 0.2, -0.02, 0],
+          [makeBone(pfx + "_Wrist_jnt", [sx * 0.2, -0.02, 0], [makeBone(pfx + "_Wrist_end", [sx * 0.08, 0, 0])])]
+        ),
+      ]
+    );
+  const hips = makeBone(
+    "Hips",
+    [0, 1.0, 0],
+    [
+      makeBone(
+        "Spine",
+        [0, 0.12, 0],
+        [makeBone("Neck", [0, 0.3, 0], [makeBone("Head", [0, 0.12, 0])]), arm("L", -1), arm("R", +1)]
+      ),
+    ]
+  );
+  const r = resolveRig(underArmature(hips));
+  assert.equal(r.roles.left_arm?.name, "L_Shoulder_jnt", "the outboard shoulder bone IS the upper arm");
+  assert.equal(r.roles.right_arm?.name, "R_Shoulder_jnt");
+  assert.ok(!("left_shoulder" in r.roles), "the shoulder role is vacated, never double-driven");
+  assert.equal(r.roles.left_forearm?.name, "L_Elbow_jnt", "elbow/wrist keep their joint-style mapping");
+});
+
 test("between-repair NEVER fabricates a middle bone when prox/dist are directly linked", () => {
   // shoulder → forearm directly (no upper-arm bone): left_arm must stay EMPTY, not alias the forearm
   const arm = (pfx, sx) =>
