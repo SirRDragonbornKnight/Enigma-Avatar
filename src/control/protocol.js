@@ -60,7 +60,7 @@
 
 // ── SYSTEM / VERIFY-BY-NUMBERS ─────────────────────────────────────────────────
 /** @typedef {{ action: "capabilities" } & WithReqId} CapabilitiesCommand */
-/** @typedef {{ action: "query", what: QueryKind | "actions" } & WithReqId} QueryCommand */
+/** @typedef {{ action: "query", what?: QueryKind | "actions" } & WithReqId} QueryCommand */ /* bare query = full state() snapshot */
 /** @typedef {{ action: "snap", width?: number } & WithReqId} SnapCommand */
 /** @typedef {{ action: "showBones", on?: boolean, value?: boolean } & WithReqId} ShowBonesCommand */
 /** @typedef {{ action: "nameBone", bone: string, label?: string } & WithReqId} NameBoneCommand */
@@ -220,9 +220,9 @@ const REQUIRED_FIELDS = {
  * a known string `action`, and include that verb's required field. It deliberately does NOT coerce or
  * range-check argument VALUES — per this repo's "guard at the engine boundary, not the caller" rule,
  * numeric/shape sanitization stays where a value ENTERS an engine (setLayer / setMouth / the
- * loader). So this complements those guards; it does not replace them, and it is intentionally not
- * wired to reject at connect() (the bus stays leniently honest-no-op). Use it for observability, a
- * future strict mode, or driver-side pre-flight.
+ * loader). This IS the wire contract: connect() (surface.js) validates every inbound bus message and
+ * replies {error: reason} to reqId callers instead of dispatching — a driver's typo gets a NAMED
+ * answer, never silence. The registry (bus.js handleCommand) stays lenient for in-process callers.
  * @param {unknown} raw
  * @returns {{ ok: true, command: BusCommand } | { ok: false, reason: string }}
  */

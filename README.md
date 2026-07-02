@@ -33,8 +33,9 @@ src/
   motion/               procedural.js, spring.js, conjure.js, physics.js, motionmath.js
   face/                 facial.js          audio/  voice.js
   interaction/          hittest.js (SAFETY), placement.js
-  control/              control.js (perform-tag parser)
-  ui/                   ui.js              util/   mathutil.js
+  control/              surface.js (EnigmaAvatar facade + connect), bus.js (verb registry),
+                        protocol.js (wire contract), query.js (live queries), control.js (perform-tag parser)
+  ui/                   ui.js              util/   mathutil.js, localurl.js (local refs -> app:// origin)
 python/                 bus.py, say.py, speak.py, import_unitypackage.py
 voice/                  vendored Kokoro TTS (voice.py)
 tools/  tests/  assets/
@@ -56,13 +57,13 @@ bone_limits.json, models.json, mod.json, package.json   (config/data stay at roo
 - `ui.js` -- the right-click menu + Settings dialog (all the DOM). Numerical inputs (no sliders); capability-driven attach-bone picker.
 - `default_avatar.js` -- the **inert no-model marker** (an empty `NoModelMarker` group, 0 bones / 0 roles); when no model is loaded the overlay shows an ASCII DOM hint to add a `.glb`.
 - `main.cjs` + `preload.cjs` + `package.json` -- the Electron shell (transparent, click-through overlay) + model-import dialog.
-- `bus.py` -- local WebSocket relay (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar.
+- `bus.py` -- local WebSocket hub (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar; commands broadcast, replies route back to their asker (hub-rewritten reqIds).
 - `say.py` -- CLI to drive the avatar (model swap, size, `fingers`, `perform`, `snap`, **say** a WAV, **demo**); fails honestly on bad args, ASCII help.
 - `speak.py` -- **Kokoro TTS -> lip-sync**: synthesize text and have the avatar speak it.
 - `import_unitypackage.py` -- turn a Unity `.unitypackage` (VRChat avatar) into a loadable model folder.
 - `models/` + `models.json` -- model folders + the user-model manifest (built-ins live in `avatar.js`).
 - `bone_limits.json` -- 19-bone humanoid joint limits + speed limits (clamps procedural posing; role names match `rig.js`).
-- `tests/` -- Node unit tests (`npm test`) for the rig cascade, spring detection, compositor sum-then-cap/speed-limit, and `vrm_order` (the VRM pose-order regression); also run under pytest via `tests/test_avatar_rig.py`. `tests/realmodels.test.js` locks the cascade's per-model role counts against the actual assets.
+- `tests/` -- Node unit tests (`npm test`) for the rig cascade, spring detection, compositor sum-then-cap/speed-limit, and `vrm_order` (the VRM pose-order regression); pytest covers the bus origin gate + reply routing, the protocol mirror, bone data, and the voice service. `tests/realmodels.test.js` locks the cascade's per-model role counts against the actual assets.
 - `tools/rig_report.mjs` -- headless cascade inspector: `node tools/rig_report.mjs [model.glb] [--bones]` reads a model's real bones straight from its glTF JSON (no WebGL) and reports which of the 19 roles resolve and by which tier (incl. the tier-3.5 `resolveBetween` step + a blink-channel probe) -- so a cascade change can be measured against the real assets, not guessed.
 
 ## Run it on your desktop (NO admin)

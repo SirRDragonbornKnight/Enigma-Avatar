@@ -10,6 +10,8 @@
 //   onEnvelope(rms)  → live speech-loudness envelope (drives the co-speech body layer, P2)
 //   onSpeakEnd()     → called when playback ends (clears the co-speech layer)
 //   setStatus(msg)   → status line for errors
+import { toAppUrl } from "../util/localurl.js";
+
 export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, setStatus } = {}) {
   let audioCtx = null,
     srcNode = null,
@@ -39,10 +41,9 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
     onSpeakEnd?.(); // P2: speech ended -> drop the envelope + clear the co-speech layer
   }
 
-  // XHR reads file:// reliably in the Electron renderer (fetch() rejects file://).
   // Hard cap the read: a malicious/huge WAV off the bus must not be slurped into memory then decoded.
-  // The real audio is file:// (status 0, no Content-Length) so the cap is enforced on the actual
-  // byteLength; the header check is just an early abort when a size IS advertised.
+  // The cap is enforced on the actual byteLength (belt) with the Content-Length header as an early
+  // abort (braces). XHR rather than fetch only because the streaming abort-at-header is simpler here.
   function loadBytes(url, maxBytes = 64 * 1024 * 1024) {
     // 64 MB — single-user local TTS WAVs are tiny
     return new Promise((resolve, reject) => {
@@ -77,6 +78,7 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
       setStatus?.("say blocked: remote URL (local audio only)");
       return;
     } // SECURITY: a bus {action:"say"} must not fetch arbitrary remote audio. Local file:///blob:/data: pass.
+    url = toAppUrl(url); // file:///...wav from speak.py rides the app://enigma/@fs/ form (page origin is app://)
     stop();
     speaking = true; // mark NOW so isSpeaking() is true during the async load/decode too
     const myseq = seq; // this call's generation (stop() bumped it)

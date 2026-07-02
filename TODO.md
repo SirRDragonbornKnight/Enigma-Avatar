@@ -27,7 +27,8 @@ src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boo
 
 **Move-set redesign (DONE 2026-06-29):** one name per concept, NO backward-compat aliases. Merged 4
 duplicate pairs so a driver never guesses which verb: `move` (was moveTo+goTo, routes on {px,py} vs
-{to}), `look` (was lookAt+lookMode, {at} vs {mode}), `morph` (was morph+setMorph, default saves /
+{to}), `look` (was lookAt+lookMode — `look` itself was REMOVED 2026-06-30 with the cursor-gaze
+system; it is not a live verb), `morph` (was morph+setMorph, default saves /
 {save:false} probes), `pose` (was pose+layer, {clear:"id"}|{clear:true}). Renamed 2 implementation
 names: `setDisplay`->`monitor`, `setMesh`->`mesh`. Dropped 4 aliases (`screenshot`/`hand`/`caps`/old
 `monitor`). Added `query:"actions"` (live verb list -- the AI "what can I send?" hook). Touched

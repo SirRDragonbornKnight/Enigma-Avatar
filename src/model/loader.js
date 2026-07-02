@@ -10,6 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+import { toAppUrl } from "../util/localurl.js";
 
 const TEX_RE = /\.(tga|png|jpe?g|webp|bmp|gif|ktx2|basis|dds)(\?.*)?$/i;
 export const baseName = (u) => u.split(/[?#]/)[0].split(/[\\/]/).pop();
@@ -98,6 +99,9 @@ export function loadAsset(url, onOk, onErr, opts = {}) {
     onErr?.(new Error("remote URL load blocked (local files only)"));
     return;
   }
+  // The page origin is app://enigma — file:// URLs and raw Windows paths (bus load, profiles,
+  // attachments) must ride the /@fs/ form; relative bundle refs pass through. One boundary, here.
+  url = toAppUrl(url);
   const kind = opts.kind || kindOf(url);
   if (kind === "unsupported") {
     // HONEST failure — no loader for this format (.obj/.dae/...)

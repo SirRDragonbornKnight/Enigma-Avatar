@@ -14,11 +14,42 @@
 //   Ctrl+Shift+Alt+A    force full-interactive on/off (e.g. to reach the panel)
 //   Ctrl+Shift+Alt+ + / -   resize the avatar
 //   Ctrl+Shift+Alt+Q    quit
-const { app, BrowserWindow, screen, globalShortcut, ipcMain, dialog, Tray, Menu, nativeImage } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  screen,
+  globalShortcut,
+  ipcMain,
+  dialog,
+  Tray,
+  Menu,
+  nativeImage,
+  protocol,
+  net,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { pathToFileURL } = require("url");
 const { spawnSync } = require("child_process");
+
+// The renderer is served from app://enigma, NOT file:// (cutover 2026-07-02). file:// pages have a
+// broken platform: fetch() rejects the scheme outright (the bone_limits/profiles reads silently
+// failed on EVERY live launch until 9427d64), the CSP needs file:/blob:/data: carve-outs in every
+// directive, and the WebSocket Origin is the opaque "null". One custom standard scheme gives the
+// page a real origin: 'self' means something, fetch works, and the bus gate matches one string.
+//   app://enigma/<path>        -> <repo root>/<path>   (the bundle: index.html, src/, node_modules/,
+//                                 models/, *.json)
+//   app://enigma/@fs/<abs>     -> that absolute local path (external model libraries, TTS wavs in
+//                                 %TEMP% — the same reach the file:// page had; models MUST keep
+//                                 loading from outside the repo, e.g. C:\Users\...\3d Avatar\)
+// Must run before app ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "app",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
 
 // Disable the HTTP/module cache so renderer edits always load fresh — this kills
 // the manual `?v=NN` cache-busting ritual in index.html / the JS imports (the
@@ -37,7 +68,11 @@ app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 let windows = []; // [{ displayId, win, bounds, isBrain }] — bounds in DIP
 let tray = null;
 let forceInteractive = false;
-let _aiControlOn = true; // mirror of the brain's AI-control kill-switch, for the tray checkbox (brain reports it via "avatar:aiControlState"; the tray toggles it via "avatar:setAiControl")
+// AI-control kill-switch AUTHORITY (moved from renderer localStorage 2026-07-02): main owns the
+// state, persists it in window-state.json, and pushes changes to every window ("avatar:aiControl:changed").
+// Renderers only mirror it (the bus gate reads the mirror) and request changes ("avatar:aiControl:set").
+// One owner: a hung/compromised renderer can't hold safety state hostage, and tray + Settings can't drift.
+let _aiControlOn = true; // real value loaded from window-state.json in init(), before any window exists
 let _forceThrough = false; // PANIC: force EVERY window click-through so the desktop is always reclaimable (Ctrl+Shift+Alt+C)
 // STICKY view-only lock (set by env at launch): she renders but NEVER captures a click on ANY monitor.
 // Unlike the _forceThrough panic latch, this is NOT cleared by bringToDisplay/monitor moves — so a
@@ -238,7 +273,7 @@ function setGlobalPos(x, y, clamp) {
   gPos.x = p.x;
   gPos.y = p.y;
   publishPos();
-  savePosSoon(); // remember her monitor + spot across launches (drag / nudge / tray / bus / "monitor" all route here)
+  saveStateSoon(); // remember her monitor + spot across launches (drag / nudge / tray / bus / "monitor" all route here)
 }
 
 // --- click-through arbiter --------------------------------------------------
@@ -361,7 +396,7 @@ function makeWindow(display, isBrain, peerCount) {
   // or spawn a window. (No-op in normal use; closes a renderer-compromise escalation path.)
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
-  win.loadFile(path.join(ROOT, "index.html"));
+  win.loadURL("app://enigma/index.html");
   // PERSISTENT listener (not .once): a reload (tray "Reload avatar" / the render-process-gone
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
   // sits blank forever, never knowing its role (the audited "reload bricks every window" bug).
@@ -381,6 +416,7 @@ function makeWindow(display, isBrain, peerCount) {
         origin: { x: b.x, y: b.y },
         bounds: { width: b.width, height: b.height },
         peerCount: peerCount || 0,
+        aiControl: _aiControlOn, // main's persisted kill-switch state — the mirror seeds from init, race-free
       });
       const dh = displayForGlobalPos(),
         dHere = dh.bounds,
@@ -602,13 +638,28 @@ function loadSavedPos() {
   } catch {} // no file yet / unreadable -> fall back to the primary-centre default
   return null;
 }
-function savePosSoon() {
+function loadSavedAiControl() {
+  try {
+    const j = JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+    if (j && typeof j.aiControl === "boolean") return j.aiControl;
+  } catch {}
+  return true; // default ON — preserves the say.py / Odysseus workflow on a fresh install
+}
+function saveStateSoon() {
   clearTimeout(_stateTimer);
   _stateTimer = setTimeout(() => {
     try {
-      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y } }, null, 2));
+      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y }, aiControl: _aiControlOn }, null, 2));
     } catch {}
   }, 800);
+}
+// The ONE mutation path for the kill-switch — tray, Settings, and any future surface all land here:
+// set, persist, push to every window's mirror, re-check the tray.
+function setAiControlAuthority(on) {
+  _aiControlOn = !!on;
+  saveStateSoon();
+  broadcast("avatar:aiControl:changed", _aiControlOn);
+  refreshTrayMenu();
 }
 
 // Persist the per-avatar profiles (attachments + tuned physics) as a real file the
@@ -700,7 +751,7 @@ function buildTrayMenu() {
       label: "Accept AI control (bus)",
       type: "checkbox",
       checked: _aiControlOn,
-      click: () => toBrain("avatar:setAiControl", !_aiControlOn), // brain applies + persists, then reports back -> menu re-checks
+      click: () => setAiControlAuthority(!_aiControlOn), // main IS the authority: set + persist + push to every window's mirror
     }, // kill-switch: untick to make the avatar ignore EVERY command from the AI bus (no surprises)
     { type: "separator" },
     {
@@ -763,6 +814,30 @@ function init() {
   try {
     app.setAppUserModelId("com.enigma.avatar");
   } catch {} // stable identity → tray balloons + correct grouping
+  _aiControlOn = loadSavedAiControl(); // BEFORE any window: avatar:init carries this to every renderer
+  // app://enigma file server (see registerSchemesAsPrivileged at the top for the URL shapes).
+  // GUARD AT THE BOUNDARY: bundle paths are contained to ROOT (a crafted ../ cannot escape);
+  // /@fs/ serves exactly one absolute path with no remote reach — net.fetch is handed a file://
+  // URL, never the request's own URL, so this can only ever read local files.
+  protocol.handle("app", (req) => {
+    let u;
+    try {
+      u = new URL(req.url);
+    } catch {
+      return new Response("bad url", { status: 400 });
+    }
+    if (u.host !== "enigma") return new Response("unknown host", { status: 404 });
+    const p = decodeURIComponent(u.pathname);
+    if (p.startsWith("/@fs/")) {
+      // absolute local path (Windows: /@fs/C:/Users/... -> C:/Users/...)
+      return net.fetch(pathToFileURL(p.slice(5)).toString());
+    }
+    const abs = path.resolve(ROOT, "." + p);
+    if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) {
+      return new Response("forbidden", { status: 403 }); // traversal out of the bundle
+    }
+    return net.fetch(pathToFileURL(abs).toString());
+  });
   createWindowSet();
   createTray();
 
@@ -810,12 +885,9 @@ function init() {
     applyInteractive();
   });
   ipcMain.on("avatar:quit", () => app.quit());
-  // The brain reports its AI-control kill-switch state (on launch + on every toggle) so the tray
-  // checkbox reflects the truth — including a state the brain restored from a previous session.
-  ipcMain.on("avatar:aiControlState", (_e, on) => {
-    _aiControlOn = !!on;
-    refreshTrayMenu();
-  });
+  // Kill-switch change REQUESTS from any renderer (the Settings checkbox) — main applies them as
+  // the single authority; the state lands back on every window via "avatar:aiControl:changed".
+  ipcMain.on("avatar:aiControl:set", (_e, on) => setAiControlAuthority(!!on));
 
   // Global position: the brain pushes glide/nudge/goTo steps here; main re-broadcasts to all windows.
   // Ignored while a DRAG owns the position — a glide step racing the 8ms cursor-follow is a visible blip.

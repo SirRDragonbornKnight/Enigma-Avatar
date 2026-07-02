@@ -1,6 +1,30 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-06-26 (intent-overhaul reconciliation)._
+_Last updated 2026-07-02 (app:// cutover, strict bus wire, main-owned kill-switch)._
+
+## 2026-07-02 — the file:// era is over
+
+- **The page is served from `app://enigma`** (a custom Electron protocol in `shell/main.cjs`), not
+  `file://`. `fetch()` works, `'self'` in the CSP covers everything local (no `file:` carve-outs),
+  and the bus Origin is the literal string `app://enigma`. External model libraries and TTS WAVs
+  ride `app://enigma/@fs/<absolute path>` (mapped in `src/util/localurl.js`); loading from outside
+  the repo keeps working with no path restriction.
+- **Why it happened:** `fetch("./bone_limits.json")` (and `profiles.json`, and the FBX
+  `materials.json` sidecar) can NEVER succeed on a `file://` page — so the joint/speed-limit system
+  was silently inert on every live launch from its introduction until 2026-07-01, while http-served
+  tests passed. The limits table (90 deg/s caps, real joint ranges, 60 deg/s default) is **live for
+  the first time**: bus-authored poses now EASE instead of snapping, and any drive recipe tuned
+  before 2026-07-01 was tuned without clamps.
+- **The bus wire is STRICT:** `connect()` validates every inbound command against
+  `src/control/protocol.js` — an unknown action or missing required field gets a NAMED
+  `{error: reason}` reply (reqId callers) and never dispatches. The registry stays lenient for
+  in-process callers.
+- **The kill-switch authority lives in MAIN** (persisted in `window-state.json`, no renderer
+  localStorage): tray and Settings both route through one setter; every window mirrors the pushed
+  state; `avatar:init` seeds it race-free.
+- **The bus routes replies:** requests' reqIds are rewritten to unique hub ids and each reply goes
+  back to its asker alone (two drivers both using `"reqId": 1` can no longer consume each other's
+  answers). A bus monitor no longer sees routed replies — only requests and unrouted replies.
 
 A rigged 3D model (human / animal / robot) that floats on a transparent, always-on-top,
 click-through desktop overlay (Desktop-Mate-style). Loads any glTF/GLB/VRM/FBX, drives
@@ -32,8 +56,10 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
   `flex` channel honors the same per-role limits (was a flat +-2.2 rad); and a per-frame angular
   delta clamp enforces each role's `speed_limit` (deg/s) from `bone_limits.json` so motion is
   velocity-continuous and never janky. The layer `speed` param is now meaningful for data layers
-  (was a no-op). (Feel consequence to tune by eye: the co-speech head wiggle is now rate-limited to
-  the head's `speed_limit`.)
+  (was a no-op). (Measured 2026-07-02: co-speech is NOT affected by the clamp — its peak angular
+  velocity is ~30 deg/s, well under the 90 deg/s caps. What the clamp DOES shape is every
+  bus-authored pose/flex layer. Note the whole table was silently inert on live launches until
+  2026-07-01 — see the 2026-07-02 entry above.)
 - **VRM bodies now actually move.** `vrm.humanoid.autoUpdateHumanBones=false` is set at load, so
   `vrm.update()` no longer copies the rest-pose humanoid bones back over the AI pose every frame.
   Pinned by `tests/vrm_order.test.js`.
@@ -48,7 +74,9 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `node --test` -> **261 pass / 0 fail / 11 skipped** (2026-06-30, after removing the cursor-look gaze system, `brain.py`, and the `src/engine/state.js` container); python avatar tests 19/19; eslint + prettier clean.
+- Suite: `node --test` -> **267 pass / 0 fail / 11 skipped** (2026-07-02, incl. the localurl mapping
+  and strict-wire tests); pytest **21/21** (origin gate incl. `app://enigma`, reply routing, protocol
+  mirror, bone data, voice service); eslint + prettier + tsc clean.
 
 ## Motion compositor & AI control (P1-P4)
 
@@ -64,7 +92,8 @@ bus (`handleCommand`):
   `speed_limit`. The motion math is in `motionmath.js` (unit-tested).
 - **co-speech** (P2) -- `voice.js` publishes the live speech-RMS envelope; `avatar.js` drives a
   `cospeech` BODY layer (`coSpeechPose`) so she moves while talking (not just the jaw); auto-clears
-  on speech end. (Now rate-limited by the head's `speed_limit` -- a feel axis to tune.)
+  on speech end. (Measured 2026-07-02: its ~30 deg/s peak sits under the 90 deg/s clamp -- the
+  speed limit never bites it.)
 - **`conjure`** (P3) -- `conjure.js`: spawn a prop, glide/hover/follow-a-hand, poof-dismiss
   (transform-based; rapier stays for throw/drop). `conjure spawn|move|dismiss|clear`. A bare prop
   name resolves through `resolvePropName`/`CONJURE_ASSETS` (unknown name = honest error, not a
@@ -139,17 +168,21 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
 
 ## AI control (the bus)
 
-- **`bus.py`** -- relay hub on `ws://127.0.0.1:8765` (the launcher starts it; or run it standalone). A
-  driver sends JSON `{action, ...}` commands that `avatar.js`'s `handleCommand` applies; any LLM that
-  speaks that protocol drives her.
-- **AI-control kill-switch ("no surprises").** A persisted toggle (`localStorage enigmaAvatar.aiControl`,
-  default ON) gates the bus at the `connect()` chokepoint (`src/control/surface.js`): while OFF, EVERY
-  inbound command is dropped before it dispatches (queries included -- a reqId driver gets an honest
+- **`bus.py`** -- routing hub on `ws://127.0.0.1:8765` (the launcher starts it; or run it standalone).
+  A driver sends JSON `{action, ...}` commands that the registry (`src/control/bus.js`) applies; any
+  LLM that speaks that protocol drives her. Commands broadcast; replies are ROUTED to their asker
+  (reqIds rewritten to hub ids and restored on delivery), so concurrent drivers never cross wires.
+  The wire is STRICT: invalid commands get a named `{error}` reply and never dispatch.
+- **AI-control kill-switch ("no surprises").** MAIN owns the toggle (persisted in
+  `window-state.json`, default ON); every window mirrors it, and the bus gate reads the mirror at the
+  `connect()` chokepoint (`src/control/surface.js`): while OFF, EVERY inbound command is dropped
+  before it dispatches (queries included -- a reqId driver gets an honest
   `{"error":"ai control paused"}` reply), so nothing over the bus can be a surprise. Flip it from
   **Settings -> "Accept AI control (bus)"** or the **tray** checkbox (reachable even when she can't be
   clicked); the still-open socket resumes instantly. Each ACCEPTED command also briefly reveals the
   status line ("AI: <action>") so an AI-driven move is never mistaken for a glitch. Origin gating in
-  `bus.py` (`ALLOWED_ORIGINS`) still blocks cross-site (browser) producers at the handshake.
+  `bus.py` (`ALLOWED_ORIGINS = [None, "app://enigma"]`) still blocks cross-site (browser) producers
+  at the handshake.
 - **`say.py`** -- CLI: `say.py model chica`; `size 0.8`; `fingers R 1`; `perform "Hi! [pose:right_arm=1.0]"`; `snap`; `demo` (run with no args for the full list). Fails honestly on bad args (no raw traceback); ASCII help.
 - **`speak.py`** -- Kokoro TTS: synthesize text and have her speak it + lip-sync.
 
@@ -168,9 +201,10 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   guard that LOCKS the per-model counts in "Per-avatar reality" below (with an `AVATAR_MODELS_DIR` override +
   a guard that fails loudly on an all-skip masquerade) -- so a cascade change that quietly breaks
   a real rig fails the suite. (Skips cleanly on a fresh clone, where `models/` is gitignored-absent.)
-- Also wired into the project's pytest suite via **`tests/test_avatar_rig.py`** (alongside `tests/test_avatar_bone_data.py`,
-  which locks the 19 role names in `bone_limits.json`). Verification of _rendering/feel_ still needs real eyes
-  (software-WebGL can't render skinned meshes) -- drive the live overlay + `EnigmaAvatar.snap()` to inspect.
+- (`tests/test_avatar_bone_data.py` locks the 19 role names in `bone_limits.json` on the pytest
+  side; the once-referenced `test_avatar_rig.py` never existed in this repo.) Verification of
+  _rendering/feel_ still needs real eyes (software-WebGL can't render skinned meshes) -- drive the
+  live overlay + `EnigmaAvatar.snap()` to inspect.
 
 ## Per-avatar reality (cascade results)
 

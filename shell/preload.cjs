@@ -88,10 +88,11 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // table decides who applies it (brain-only vs all copies). See UI_CMDS in avatar.js.
   uiCmd: (cmd) => ipcRenderer.send("avatar:uiCmd", cmd),
   onUiCmd: (cb) => ipcRenderer.on("avatar:uiCmd", (_e, cmd) => cb(cmd)),
-  // AI-control kill-switch (brain <-> main, for the tray checkbox). The brain REPORTS its persisted
-  // state so the tray item reflects it; main PUSHES a toggle request when the user clicks the tray.
-  aiControlChanged: (on) => ipcRenderer.send("avatar:aiControlState", !!on),
-  onSetAiControl: (cb) => ipcRenderer.on("avatar:setAiControl", (_e, on) => cb(!!on)),
+  // AI-control kill-switch: MAIN is the authority (persists in window-state.json, pushes changes).
+  // A renderer REQUESTS a change (Settings checkbox) and MIRRORS the pushed state; the initial
+  // value rides avatar:init.
+  setAiControl: (on) => ipcRenderer.send("avatar:aiControl:set", !!on),
+  onAiControlChanged: (cb) => ipcRenderer.on("avatar:aiControl:changed", (_e, on) => cb(!!on)),
   // Renderer → main stdout (renderer console.log doesn't reach the launcher; this does — for multi-window debug).
   log: (m) => ipcRenderer.send("avatar:log", String(m)),
 });

@@ -176,6 +176,36 @@ test("connect() routes an incoming bus message through the LATER-defined handleC
   );
 });
 
+test("connect() STRICT WIRE: an invalid command gets a NAMED error reply and never dispatches or flashes", () => {
+  // BITE: remove the validateCommand gate in surface.js and the garbage dispatches silently -> this fails.
+  const { surface, live } = makeSurface();
+  let lastWs = null;
+  class FakeWS {
+    constructor() {
+      lastWs = this;
+      this.sent = [];
+    }
+    send(s) {
+      this.sent.push(JSON.parse(s));
+    }
+  }
+  globalThis.WebSocket = FakeWS;
+  surface.connect("ws://x");
+  // unknown verb -> named error, no dispatch, no activity flash
+  lastWs.onmessage({ data: JSON.stringify({ action: "teleport", reqId: 3 }) });
+  assert.equal(live.handleCommand.calls.length, 0, "an unknown action never reaches the registry");
+  assert.equal(live.onAiCommand.calls.length, 0, "and never flashes as 'accepted'");
+  assert.equal(lastWs.sent[0].result.error, "unknown action 'teleport'", "the driver is TOLD what was wrong");
+  // known verb missing its required field -> same treatment
+  lastWs.onmessage({ data: JSON.stringify({ action: "say", reqId: 4 }) });
+  assert.equal(live.handleCommand.calls.length, 0);
+  assert.match(lastWs.sent[1].result.error, /'say' requires 'url'/);
+  // no reqId -> still dropped, just nothing to reply to
+  lastWs.onmessage({ data: JSON.stringify({ action: "teleport" }) });
+  assert.equal(live.handleCommand.calls.length, 0);
+  assert.equal(lastWs.sent.length, 2, "no reply channel, no reply — but never a dispatch");
+});
+
 test("honest degradation: compositor verbs return {error} (not throw) when the model has no rig", () => {
   const { surface } = makeSurface({ proc: null });
   assert.deepEqual(surface.poseLayer({ flex: { a: [1] } }), { error: "no procedural rig on this model" });

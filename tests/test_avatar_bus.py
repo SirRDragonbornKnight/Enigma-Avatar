@@ -50,9 +50,10 @@ async def _handshake_accepted(origin: str | None) -> bool:
         ("http://evil.example", False),  # a drive-by web page MUST be refused (CSWSH)
         ("https://attacker.test", False),  # https is no safer than http here
         ("http://127.0.0.1:7000", False),  # even a same-host web origin is still a browser
-        (None, True),  # native client (overlay / say.py / avbus) sends no Origin
-        ("file://", True),  # Electron's file-loaded page
-        ("null", True),  # the opaque origin some browsers use for file pages
+        (None, True),  # native client (say.py / avbus / any local driver) sends no Origin
+        ("app://enigma", True),  # the overlay page (served by the shell's app:// protocol handler)
+        ("file://", False),  # the file:// era ended with the app:// cutover — no longer valid
+        ("null", False),  # ditto the opaque file-page origin
     ],
 )
 def test_origin_gate(origin: str | None, accepted: bool) -> None:

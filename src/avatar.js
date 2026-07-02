@@ -252,28 +252,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return false;
     }
   })();
-  // Read a local sibling JSON. XHR, NOT fetch: the overlay page is file:// (main.cjs win.loadFile)
-  // and fetch() rejects file:// in the Electron renderer (voice.js learned the same lesson) — the
-  // old fetch calls here failed EVERY live launch while http-served tests passed. Resolves null on
-  // any failure (missing/unparseable), never rejects.
+  // Read a local sibling JSON off the bundle. Plain fetch works because the page is served from
+  // app://enigma (registered with supportFetchAPI) — the file:// era, where fetch() rejected the
+  // scheme and these reads silently failed on every live launch, ended with the app:// cutover.
+  // Resolves null on any failure (missing/unparseable), never rejects.
   const readLocalJson = (url) =>
-    new Promise((resolve) => {
-      try {
-        const xhr = new XMLHttpRequest();
-        xhr.open("GET", url, true);
-        xhr.onload = () => {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            resolve(null);
-          }
-        };
-        xhr.onerror = () => resolve(null);
-        xhr.send();
-      } catch {
-        resolve(null);
-      }
-    });
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
   // Resolved BEFORE any rig build (onModelLoaded awaits it): buildProceduralRig captures the table
   // at call time, so a first load that won this read's race used to build with {} — no joint caps
   // and no speed clamp — until the next model switch. Absent/corrupt file still resolves to {}
@@ -482,14 +468,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // the connect() chokepoint before they can do anything — so nothing the avatar does over the bus can
   // be a surprise. Flip it back on (Settings checkbox or the tray's "Accept AI control") and the
   // still-open bus connection resumes instantly. Default ON to preserve the say.py / Odysseus workflow.
-  const AI_CONTROL_KEY = "enigmaAvatar.aiControl";
-  let aiControlOn = (() => {
-    try {
-      return localStorage.getItem(AI_CONTROL_KEY) !== "0";
-    } catch {
-      return true;
-    }
-  })();
+  // MIRROR of main's kill-switch authority (main persists it in window-state.json and pushes every
+  // change; the initial value rides avatar:init). The no-IPC context (plain browser / tests) keeps
+  // the local default ON and toggles locally — nothing to persist there.
+  let aiControlOn = true;
   // Flash the (normally hidden) status line on each ACCEPTED bus command so an AI-driven move is never
   // mistaken for a glitch; restore the panel's prior visibility after a beat. setAiControl persists the
   // toggle and mirrors it to the tray checkbox. Both are wired into the control surface / UI below.
@@ -508,13 +490,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (_aiFlashWasHidden) el.classList.add("hidden");
     }, 1500);
   }
-  function setAiControl(on) {
+  function applyAiControl(on) {
+    // the pushed truth from main lands here (and the local no-IPC toggle)
     aiControlOn = !!on;
-    try {
-      localStorage.setItem(AI_CONTROL_KEY, aiControlOn ? "1" : "0");
-    } catch {}
     setStatus(aiControlOn ? "AI control ON" : "AI control PAUSED (bus commands ignored)");
-    window.avatarIPC?.aiControlChanged?.(aiControlOn); // keep the tray checkbox in sync
+  }
+  function setAiControl(on) {
+    if (window.avatarIPC?.setAiControl) {
+      window.avatarIPC.setAiControl(!!on); // main is the AUTHORITY — it persists and pushes the change back to every window's mirror
+      return;
+    }
+    applyAiControl(on); // no-IPC (plain browser / tests): local-only
   }
   // Accessor bridge so ui.js (Settings checkboxes) can read/write these toggles. Their
   // source of truth stays here — the animate loop reads the raw `let`s directly.
@@ -1097,9 +1083,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const profileFor = (key) => profiles[key] || (profiles[key] = {});
   async function loadProfiles() {
     const ok = (p) => p && typeof p === "object" && !Array.isArray(p); // a non-object profiles blob would round-trip garbage into every profileFor()
-    // readLocalJson, not fetch: the old fetch failed on every live file:// launch, so profiles.json
-    // (the file the shell saves over IPC) was WRITE-ONLY in production — reads always came from the
-    // localStorage mirror, and a cleared partition silently dropped every profile the file still had.
+    // profiles.json (the file the shell saves over IPC) is the durable store; localStorage is only
+    // the no-IPC (plain browser) fallback. In the file:// era this read silently failed on every
+    // live launch and profiles secretly lived in localStorage — the app:// cutover ended that.
     const j = await readLocalJson("./profiles.json");
     if (ok(j)) {
       profiles = j;
@@ -1119,9 +1105,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     clearTimeout(_profileTimer);
     _profileTimer = setTimeout(() => {
       const data = JSON.stringify(profiles, null, 2);
-      try {
-        window.avatarIPC?.saveProfiles?.(data);
-      } catch {}
+      // LOUD degrade: saveProfiles returns {ok}|{error} — swallowing a failed write here loses the
+      // user's tuned attachments/physics on the next launch with zero trace (the bone_limits lesson:
+      // a silent persistence failure can hide for weeks).
+      Promise.resolve(window.avatarIPC?.saveProfiles?.(data))
+        .then((r) => {
+          if (r && r.error) {
+            console.error("[avatar] profiles.json save FAILED:", r.error);
+            window.avatarIPC?.log?.("[avatar] profiles.json save FAILED: " + r.error);
+          }
+        })
+        .catch((e) => console.error("[avatar] profiles.json save FAILED:", e));
       try {
         localStorage.setItem(PROFILE_KEY, data);
       } catch {}
@@ -2338,8 +2332,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         .saveThumb({ id, rect: onMyDisplay() ? thumbRect() : null }) // her window ≠ this one → full capture (our rect is the wrong pixel space there)
         .then((r) => {
           if (r && r.ok) ui?.refreshModelList?.();
-        }) // refresh so the new picture shows
-        .catch(() => {});
+          else if (r && r.error) console.warn("[avatar] gallery thumb save failed:", r.error); // cosmetic, but say so once
+        })
+        .catch((e) => console.warn("[avatar] gallery thumb save failed:", e));
     };
     _thumbTimer = setTimeout(tryCapture, 1400);
   }
@@ -2431,11 +2426,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     parseControlTags,
     parseTagArg,
     wake,
-    // flash the status line on each ACCEPTED command — gate on the live verb table (isBusAction,
-    // bound below with the registry) so an unknown action the bus no-ops does NOT flash "accepted"
-    onAiCommand: (action) => {
-      if (isBusAction(action)) flashAiActivity(action);
-    },
+    onAiCommand: (action) => flashAiActivity(action), // no-surprises flash — connect() validates before calling, so only real commands reach this
   });
   // Answer a 'query' from the AI bus with LIVE ground truth — the overlay is the authority on
   // what it actually loaded (current model, facial/mouth mode, materials by index, roles).
@@ -2462,12 +2453,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (info.bounds) myBounds = info.bounds;
     _peerCount = info.peerCount || 0;
     _myWinId = info.winId ?? null; // to skip our own uiCmd echo (we already applied it)
+    if (typeof info.aiControl === "boolean") aiControlOn = info.aiControl; // seed the kill-switch mirror from main's persisted authority (silent — no boot flash)
     renderer.setSize(innerWidth, innerHeight);
     frameCamera();
     setStatus(_isBrain ? "brain window ready" : "mirror window ready");
     _initSeen = true;
     maybeStart();
   });
+  // Kill-switch changes pushed by main (tray click, or any window's Settings checkbox routed
+  // through the authority) land on EVERY window's mirror.
+  window.avatarIPC?.onAiControlChanged?.((on) => applyAiControl(on));
   let _wasDragFlag = false,
     _dragActive = false; // _dragActive: a main-owned drag is in flight (broadcast to EVERY window via p.drag) — so ANY window's pointerup can release it, even one that didn't start the grab
   window.avatarIPC?.onGlobalPos?.((p) => {
@@ -2776,7 +2771,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // object, and the ui* relays all exist — so the handlers' references resolve. Mutable engine state
   // (facial/spring/springOn/bonesShown/rotateMode/platforms/curDisp are reassigned over the avatar's
   // life) is passed as live getter thunks, never frozen, so a handler always sees current truth.
-  const { COMMANDS: BUS_COMMANDS, handleCommand } = createBusRegistry(engine, {
+  const { handleCommand } = createBusRegistry(engine, {
     EnigmaAvatar,
     ui,
     wake,
@@ -2805,8 +2800,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiSetPlatforms,
     uiHueShift,
   });
-  const isBusAction = (a) => typeof a === "string" && typeof BUS_COMMANDS[a] === "function"; // the no-surprises flash gates on this
-
   addEventListener("contextmenu", (e) => {
     // works in EVERY window — the menu opens where she was clicked; mutations relay
     if (ui.containsEvent(e.target)) {
@@ -3075,13 +3068,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _started = true;
     if (_isBrain) {
       startup();
-      if (window.avatarIPC) {
-        EnigmaAvatar.connect();
-        // Wire the AI-control kill-switch to the tray: report our persisted state for the checkbox,
-        // and accept toggle requests the tray sends (toBrain "avatar:setAiControl").
-        window.avatarIPC.aiControlChanged?.(aiControlOn);
-        window.avatarIPC.onSetAiControl?.((on) => setAiControl(on));
-      }
+      if (window.avatarIPC) EnigmaAvatar.connect();
     } // brain: load the model + drive the bus
     // peers: idle until main broadcasts avatar:model (onModel handler loads it)
   }

@@ -4,23 +4,23 @@
     <meta charset="utf-8" />
     <!--
       Content-Security-Policy: the renderer parses UNTRUSTED model files. This blocks every REMOTE
-      origin (no http(s)/remote-ws), so a crafted model can't phone home or pull remote code/scripts;
-      only LOCAL schemes are allowed. Carve-outs are load-bearing, do not remove without checking:
+      origin (no http(s)/remote-ws), so a crafted model can't phone home or pull remote code/scripts.
+      The page is served from app://enigma (shell/main.cjs protocol handler), so 'self' covers the
+      bundle AND the /@fs/ local-file form — no file: carve-outs anywhere. Load-bearing carve-outs:
         - 'wasm-unsafe-eval'  -> Rapier physics compiles WebAssembly
         - 'sha256-...' (script) -> the inline <script type="importmap"> below, allow-listed by
-          HASH instead of the old 'unsafe-inline' (which allowed ANY injected inline script and
-          weakened the crafted-model defense this CSP exists for). If you change the importmap's
-          text IN ANY WAY (even whitespace), recompute: sha256 of the exact bytes between the
-          tags, base64 -- python: base64.b64encode(hashlib.sha256(content.encode()).digest())
-        - blob:/data:         -> three.js textures, Draco/KTX2 worker decoders, Kokoro TTS audio
+          HASH (never 'unsafe-inline' — that would let ANY injected inline script run). If you
+          change the importmap's text IN ANY WAY (even whitespace), recompute: sha256 of the exact
+          bytes between the tags, base64 -- python:
+          base64.b64encode(hashlib.sha256(content.encode()).digest())
+        - blob:/data:         -> three.js textures, Draco/KTX2 worker decoders, drag-drop models
         - ws://127.0.0.1:8765 -> the local AI control bus (the ONLY network endpoint permitted)
-      VERIFY after changing: launch the overlay, load a model + conjure/throw a prop + speak; watch
-      the devtools console for "Refused to ... Content Security Policy" and widen the matching
-      directive (local schemes only) if anything is blocked.
+      VERIFY after changing: launch the overlay, load a model (one from OUTSIDE the repo too) +
+      conjure/throw a prop + speak; watch the console for "Refused to ... Content Security Policy".
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' file: blob: data:; script-src 'self' file: blob: 'wasm-unsafe-eval' 'sha256-6oDLgILYYgQmSSjnlP7ESKpAQ8XtSCo7i5jaXBCElmY='; style-src 'self' 'unsafe-inline'; connect-src 'self' file: blob: data: ws://127.0.0.1:8765; img-src 'self' file: blob: data:; media-src 'self' file: blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'"
+      content="default-src 'self' blob: data:; script-src 'self' blob: 'wasm-unsafe-eval' 'sha256-6oDLgILYYgQmSSjnlP7ESKpAQ8XtSCo7i5jaXBCElmY='; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data: ws://127.0.0.1:8765; img-src 'self' blob: data:; media-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Enigma Avatar</title>

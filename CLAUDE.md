@@ -13,9 +13,10 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
 
 ## Setup / build / test — run these first
 
-- Node tests: `node --test` (Node built-in runner; ~274 tests, some skip without the real model
+- Node tests: `node --test` (Node built-in runner; ~278 tests, some skip without the real model
   library). `node --check <file>.js` for a quick syntax pass.
-- Python tests: `python -m pytest tests/test_avatar_*.py -q` (the bus CSWSH origin-gate + bone data).
+- Python tests: `python -m pytest tests/ -q` (bus origin-gate + reply routing, protocol mirror,
+  bone data, voice service).
 - Console output must be **ASCII** (the Windows cp1252 console can't print `→`, `—`, etc.).
 - Launch the overlay: `Start-Avatar.ps1` (or `Enigma Avatar.bat`). Portable Node + Electron install on
   first run. No admin.
@@ -29,7 +30,12 @@ model t.txt` (REV 6). Models live in `C:\Users\SirKn\3d Avatar\Avatars\`. Judge/
 - **Control plane = the local WebSocket bus** (`python/bus.py`), driven by `python/say.py` (fire-and-forget)
   and `tools/avbus.py` (request/reply): pose/conjure/say/capabilities, plus inline perform tags in
   speech (`[pose:role=p/y/r]`, `[conjure:x]`). It is **Origin-gated** (blocks browser
-  drive-by / CSWSH); keep it so.
+  drive-by / CSWSH); keep it so. The wire is STRICT (protocol.js validates at `connect()`; invalid
+  commands get a named `{error}` reply) and replies are ROUTED to their asker via hub-rewritten reqIds.
+- **The page is served from `app://enigma`, never `file://`** (shell/main.cjs protocol handler).
+  `fetch()` works for bundle files; anything outside the repo (model libraries, TTS WAVs) must ride
+  `app://enigma/@fs/<abs path>` — map it with `src/util/localurl.js#toAppUrl` at the boundary, do
+  NOT hand a `file://` URL to the renderer. (The file:// era hid a dead limits system for weeks.)
 - **SAFETY — fail-safe click-through is load-bearing.** The overlay is transparent and must pass clicks
   THROUGH to the desktop whenever it's unsure the cursor is over her mesh — it once **locked the user
   out of their own desktop**. Never weaken: the arbiter's cursor-display gate, the `_forceThrough`

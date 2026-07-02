@@ -1,12 +1,16 @@
-"""Avatar bus — a tiny local WebSocket relay so anything on the machine can drive
+"""Avatar bus — a small local WebSocket hub so anything on the machine can drive
 the on-screen avatar: Enigma / Odysseus (any LLM that speaks the JSON action
 protocol) or the ``say.py`` CLI.
 
-It is a dumb hub on ``ws://127.0.0.1:8765``. The avatar
-(``enigma-avatar/avatar.js`` → ``EnigmaAvatar.connect()``) joins as a *consumer*;
-*producers* connect, send one JSON command, and the hub relays it to every
-connected avatar. Commands are exactly the objects ``avatar.js`` ``handleCommand``
-understands, e.g.::
+It serves ``ws://127.0.0.1:8765``. The avatar (``src/avatar.js`` →
+``EnigmaAvatar.connect()``) joins as a *consumer*; *producers* connect and send
+JSON commands. COMMANDS still broadcast to every other client, but requests
+carrying a ``reqId`` get it REWRITTEN to a unique hub id, and the matching
+``{"type":"reply",...}`` is routed back to the asker alone with its original id
+restored — so two concurrent drivers can never consume each other's answers
+(avbus.py's documented convention is literally ``"reqId": 1``). Replies matching
+no pending hub id fall back to broadcast. Commands are exactly the objects
+``src/control/bus.js`` ``handleCommand`` understands, e.g.::
 
     {"action": "pose",    "flex": {"right_arm": [1.0]}, "dur": 2}
     {"action": "load",    "url": "./models/glados/scene.gltf"}
@@ -14,7 +18,7 @@ understands, e.g.::
 
 Run standalone (the desktop overlay's Start-Avatar.ps1 launches it for you)::
 
-    python enigma-avatar/bus.py
+    python python/bus.py
 """
 
 from __future__ import annotations
@@ -41,16 +45,18 @@ PENDING: dict = {}  # hub reqId -> (requesting client, its original reqId); inse
 PENDING_MAX = 512
 _req_seq = 0  # hub reqId counter
 
-# Local-trust boundary (CSWSH gate). Native clients (the overlay, avbus.py, modkit) send NO Origin
-# header; Electron's file-loaded page sends "file://" or the opaque "null". A web page the user happens
-# to visit sends its http(s) origin -> refuse it at the handshake. Keep this list tight: anything that
-# allow-lists an http(s) origin re-opens cross-site WebSocket hijacking. (Regression-tested.)
-ALLOWED_ORIGINS = [None, "file://", "null"]
+# Local-trust boundary (CSWSH gate). Native clients (say.py, avbus.py, any local driver) send NO
+# Origin header; the overlay page is served from app://enigma (shell/main.cjs protocol handler) and
+# sends exactly that. A web page the user happens to visit sends its http(s) origin -> refuse it at
+# the handshake. Keep this list tight: anything that allow-lists an http(s) origin re-opens
+# cross-site WebSocket hijacking. (Regression-tested; the file://-era "file://"/"null" entries died
+# with the app:// cutover.)
+ALLOWED_ORIGINS = [None, "app://enigma"]
 
 
 async def _handler(ws) -> None:
-    """Every client (avatars + producers) lands here. Anything one client sends
-    is relayed to all the OTHERS — so a producer's command reaches the avatars."""
+    """Every client (avatars + producers) lands here. Commands broadcast to all the
+    OTHERS (with reqIds rewritten to hub ids); replies route back to the asker alone."""
     CLIENTS.add(ws)
     print(f"avatar bus: client connected ({len(CLIENTS)} now)", file=sys.stderr, flush=True)
     try:

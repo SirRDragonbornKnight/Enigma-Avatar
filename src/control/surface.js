@@ -16,6 +16,7 @@
 //     engine — only ever read at runtime (settings/state/connect), never at build.
 //   * `services` — the stable delegate functions/behavior (glideTo, applySize, recolor, onAiCommand, …).
 import * as THREE from "three";
+import { validateCommand } from "./protocol.js";
 
 export function createControlSurface(engine, services) {
   const {
@@ -391,9 +392,23 @@ export function createControlSurface(engine, services) {
             }
             return;
           }
+          // STRICT WIRE CONTRACT: the protocol validator gates every inbound command — an unknown
+          // action or a missing required field gets a NAMED error back (reqId callers) and never
+          // dispatches. The registry itself stays lenient for in-process callers; the wire does not.
+          const v = validateCommand(c);
+          if (!v.ok) {
+            if (c.reqId != null) {
+              try {
+                ws.send(
+                  JSON.stringify({ type: "reply", reqId: c.reqId, action: c.action, result: { error: v.reason } })
+                );
+              } catch {}
+            }
+            return;
+          }
           let result;
           try {
-            if (onAiCommand) onAiCommand(c.action); // no-surprises indicator (the callback gates on the live verb table, so unknown actions don't flash)
+            if (onAiCommand) onAiCommand(c.action); // no-surprises indicator — only VALIDATED commands reach this
             result = engine.handleCommand(c);
             // A few handlers are async (e.g. `snap` resolves the written PNG's path); await before we
             // reply so a reqId driver gets the real result, not a serialized Promise. Sync handlers
