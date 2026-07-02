@@ -889,6 +889,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     capabilities: () => ({
       // what the brain can drive on THIS resolved model
       roles: Object.keys(bones),
+      roleBones: Object.fromEntries(Object.entries(bones).map(([r, b]) => [r, b.name])), // role -> the REAL bone name on this rig (highlightBone takes either)
       flexRoles: Object.keys(flexAxis),
       channels: {
         pose: true,

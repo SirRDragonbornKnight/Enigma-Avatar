@@ -102,7 +102,7 @@ export function createBusRegistry(engine, services) {
       return EnigmaAvatar.goTo("center");
     },
     size: (c) => {
-      EnigmaAvatar.setSize(c.value ?? 1);
+      EnigmaAvatar.setSize(c.value ?? 1, c.anchor); // optional anchor "hips"|"head" pins that point on screen (default: feet)
     },
     rotate: (c) => {
       // turn the avatar — {x,y,z}°, {axis,deg}, or legacy {deg}=yaw

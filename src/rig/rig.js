@@ -43,11 +43,13 @@ export const ROLES = [
 // SKIP: fingers/toes/face/dangly bits, IK helpers, deformation aids — "helper"/"twist"
 // bones must never win a primary role over the real joint (avatar audit #4).
 const SKIP =
-  /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits|jiggle|pads?([^a-z]|$)/i;
-// `pads?` + `jiggle` (model-zoo 2026-07-02): armor/accessory bones CONTAIN role words —
+  /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits|jig|pads?([^a-z]|$)/i;
+// `pads?` + `jig` (model-zoo 2026-07-02): armor/accessory bones CONTAIN role words —
 // "R_ShoulderPad_jnt" stole right_shoulder from the real "R_Shoulder_jnt" purely by traversal
 // order (FNaF lolbit/mangle), and "L_Shoulder_Jiggle_jnt" is a secondary-motion aid, never the
-// joint. The boundary check keeps "paddle"-ish names matchable.
+// joint. The boundary check keeps "paddle"-ish names matchable. `jig` is deliberately bare
+// (fnia 2026-07-02): GMod rigs spell it "ThighJigR" — with only /jiggle/ that helper STOLE the
+// leg role and the knee bent sideways; no real joint name contains "jig".
 
 export function roleOfName(raw) {
   const n = raw.toLowerCase();
@@ -64,9 +66,12 @@ export function roleOfName(raw) {
   else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw) || /^r[A-Z]/.test(raw))
     side = "right";
   const has = (re) => re.test(n);
-  // Center bones are never side-tagged; a sided match (Bip_Pelvis_L/R) is an auxiliary
-  // bone — reject it so the true center bone wins regardless of traversal order.
-  if (has(/hips?|pelvis/)) return side ? null : "hips";
+  // Center bones are never side-tagged; a sided PELVIS (Bip_Pelvis_L/R) is an auxiliary
+  // bone — reject it so the true center bone wins regardless of traversal order. A sided
+  // HIP is different (fnia 2026-07-02): Source/GMod rigs name the THIGH joint "bip_hip_R",
+  // so it falls through to the limb chain below and resolves as the leg.
+  if (has(/pelvis/)) return side ? null : "hips";
+  if (has(/(^|[^a-z])hips?([^a-z]|$)/) && !side) return "hips";
   if (has(/upperchest|chest/)) return side ? null : "chest";
   if (has(/spine|lowerback|waist|spine2|abdomen/)) return side ? null : "spine"; // abdomen = Daz spine
   if (has(/neck/)) return side ? null : "neck";
@@ -80,7 +85,8 @@ export function roleOfName(raw) {
   else if (has(/hand|wrist/)) part = "hand";
   else if (has(/upper[_ ]?arm/) || (has(/arm(?!ature)/) && !has(/forearm/)))
     part = "arm"; // (?!ature): "Armature" is not an arm
-  else if (has(/thigh|up[_ ]?leg|upper[_ ]?leg/)) part = "leg";
+  else if (has(/thigh|up[_ ]?leg|upper[_ ]?leg|(^|[^a-z])hips?([^a-z]|$)/))
+    part = "leg"; // sided "hip" = Source-style thigh (bip_hip_R)
   else if (has(/calf|shin|knee|low(er)?[_ ]?leg/)) part = "shin";
   else if (has(/foot|ankle/)) part = "foot";
   else if (has(/leg/)) part = "leg";

@@ -35,7 +35,7 @@
 
 // ── PLACE / TRANSFORM ──────────────────────────────────────────────────────────
 /** @typedef {{ action: "move", px?: number, py?: number, to?: string, anchor?: string } & WithReqId} MoveCommand */
-/** @typedef {{ action: "size", value: number } & WithReqId} SizeCommand */
+/** @typedef {{ action: "size", value: number, anchor?: "feet"|"hips"|"head" } & WithReqId} SizeCommand */
 /** @typedef {{ action: "rotate", x?: number, y?: number, z?: number, axis?: string, deg?: number, value?: number } & WithReqId} RotateCommand */
 /** @typedef {{ action: "rotateMode", on?: boolean, value?: boolean } & WithReqId} RotateModeCommand */
 /** @typedef {{ action: "monitor", index?: number, value?: number | string } & WithReqId} MonitorCommand */

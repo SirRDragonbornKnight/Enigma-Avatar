@@ -74,7 +74,7 @@ export function createControlSurface(engine, services) {
     glideTo: (px, py) => glideTo(px, py),
     goTo: (target) => goTo(target), // move by NAME ("center","topleft","cursor",…) — AI movement without pixel math
     where: () => whereAmI(), // her screen-px position + screen size + cursor (AI spatial awareness)
-    setSize: (s) => applySize(s),
+    setSize: (s, anchor) => applySize(s, anchor), // anchor: "feet"(default)|"hips"|"head" — which body point stays put
     size: () => engine.sizeScale,
     load(url) {
       engine.uiLoadModel(url, url);

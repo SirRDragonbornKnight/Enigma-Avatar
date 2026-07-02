@@ -538,11 +538,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   //   • fitToScreen → the ONLY automatic adjustment: shrink-only, on load/recenter,
   //     so a too-large SAVED size can't strand the avatar clipped off a smaller monitor.
   // Net: manual sizing is unbounded-up / floored-down; auto-fit only ever shrinks.
-  function applySize(s) {
+  function applySize(s, anchor) {
     const n = +s;
     if (!isFinite(n)) return; // bus is stringly-typed — `size "big"` must not set rig.scale = NaN (invisible model, unrecoverable hit-test)
+    const prev = sizeScale;
     sizeScale = Math.max(0.02, n || 0.02); // no upper cap (removed min/max); tiny floor so multiplicative resize can recover
     rig.scale.setScalar(sizeScale);
+    // GROW-ANCHOR (user 2026-07-02): default scales from the FEET (gPos IS the feet point, so she
+    // stays planted on the floor). anchor "hips"|"head" pins THAT body point on screen instead —
+    // the fourth-wall "walk up to the screen" loom keeps her face in frame while she grows past it.
+    if ((anchor === "hips" || anchor === "head") && isFinite(worldH) && innerHeight > 0) {
+      const frac = anchor === "head" ? 0.92 : 0.5; // the pinned point's height as a fraction of her height
+      const dW = (modelDims.h || BASE_H) * (sizeScale - prev) * frac; // how far that point rose, world units
+      setGlide(gPos.x, gPos.y + (dW * innerHeight) / worldH); // drop the feet to compensate (display-clamped, published)
+    }
     sizeByModel[curKey] = sizeScale;
     if (!window.avatarIPC || _isBrain)
       try {
@@ -869,6 +878,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         }
       }
       if (spring && profileFor(curKey).spring) spring.setParams(profileFor(curKey).spring); // per-avatar tuned physics (global hair feel)
+      if (profileFor(curKey).objects) physics.tune(profileFor(curKey).objects); // per-avatar object-toy feel (ball gravity/bounce)
       if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
     }
     // RE-ANCHOR + RE-MEASURE — deliberately AFTER the gravity counter-rotation above: this measures
@@ -1306,6 +1316,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (spring) spring.setParams(prof.spring);
     saveProfileSoon();
     return prof.spring;
+  }
+  // Object-toy feel (thrown/dropped balls): gravity + bounce, saved per avatar like the hair tune.
+  // (User 2026-07-02: the Ball menu had no way to SEE or SET what object gravity was doing.)
+  function physicsTune(p) {
+    const prof = profileFor(curKey);
+    prof.objects = { ...(prof.objects || {}), ...numericOnly(p) };
+    physics.tune(prof.objects);
+    saveProfileSoon();
+    return prof.objects;
   }
   function facialTune(p) {
     const prof = profileFor(curKey);
@@ -1751,10 +1770,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _hlTimer = 0;
   function highlightBone(name, dur = 1.6) {
     if (!model || !name) return false;
-    let b = null;
-    model.traverse((o) => {
-      if (o.isBone && o.name === String(name)) b = o;
-    });
+    const key = String(name);
+    let b = roleBones[key] || null; // canonical role ("left_arm") resolves FIRST — the AI speaks roles, not per-rig bone names
+    if (!b)
+      model.traverse((o) => {
+        if (o.isBone && o.name === key) b = o;
+      });
     if (!b) {
       setStatus(`no bone "${name}"`);
       return false;
@@ -2525,6 +2546,22 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     loadModel: { scope: "brain", fn: (u, l) => loadModel(u, l) },
     // (express relay removed — body expressions were purged 2026-06-25)
     ball: { scope: "brain", fn: (n) => EnigmaAvatar.ball(n) },
+    // Conjured-prop controls (user 2026-07-02: a stranded prop sat mid-screen with "nothing I can
+    // do about it") — props live in the BRAIN scene, so the menu's dismiss/clear relay there.
+    conjureDismiss: {
+      scope: "brain",
+      fn: (id) => {
+        conjurer.dismiss(String(id));
+        wake(1);
+      },
+    },
+    conjureClear: {
+      scope: "brain",
+      fn: () => {
+        conjurer.clear();
+        wake(1);
+      },
+    },
     resizeBy: { scope: "brain", fn: (m) => resizeBy(m) },
     applySize: { scope: "brain", fn: (s) => applySize(s) },
     _rotLive: {
@@ -2559,6 +2596,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     showSkeleton: { scope: "all", fn: (on) => showSkeleton(on) },
     setShadowOn: { scope: "all", fn: (v) => setShadowOn(v) },
     springTune: { scope: "all", bound: true, fn: (p) => springTune(p) },
+    physicsTune: { scope: "brain", fn: (p) => physicsTune(p) }, // rapier props live in the brain's scene only
     facialTune: { scope: "all", bound: true, fn: (p) => facialTune(p) },
     setRegionWeight: { scope: "all", bound: true, fn: (r, w) => setRegionWeight(r, w) },
     attachMesh: { scope: "all", bound: true, fn: (u, o) => attachMesh(u, o) },
@@ -2607,6 +2645,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const uiLoadModel = relayed("loadModel"),
     uiSetRot = relayed("setRot"),
     uiSetRotAxis = relayed("setRotAxis");
+  const uiConjureDismiss = relayed("conjureDismiss"),
+    uiConjureClear = relayed("conjureClear");
   const uiResizeBy = relayed("resizeBy"),
     uiApplySize = relayed("applySize"),
     uiRotLive = relayed("_rotLive");
@@ -2634,6 +2674,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiClearAttachments = relayed("clearAttachments"),
     uiTuneAttachment = relayed("tuneAttachment");
   const uiSpringTune = relayed("springTune"),
+    uiPhysicsTune = relayed("physicsTune"),
     uiFacialTune = relayed("facialTune");
   // Settings checkboxes write the engine toggles through here → mirrored to every window (locked /
   // rotate-mode gate POINTER handling per window; the rest gate the brain's animation loop).
@@ -2710,10 +2751,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     clearAttachments: uiClearAttachments,
     // (express binding removed — body expressions were purged 2026-06-25; the Express menu is gone too)
     ball: relayed("ball"), // rapier ball-physics toys (throw/drop/clear) for the right-click "Ball" menu
+    conjureIds: () => conjurer.ids(), // live conjured props (brain window; peers honestly list none)
+    conjureDismiss: uiConjureDismiss,
+    conjureClear: uiConjureClear, // manual escape hatch — a stranded prop is no longer bus-only
     showSkeleton: uiShowSkeleton,
     recolor: uiRecolor,
     hueShift: uiHueShift,
     springTune: uiSpringTune,
+    physicsTune: uiPhysicsTune,
     tuneAttachment: uiTuneAttachment,
     resetColors: uiResetColors,
     materials: () => EnigmaAvatar.materials(), // parts BY INDEX (+name/mesh hints, +current hex) for the Settings color list

@@ -235,6 +235,19 @@ test("accessory bones never steal a role by substring: ...Pad / ...Jiggle are SK
   assert.equal(roleOfName("L_Elbow_Jiggle_jnt_042"), null, "jiggle elbows are not forearms");
 });
 
+test("Source/GMod bip naming (fnia lesson): sided 'hip' IS the thigh; 'Jig' helpers never win", () => {
+  // fnia_models_gmod_cally3d: legs resolved to ThighJigR/L (jiggle aids, arbitrary axes -> knees
+  // bent sideways) because bip_hip_R (the REAL thigh in Source naming) was rejected as a sided
+  // center bone and /jiggle/ didn't catch the "Jig" spelling.
+  assert.equal(roleOfName("bip_hip_R_083"), "right_leg", "Source thigh joint is named 'hip'");
+  assert.equal(roleOfName("bip_hip_L_091"), "left_leg");
+  assert.equal(roleOfName("ThighJigR_087"), null, "thigh JIGGLE helper is not the leg");
+  assert.equal(roleOfName("ThighJigL_095"), null);
+  assert.equal(roleOfName("bip_pelvis_07"), "hips", "the center pelvis still wins hips");
+  assert.equal(roleOfName("Bip_Pelvis_L"), null, "sided PELVIS stays an auxiliary");
+  assert.equal(roleOfName("shipMast"), null, "'hip' inside a word is not a hip");
+});
+
 test("joint-style promotion: an OUTBOARD 'shoulder' that directly parents the elbow BECOMES the arm", () => {
   // FNaF-style chain: Shoulder_jnt (head at the arm line) -> Elbow -> Wrist, no upper-arm bone.
   // The shoulder bone spans the upper-arm segment, so it takes the ARM role (else the whole arm

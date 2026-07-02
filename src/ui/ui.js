@@ -661,6 +661,20 @@ export function createUI(api) {
           springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
           springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
           // (the "Hair breeze" knob died with the idle system, 2026-06-12 — ambient wind was self-generated motion)
+          // Object toys (the Ball menu's thrown/dropped balls) — rapier feel, saved per avatar like
+          // the hair tune. Gravity applies live to balls in flight; bounce applies to the next throw.
+          if (api.physicsTune) {
+            const ob = () => profileFor(curKey).objects || {};
+            const objNum = (label, key, min, max, step, dflt) =>
+              advBox.appendChild(
+                sRow(
+                  label,
+                  numInput(ob()[key] ?? dflt, { min, max, step, onChange: (v) => api.physicsTune({ [key]: v }) })
+                )
+              );
+            objNum("Object gravity", "gravity", "-40", "0", "0.5", -14);
+            objNum("Object bounce", "bounce", "0", "1", "0.05", 0.62);
+          }
         },
       });
     }
@@ -1623,6 +1637,35 @@ export function createUI(api) {
           BALL_ACTIONS.map((m) => ({ label: m.label, onClick: () => api.ball(m.name) }))
         )
       ); // rapier ball-physics toys (the Express emotes + gesture catalog were purged 2026-06-25 — motion is AI-authored)
+    // Conjured props — the manual escape hatch (user 2026-07-02: an AI-conjured chair sat stranded
+    // mid-screen with no way to remove it by hand). Lists each live prop + a clear-all; the menu is
+    // rebuilt on every open so the list is always current.
+    if (api.conjureClear) {
+      const cids = api.conjureIds ? api.conjureIds() : [];
+      if (cids.length)
+        menu.appendChild(
+          submenu(
+            "Conjured props",
+            cids
+              .map((id) => ({
+                label: "dismiss: " + id,
+                onClick: () => {
+                  api.conjureDismiss(id);
+                  hideMenu();
+                },
+              }))
+              .concat([
+                {
+                  label: "— clear all —",
+                  onClick: () => {
+                    api.conjureClear();
+                    hideMenu();
+                  },
+                },
+              ])
+          )
+        );
+    }
     // Resize = scroll wheel (or +/- keys); monitor = drag across an edge or Ctrl+Shift+Alt+M.
     menu.appendChild(menuSep());
     menu.appendChild(

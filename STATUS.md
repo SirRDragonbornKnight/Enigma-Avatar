@@ -1,6 +1,32 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-02 (app:// cutover, strict bus wire, main-owned kill-switch)._
+_Last updated 2026-07-02 (Source-rig leg fix, role-aware highlightBone, size anchor, object-physics knobs)._
+
+## 2026-07-02 (later) -- animation session findings + 4 fixes (UNCOMMITTED)
+
+- **Rig fix (the "legs bend backwards" bug):** on Source/GMod rigs (fnia pack) the LEG roles
+  resolved to `ThighJigR/L` jiggle helpers because (a) the real thigh is named `bip_hip_R` and the
+  sided-hip rule rejected it as an auxiliary center bone, and (b) SKIP only knew the spelling
+  "jiggle", not "Jig". Fixed in `src/rig/rig.js` (sided hip -> leg; bare `jig` in SKIP) + pinned in
+  `tests/rig.test.js`. Live receipt: fnia legs now drive `bip_hip_*`/`bip_knee_*`, knee folds the
+  right way (side-view snaps).
+- **`highlightBone` accepts canonical roles** (`left_arm`), not just raw bone names, and
+  `capabilities` now returns `roleBones` (role -> real bone name) -- the "which bone is my arm"
+  introspection. `showBones` + role highlight + a small flex + a side snap = the bone-direction
+  check recipe.
+- **`size` grow-anchor:** `{action:"size", value, anchor:"feet"|"hips"|"head"}` -- default stays
+  feet (floor-planted); `head` pins the face on screen for the walk-up-to-the-screen loom.
+- **Object-physics knobs:** Settings -> Advanced physics gained "Object gravity" (live) and
+  "Object bounce" (next throw), saved per avatar (`profile.objects`), engine defaults -14 / 0.62
+  (`physics.tune`). The Ball menu's behavior is now observable and tunable.
+- **Multi-character packs:** the rig binds ONE skeleton (first in traversal); other characters are
+  statues. Isolate a character with Parts show/hide and save it as an OUTFIT (fnia has "bonnie"
+  saved). Gotcha: isolated characters keep their authored offset from the pack origin.
+- **Conjured-props escape hatch:** right-click menu gained a "Conjured props" submenu (per-prop
+  dismiss + clear all; only shows while props exist) — an AI-stranded prop is no longer bus-only
+  (user hit exactly that: a test chair sat mid-screen untouchable). `api.conjureIds/-Dismiss/-Clear`,
+  registry scope=brain (props live in the brain scene).
+- Suite: node 282/0 (11 skip), pytest 21/21, eslint+prettier clean. Changes NOT yet committed.
 
 ## 2026-07-02 — the file:// era is over
 

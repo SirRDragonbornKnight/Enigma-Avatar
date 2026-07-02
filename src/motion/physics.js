@@ -20,6 +20,7 @@ export function createPhysics({ scene, loadAsset }) {
   const props = []; // [{ body, obj, radius }]
   let floorY = -4.6; // world-space floor line (screen bottom) — avatar.js updates it
   const GRAVITY = { x: 0, y: -14, z: 0 }; // single source of truth for the gravity vector (also exposed via diag())
+  let BOUNCE = 0.62; // ball restitution — user-tunable (Settings "Object bounce"); applies to the NEXT throw
 
   async function ensureWorld() {
     if (world) return;
@@ -122,7 +123,7 @@ export function createPhysics({ scene, loadAsset }) {
           body.setEnabledTranslations(true, true, false, true); // keep the toy in the 2D screen plane
           body.enableCcd(true); // CCD: a fast throw (vy ~5.8, dt<=0.05) can't tunnel thin slabs
           world.createCollider(
-            RAPIER.ColliderDesc.ball(r).setRestitution(0.62).setFriction(0.45).setDensity(1.2),
+            RAPIER.ColliderDesc.ball(r).setRestitution(BOUNCE).setFriction(0.45).setDensity(1.2),
             body
           );
           while (props.length >= 24) {
@@ -201,10 +202,23 @@ export function createPhysics({ scene, loadAsset }) {
     return awake; // keep the frame rate up only while something moves
   }
 
+  // USER-TUNABLE object feel (Settings "Advanced physics" → Object rows): gravity applies LIVE to
+  // the world (and mutating GRAVITY before the lazy init also works — the world is built from it);
+  // bounce applies to the NEXT thrown ball (spawned colliders keep the restitution they were born with).
+  function tune(p = {}) {
+    const g = +p.gravity;
+    if (isFinite(g)) {
+      GRAVITY.y = Math.min(0, g); // objects fall, never rise — an upward gravity strands balls at the ceiling forever
+      if (world) world.gravity.y = GRAVITY.y;
+    }
+    const b = +p.bounce;
+    if (isFinite(b)) BOUNCE = Math.max(0, Math.min(1, b));
+  }
+
   // Tiny by-numbers diagnostic: the live gravity vector + floor line, for verifying the
   // gravity-vs-floor contract (a thrown ball must rest at ~floorY + r) without poking internals.
   function diag() {
-    return { gravity: { ...GRAVITY }, floorY };
+    return { gravity: { ...GRAVITY }, bounce: BOUNCE, floorY };
   }
 
   return {
@@ -215,6 +229,7 @@ export function createPhysics({ scene, loadAsset }) {
     setPlatforms,
     setAvatar,
     serializeProps,
+    tune,
     diag,
     count: () => props.length,
   };
