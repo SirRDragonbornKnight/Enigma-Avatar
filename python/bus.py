@@ -90,7 +90,7 @@ async def _handler(ws) -> None:
         pass  # a dropped client must not crash the hub
     finally:
         CLIENTS.discard(ws)
-        for k in [k for k, v in PENDING.items() if v is ws]:
+        for k in [k for k, v in PENDING.items() if v[0] is ws]:
             PENDING.pop(k, None)  # a leaving client's pending replies have nowhere to go
         print(f"avatar bus: client left ({len(CLIENTS)} now)", file=sys.stderr, flush=True)
 
