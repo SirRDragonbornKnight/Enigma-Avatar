@@ -29,11 +29,16 @@ function discover(dir) {
   if (!fs.existsSync(dir)) return [];
   const out = [];
   for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!d.isDirectory()) continue;
-    const sub = path.join(dir, d.name);
-    const files = fs.readdirSync(sub);
-    const pick = files.find((f) => /^scene\.(gltf|glb)$/i.test(f)) || files.find((f) => /\.(glb|gltf|vrm)$/i.test(f));
-    if (pick) out.push(path.join(sub, pick));
+    if (d.isDirectory()) {
+      const sub = path.join(dir, d.name);
+      const files = fs.readdirSync(sub);
+      const pick = files.find((f) => /^scene\.(gltf|glb)$/i.test(f)) || files.find((f) => /\.(glb|gltf|vrm)$/i.test(f));
+      if (pick) out.push(path.join(sub, pick));
+    } else if (/\.(glb|gltf|vrm)$/i.test(d.name)) {
+      // FLAT library dirs too (Desktop\Avatars / 3d Avatar\Avatars are flat) — keyed by file stem,
+      // so AVATAR_MODELS_DIR pointed at either actually finds models (audit: it used to find NOTHING)
+      out.push(path.join(dir, d.name));
+    }
   }
   return out;
 }
@@ -52,13 +57,20 @@ const EXPECT = {
   // files hash-match each other and both measure 16 via tools/rig_report.mjs.
   fnaf_help_wanted__lolbit: 16,
   glamrock_mangleupdated: 16,
+  // zhu_yuan is IN models/ (user-imported) — locks the Daz Genesis naming support (was 4/19
+  // before 8edf66e; a side-detection regression would drop it straight back). Audit-added.
+  zhu_yuan__nsfw__zzz: 19,
   glados: 2,
   grace_howard: 0,
   toothless: 0,
   spyro: "static", // no skin/joints → no bone snapshot at all
 };
 
-const byDir = new Map(discover(MODELS).map((f) => [path.basename(path.dirname(f)), f]));
+const keyOf = (f) =>
+  path.dirname(f) === path.resolve(MODELS)
+    ? path.basename(f).replace(/\.(glb|gltf|vrm)$/i, "") // flat library file -> keyed by stem
+    : path.basename(path.dirname(f)); // models/<id>/scene.gltf -> keyed by the id dir
+const byDir = new Map(discover(MODELS).map((f) => [keyOf(f), f]));
 const matchedKeys = Object.keys(EXPECT).filter((dir) => byDir.has(dir));
 
 for (const [dir, expected] of Object.entries(EXPECT)) {

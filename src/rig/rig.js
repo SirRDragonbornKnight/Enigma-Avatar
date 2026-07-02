@@ -373,7 +373,12 @@ export function resolveBetween(snap, roleIds, source) {
   // pinned between-repair intent: never fake a bone that isn't there). The tell is the head
   // position: a clavicle head sits NEAR the centerline; a joint-style shoulder head sits OUT
   // at the arm line. Promote only when the head is already well outboard (>=50% of the elbow's
-  // horizontal reach from the body's center).
+  // horizontal reach from the body's center). Corpus-measured 2026-07-02 (33 models): true
+  // clavicles ratio 0.09-0.45, joint-style shoulders 0.55-1.05 — clean separation. KNOWN LATENT
+  // EDGE (zero-trust audit): a FOLDED bind (elbow tucked inboard) compresses the elbow's reach
+  // and can push a true clavicle over the threshold — no corpus rig combines a folded bind with
+  // a missing upper-arm bone, but if one appears, tighten this with a shoulder-to-elbow segment
+  // check rather than raw horiz ratios.
   const promote = (midRole, proxRole, distRole) => {
     if (roleIds[midRole] != null || roleIds[proxRole] == null || roleIds[distRole] == null) return;
     if (snap[roleIds[distRole]].parent !== roleIds[proxRole]) return; // a middle bone exists (fill's job) or unlinked

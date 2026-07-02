@@ -152,7 +152,7 @@ Files are folderized by concern (2026-06-29): `shell/` (Electron main), `src/<co
 - **Right-click menu + Settings** -- models, Add model.../clothing/prop/furniture, Size,
   Move to monitor, and a Settings dialog (model, size, hair physics, per-part color/hue tint,
   toggles for spring/look/face/lock/skeleton/panel, attachment fitting).
-- **Multi-monitor** -- per-display window; right-click -> Move to monitor, `Ctrl+Alt+M`, drag across an
+- **Multi-monitor** -- per-display window; right-click -> Move to monitor, `Ctrl+Shift+Alt+M`, drag across an
   edge to hop. **Cache disabled** in the shell, so renderer edits load fresh (no `?v=` bumping).
 - **No model loaded** -- an inert marker; the overlay shows an ASCII DOM hint to add a `.glb`.
 

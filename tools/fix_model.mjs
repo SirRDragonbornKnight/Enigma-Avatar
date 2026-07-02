@@ -48,6 +48,81 @@ function repairName(name, idx) {
   return name;
 }
 
+// ── scene-junk + duplicate-body planners (model-zoo 2026-07-02) ─────────────────────────────
+// Both repairs are MESH-DETACH passes: they delete `node.mesh` (and `node.skin`) but never remove
+// nodes or rebuild indices — the safest possible glTF surgery. Bones, animations, and hierarchy
+// are untouched; the orphaned mesh/accessor data stays behind as inert bytes.
+
+// every node that IS a joint or sits UNDER one (a hat parented to the Head joint is a legit
+// rigid attachment — never junk)
+function underJointSet(gltf) {
+  const nodes = Array.isArray(gltf.nodes) ? gltf.nodes : [];
+  const set = new Set();
+  for (const s of gltf.skins || []) for (const j of s.joints || []) set.add(j);
+  const queue = [...set];
+  while (queue.length) {
+    const i = queue.pop();
+    for (const c of nodes[i]?.children || [])
+      if (!set.has(c)) {
+        set.add(c);
+        queue.push(c);
+      }
+  }
+  return set;
+}
+
+// SCENE JUNK: a rigged file's unskinned meshes that hang OUTSIDE the skeleton — display shelves,
+// floating logos, backdrop planes (aveline ships all three). Files with no skin at all (statues,
+// props, furniture) are never touched: with no skeleton there is no "junk", only the model.
+export function planSceneJunk(gltf) {
+  if (!(gltf.skins || []).length) return [];
+  const under = underJointSet(gltf);
+  const out = [];
+  (gltf.nodes || []).forEach((n, i) => {
+    if (n && n.mesh != null && n.skin == null && !under.has(i)) out.push(i);
+  });
+  return out;
+}
+
+// DUPLICATE BODIES: some rips ship the character TWICE (mangle: a driven copy + a static T-pose
+// twin on a parallel skeleton). Signature = the sorted joint NAMES; two skins with the SAME
+// signature but DISJOINT joint nodes are parallel copies — keep the first skeleton, detach every
+// mesh bound to the others. Skins that SHARE joints are normal per-mesh skins — never touched.
+export function planDupBodies(gltf) {
+  const skins = gltf.skins || [];
+  const nodes = Array.isArray(gltf.nodes) ? gltf.nodes : [];
+  // signature = sorted joint names with the exporter's per-node counter stripped — mangle's twin
+  // copies name-match exactly EXCEPT for trailing indices ("Jumpscare_jnt_end_end_0204" vs
+  // "_0239"). Tiny skins are excluded from grouping: two disjoint 2-joint prop skins with generic
+  // names ("Bone_1") must never look like duplicate bodies.
+  const sig = (s) =>
+    (s.joints || [])
+      .map((j) => (nodes[j]?.name || "#" + j).replace(/_\d+$/, ""))
+      .sort()
+      .join("\n");
+  const groups = new Map();
+  skins.forEach((s, i) => {
+    if ((s.joints || []).length < 8) return; // a body has many joints; props don't
+    const k = sig(s);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  });
+  const loserSkins = new Set();
+  for (const idxs of groups.values()) {
+    if (idxs.length < 2) continue;
+    const keepJoints = new Set(skins[idxs[0]].joints || []);
+    for (const si of idxs.slice(1)) {
+      const shares = (skins[si].joints || []).some((j) => keepJoints.has(j));
+      if (!shares) loserSkins.add(si); // disjoint twin skeleton -> its meshes go
+    }
+  }
+  const out = [];
+  nodes.forEach((n, i) => {
+    if (n && n.mesh != null && loserSkins.has(n.skin)) out.push(i);
+  });
+  return out;
+}
+
 function applyOps(gltf, ops) {
   let renamed = 0,
     repaired = 0;
@@ -69,7 +144,22 @@ function applyOps(gltf, ops) {
       }
     }
   }
-  return { renamed, repaired };
+  let junkRemoved = 0,
+    dupRemoved = 0;
+  if (ops && ops.stripJunk) {
+    for (const i of planSceneJunk(gltf)) {
+      delete nodes[i].mesh;
+      junkRemoved++;
+    }
+  }
+  if (ops && ops.dedupeBodies) {
+    for (const i of planDupBodies(gltf)) {
+      delete nodes[i].mesh;
+      delete nodes[i].skin;
+      dupRemoved++;
+    }
+  }
+  return { renamed, repaired, junkRemoved, dupRemoved };
 }
 
 // ── GLB read/write ───────────────────────────────────────────────────────────────────────────
@@ -179,11 +269,21 @@ export function diagnoseModel(inPath) {
     if (/[�]/.test(n.name)) mojibake++;
     else if (/Ã|Â|â€|[À-ÿ]{2,}/.test(n.name)) recoverable++;
   }
-  return { nodes: nodes.length, mojibake, recoverable, names: nodes.map((n) => (n && n.name) || null) };
+  return {
+    nodes: nodes.length,
+    mojibake,
+    recoverable,
+    sceneJunk: planSceneJunk(json).length, // unskinned meshes outside the skeleton (shelves/logos)
+    dupBodies: planDupBodies(json).length, // meshes bound to a duplicate parallel skeleton
+    names: nodes.map((n) => (n && n.name) || null),
+  };
 }
 
 // CLI entry
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}` || process.argv[1]?.endsWith("fix_model.mjs")) {
+if (
+  import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/") ?? ""}` ||
+  process.argv[1]?.endsWith("fix_model.mjs")
+) {
   try {
     const [, , inPath, outDir, opsArg] = process.argv;
     if (inPath && !outDir) {

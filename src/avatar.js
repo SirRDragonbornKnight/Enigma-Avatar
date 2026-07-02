@@ -244,6 +244,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _lastPose = null,
     _poseTag = 0; // tag = hash of curKey — length alone can coincide across models (audit hardening)
   let roleBones = {}; // role -> live bone (from the resolved rig) — attach targets resolve here FIRST (structural; trust no names)
+  let _rigReport = null; // the cascade's verdict for the CURRENT model ({bySource, unresolved}) — Settings shows it
   let boneHelper = null; // SkeletonHelper overlay — inspect the rig (every bone, named or not)
   const BONES_KEY = "enigmaAvatar.showBones";
   let bonesShown = (() => {
@@ -647,13 +648,33 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // — the AI motion never reaches the screen on VRM models. We drive the raw bones ourselves; VRM's
     // own update stays only for its spring bones / look-at / expressions.
     if (vrm?.humanoid) vrm.humanoid.autoUpdateHumanBones = false;
-    _box.setFromObject(model);
+    // NORMALIZE ON THE BODY, NOT THE PACKAGING (model-zoo 2026-07-02): some GLBs ship display
+    // furniture — aveline's shelf + floating logo made the whole-scene box huge, so the BASE_H
+    // scale shrank the actual robot to a speck standing on her own plinth. When the file contains
+    // skinned meshes, their union IS the character (bind-pose boxes are still honest here — this
+    // runs BEFORE any normalization surgery); static extras become background. Files with no
+    // skinned mesh at all (statues, props, furniture) keep the whole-scene box, unchanged.
+    const _oneB = new THREE.Box3();
+    const bodyBox = () => {
+      model.updateWorldMatrix(true, true);
+      _box.makeEmpty();
+      model.traverse((o) => {
+        if (o.isSkinnedMesh && o.geometry) {
+          if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+          _oneB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+          _box.union(_oneB);
+        }
+      });
+      if (!isFinite(_box.min.y) || !(_box.max.y - _box.min.y > 0.001)) _box.setFromObject(model);
+      return _box;
+    };
+    bodyBox();
     const w0 = _box.max.x - _box.min.x,
       h0 = _box.max.y - _box.min.y;
     let s = BASE_H / (h0 || 1);
     if (w0 * s > worldW * 0.85) s = (worldW * 0.85) / w0; // cap width so wide models (GLaDOS) fit
     model.scale.setScalar(s);
-    _box.setFromObject(model);
+    bodyBox();
     const c = _box.getCenter(new THREE.Vector3());
     model.position.x -= c.x;
     model.position.z -= c.z;
@@ -738,6 +759,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     applyRotation(); // THIS model's saved rotation BEFORE the axis derivation — the rig may still carry the PREVIOUS model's live tilt (e.g. switched while lying), and the toe-forward probe in buildProceduralRig is world-absolute
     proc = buildProceduralRig(model, BONE_LIMITS, resolved);
+    _rigReport = resolved.report; // kept for the Settings verdict line (what the cascade decided, at a glance)
     console.log(
       "[avatar] roles:",
       resolved.matched.length,
@@ -2695,6 +2717,19 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     tuneAttachment: uiTuneAttachment,
     resetColors: uiResetColors,
     materials: () => EnigmaAvatar.materials(), // parts BY INDEX (+name/mesh hints, +current hex) for the Settings color list
+    rigVerdict: () => {
+      // ONE honest line: what the cascade decided for THIS model, at a glance (Settings shows it —
+      // "is a repair worth it?" without opening devtools). Model-zoo follow-up 2026-07-02.
+      if (!model) return "";
+      const n = Object.keys(roleBones).length;
+      if (!n) return "static: no recognised body bones (props / statues stay honest)";
+      const parts = [`${n}/19 driven`];
+      const un = _rigReport?.unresolved || [];
+      if (un.length) parts.push("missing: " + un.join(", "));
+      if (facial) parts.push("face: " + facial.mode);
+      parts.push((spring?.count || 0) + " spring bones");
+      return parts.join("   ·   ");
+    },
     meshes: () => EnigmaAvatar.meshes(),
     setMeshVisible: uiSetMeshVisible, // sub-objects (show/hide) for Settings
     setMeshLabel: relayed("setMeshLabel"), // rename a part (legible Settings list)
@@ -2930,7 +2965,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     else if (e.key === "0")
       uiApplySize(DEFAULT_SIZE); // reset — same value as the menu's Size → Reset
     else if (e.key === "ArrowLeft")
-      kNudge(-0.33, 0); // glide across the screen (when focused; also Ctrl+Alt+arrows globally)
+      kNudge(-0.33, 0); // glide across the screen (when focused; also Ctrl+Shift+Alt+arrows globally)
     else if (e.key === "ArrowRight") kNudge(0.33, 0);
     else if (e.key === "ArrowUp") kNudge(0, 0.2);
     else if (e.key === "ArrowDown") kNudge(0, -0.2);

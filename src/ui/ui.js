@@ -542,6 +542,18 @@ export function createUI(api) {
       api.loadModel(sel.value, m?.label);
     };
     body.appendChild(sRow("Model", sel));
+    // The cascade's VERDICT for this model, at a glance — how much of her is driveable, what's
+    // missing, how the face resolved, how many spring bones. Answers "is a model repair worth it?"
+    // without opening devtools. (model-zoo follow-up 2026-07-02)
+    if (api.rigVerdict) {
+      const v = api.rigVerdict();
+      if (v) {
+        const line = document.createElement("div");
+        line.textContent = v;
+        line.style.cssText = "opacity:.62;font-size:11.5px;padding:0 0 6px;line-height:1.45;";
+        body.appendChild(line);
+      }
+    }
     // Rotate (yaw) — turn the avatar to see its back / sides; saved per model. Plus a "drag to
     // spin" mode so the user can turn it by dragging the body instead of moving the window.
     if (api.setRotAxis || api.setYaw) {
@@ -1218,6 +1230,28 @@ export function createUI(api) {
           b.onclick = (e) => {
             e.stopPropagation();
             doRepair({ repairMojibake: true }, "repairing bone names");
+          };
+          box.appendChild(b);
+        }
+        // a2) detach display furniture — unskinned meshes OUTSIDE the skeleton (aveline's shelf+logo)
+        if (d.sceneJunk > 0) {
+          const b = document.createElement("button");
+          b.textContent = `Detach ${d.sceneJunk} scene prop${d.sceneJunk > 1 ? "s" : ""} (shelf / logo) → new copy`;
+          b.style.cssText = BTN;
+          b.onclick = (e) => {
+            e.stopPropagation();
+            doRepair({ stripJunk: true }, "detaching scene props");
+          };
+          box.appendChild(b);
+        }
+        // a3) remove a duplicate body — meshes bound to a parallel twin skeleton (mangle's T-pose copy)
+        if (d.dupBodies > 0) {
+          const b = document.createElement("button");
+          b.textContent = `Remove duplicate body (${d.dupBodies} mesh${d.dupBodies > 1 ? "es" : ""}) → new copy`;
+          b.style.cssText = BTN;
+          b.onclick = (e) => {
+            e.stopPropagation();
+            doRepair({ dedupeBodies: true }, "removing the duplicate body");
           };
           box.appendChild(b);
         }

@@ -1143,7 +1143,7 @@ function init() {
     applyInteractive();
   });
   reg("CommandOrControl+Shift+Alt+Q", () => {
-    console.error("[main] quit via Ctrl+Alt+Q");
+    console.error("[main] quit via Ctrl+Shift+Alt+Q");
     app.quit();
   });
   reg("CommandOrControl+Shift+Alt+=", () => runJS("EnigmaAvatar.setSize(EnigmaAvatar.size()*1.15)"));
