@@ -200,14 +200,12 @@ function windowForGlobalPos() {
   const e = windows.find((w) => w.displayId === d.id) || brainEntry();
   return e && e.win && !e.win.isDestroyed() ? e.win : brainWin();
 }
-// Clamp a global DIP point into the UNION of all displays (so a drag can't strand her in the void
-// between non-aligned monitors, but CAN cross any shared edge). The old version clamped into the
-// single NEAREST display, which pinned her base at the first monitor's inner edge -- she could not
-// cross onto an adjacent screen ("sticks at the edge" dragging monitor-to-monitor, user 2026-06-25).
-// FIX: a point already inside ANY display is accepted untouched, so the base travels freely across
-// every shared bezel regardless of layout (side-by-side / stacked / mixed sizes / L-shapes / gaps).
-// Only a point outside EVERY display is snapped back onto the nearest one (the raw can't-lose-her
-// backstop). The renderer's glide clamp handles the body-aware limits.
+// RECOVERY clamp: snap a global DIP point back onto the nearest display when it sits inside none.
+// NOT a movement limit any more (user 2026-07-02: "remove the limit on where I can drag her") — live
+// motion (drag / nudge / hotkeys / bus) is fully unclamped in setGlobalPos below. This is used ONLY
+// where a stale position must become a visible one again: restoring the saved spot at launch, and
+// the display-change handler (a monitor she was on/off vanished). A point inside ANY display passes
+// untouched, so the snap never fights a legitimate cross-bezel position.
 function clampToUnion(x, y) {
   const ds = displays();
   for (const d of ds) {
@@ -268,10 +266,12 @@ function publishPos() {
     disp: { x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
   }); // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
-function setGlobalPos(x, y, clamp) {
-  const p = clamp === false ? { x, y } : clampToUnion(x, y);
-  gPos.x = p.x;
-  gPos.y = p.y;
+// NO positional limits (user 2026-07-02): the base can sit anywhere — hanging off the outer rim,
+// fully off-screen, wherever the drag/nudge puts her. Recovery from a lost position is EXPLICIT and
+// always available: the tray's "bring her here", Ctrl+Shift+Alt+M (hop monitors), or a bus goTo.
+function setGlobalPos(x, y) {
+  gPos.x = x;
+  gPos.y = y;
   publishPos();
   saveStateSoon(); // remember her monitor + spot across launches (drag / nudge / tray / bus / "monitor" all route here)
 }
@@ -556,7 +556,8 @@ function onDisplayMetricsChanged() {
       w.win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
     } catch {}
   }
-  setGlobalPos(gPos.x, gPos.y); // re-clamp her base into the new union + publish the (possibly changed) work-area bottom
+  const _rc = clampToUnion(gPos.x, gPos.y); // the LAYOUT changed under her: recovery-snap only if she's now inside no display
+  setGlobalPos(_rc.x, _rc.y); // + publish the (possibly changed) work-area bottom
   refreshTrayMenu();
   applyInteractive(); // re-arbitrate click-through against the resized/moved bounds NOW — don't let a window capture on stale geometry until the next renderer tick (~0.16-0.5s)
 }
