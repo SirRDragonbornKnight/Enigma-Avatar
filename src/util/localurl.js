@@ -10,14 +10,18 @@ export function toAppUrl(u) {
   const s = String(u);
   if (/^(blob:|data:|app:|https?:)/i.test(s)) return s; // handled (or rejected) elsewhere
   if (/^file:\/\//i.test(s)) {
-    // file:///C:/Users/... -> /@fs/C:/Users/...  (strip the scheme + authority, keep the path)
-    const p = s.replace(/^file:\/\//i, "").replace(/^\/+/, "");
+    // file:///C:/Users/... -> /@fs/C:/Users/...  (strip the scheme + an optional "localhost"
+    // authority + leading slashes, keep the already-percent-encoded path as-is)
+    const p = s.replace(/^file:\/\/(localhost)?/i, "").replace(/^\/+/, "");
     return "app://enigma/@fs/" + p;
   }
   if (/^[A-Za-z]:[\\/]/.test(s)) {
-    // raw Windows drive path -> forward slashes under /@fs/ (UNC \\server\... is deliberately NOT
-    // mapped — never exercised here, and it would need its own handler shape; it fails honestly)
-    return "app://enigma/@fs/" + encodeURI(s.replace(/\\/g, "/"));
+    // Raw Windows drive path -> forward slashes under /@fs/, percent-encoded PER SEGMENT so a
+    // filename's #, ?, or % can't be eaten as a fragment/query or break the handler's decode
+    // (encodeURI leaves #/?/% alone — audit-caught). The drive colon is restored for readability.
+    // (UNC \\server\... is deliberately NOT mapped — never exercised here; it fails honestly.)
+    const enc = s.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/").replace(/%3A/gi, ":");
+    return "app://enigma/@fs/" + enc;
   }
   return s; // relative to the bundle (./models/..., ./assets/...) — resolves against app://enigma
 }

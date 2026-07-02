@@ -646,12 +646,21 @@ function loadSavedAiControl() {
   } catch {}
   return true; // default ON — preserves the say.py / Odysseus workflow on a fresh install
 }
+// ONE writer for the state file — the debounce AND the before-quit flush both use it, so the two
+// can never disagree on the shape (the flush once wrote {pos} only and silently ERASED a persisted
+// aiControl:false on quit — a safety toggle must survive an immediate exit).
+function writeStateNow() {
+  try {
+    fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y }, aiControl: _aiControlOn }, null, 2));
+  } catch (e) {
+    console.error("[main] window-state.json write FAILED:", String(e)); // position + kill-switch persistence — never silent
+  }
+}
 function saveStateSoon() {
   clearTimeout(_stateTimer);
   _stateTimer = setTimeout(() => {
-    try {
-      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y }, aiControl: _aiControlOn }, null, 2));
-    } catch {}
+    _stateTimer = null;
+    writeStateNow();
   }, 800);
 }
 // The ONE mutation path for the kill-switch — tray, Settings, and any future surface all land here:
@@ -820,24 +829,28 @@ function init() {
   // GUARD AT THE BOUNDARY: bundle paths are contained to ROOT (a crafted ../ cannot escape);
   // /@fs/ serves exactly one absolute path with no remote reach — net.fetch is handed a file://
   // URL, never the request's own URL, so this can only ever read local files.
-  protocol.handle("app", (req) => {
-    let u;
+  protocol.handle("app", async (req) => {
+    let p;
     try {
-      u = new URL(req.url);
+      const u = new URL(req.url);
+      if (u.host !== "enigma") return new Response("unknown host", { status: 404 });
+      p = decodeURIComponent(u.pathname); // throws on a malformed escape (a stray raw %)
     } catch {
       return new Response("bad url", { status: 400 });
     }
-    if (u.host !== "enigma") return new Response("unknown host", { status: 404 });
-    const p = decodeURIComponent(u.pathname);
-    if (p.startsWith("/@fs/")) {
-      // absolute local path (Windows: /@fs/C:/Users/... -> C:/Users/...)
-      return net.fetch(pathToFileURL(p.slice(5)).toString());
+    try {
+      if (p.startsWith("/@fs/")) {
+        // absolute local path (Windows: /@fs/C:/Users/... -> C:/Users/...)
+        return await net.fetch(pathToFileURL(p.slice(5)).toString());
+      }
+      const abs = path.resolve(ROOT, "." + p);
+      if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) {
+        return new Response("forbidden", { status: 403 }); // traversal out of the bundle
+      }
+      return await net.fetch(pathToFileURL(abs).toString());
+    } catch {
+      return new Response("not found", { status: 404 }); // missing file / directory / bad drive — a clean miss, not a net error
     }
-    const abs = path.resolve(ROOT, "." + p);
-    if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) {
-      return new Response("forbidden", { status: 403 }); // traversal out of the bundle
-    }
-    return net.fetch(pathToFileURL(abs).toString());
   });
   createWindowSet();
   createTray();
@@ -1203,13 +1216,12 @@ if (!app.requestSingleInstanceLock()) {
 // something else entirely (a bare exit with none of these logged = external kill / OS shutdown).
 app.on("before-quit", () => {
   _quitting = true;
-  // Flush a pending position write NOW — a move in the last debounce window (0.8s) must still persist.
+  // Flush a pending state write NOW — a move or kill-switch toggle in the last debounce window
+  // (0.8s) must still persist. Same writer as the debounce (writeStateNow), same shape, always.
   if (_stateTimer) {
     clearTimeout(_stateTimer);
     _stateTimer = null;
-    try {
-      fs.writeFileSync(STATE_PATH, JSON.stringify({ pos: { x: gPos.x, y: gPos.y } }, null, 2));
-    } catch {}
+    writeStateNow();
   }
   console.error("[main] before-quit (uptime " + (process.uptime() | 0) + "s)");
 });

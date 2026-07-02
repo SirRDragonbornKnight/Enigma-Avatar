@@ -34,6 +34,24 @@ test("raw Windows drive paths map with backslashes flipped and spaces encoded", 
   );
 });
 
+test("raw paths with #, ?, or % survive the URL parser intact (audit-caught truncation)", () => {
+  // encodeURI left these alone, so "cool#1.glb" parsed as pathname "cool" + hash "#1.glb" and the
+  // handler fetched the wrong file; a raw % made the handler's decodeURIComponent THROW.
+  const hash = toAppUrl("C:\\models\\cool#1.glb");
+  assert.equal(hash, "app://enigma/@fs/C:/models/cool%231.glb");
+  assert.equal(new URL(hash).hash, "", "no fragment split");
+  assert.equal(decodeURIComponent(new URL(hash).pathname), "/@fs/C:/models/cool#1.glb");
+  const query = toAppUrl("C:\\models\\track?v=2.glb");
+  assert.equal(new URL(query).search, "", "no query split");
+  assert.equal(decodeURIComponent(new URL(query).pathname), "/@fs/C:/models/track?v=2.glb");
+  const pct = toAppUrl("C:\\models\\50%.glb");
+  assert.equal(decodeURIComponent(new URL(pct).pathname), "/@fs/C:/models/50%.glb", "raw % round-trips");
+});
+
+test("file://localhost/ authority form maps like file:/// (not into the path)", () => {
+  assert.equal(toAppUrl("file://localhost/C:/x/m.glb"), "app://enigma/@fs/C:/x/m.glb");
+});
+
 test("UNC paths are NOT mapped (honest non-support, never a half-right URL)", () => {
   assert.equal(toAppUrl("\\\\server\\share\\m.glb"), "\\\\server\\share\\m.glb");
 });
