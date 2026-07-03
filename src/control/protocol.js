@@ -61,7 +61,7 @@
 // ── SYSTEM / VERIFY-BY-NUMBERS ─────────────────────────────────────────────────
 /** @typedef {{ action: "capabilities" } & WithReqId} CapabilitiesCommand */
 /** @typedef {{ action: "query", what?: QueryKind | "actions" } & WithReqId} QueryCommand */ /* bare query = full state() snapshot */
-/** @typedef {{ action: "snap", width?: number } & WithReqId} SnapCommand */
+/** @typedef {{ action: "snap", width?: number, name?: string, full?: boolean, pad?: number, region?: string, radius?: number } & WithReqId} SnapCommand */
 /** @typedef {{ action: "showBones", on?: boolean, value?: boolean } & WithReqId} ShowBonesCommand */
 /** @typedef {{ action: "nameBone", bone: string, label?: string } & WithReqId} NameBoneCommand */
 /** @typedef {{ action: "highlightBone", bone: string, dur?: number } & WithReqId} HighlightBoneCommand */

@@ -2331,7 +2331,47 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return null;
     }
     let rect = null; // she's on ANOTHER monitor → full capture of her window (this hitRect is in OUR pixels, not that window's)
-    if (!opts.full && model && onMyDisplay() && hitRect && hitRect[2] > hitRect[0] && hitRect[3] > hitRect[1]) {
+    let regionUsed = null,
+      regionMiss = null;
+    // REGION SNAP (2026-07-03 audit): crop to a named role/bone ("head" = face close-up) instead of
+    // the whole-model hitRect. The engine knows where every bone is on screen — a frame-blind driver
+    // must not binary-search for the face with size/move rounds. opts.radius (world units) overrides
+    // the default head-sized crop; a missing bone or off-screen region falls back to the full rect
+    // and NAMES the miss in the reply.
+    if (opts.region && model && onMyDisplay()) {
+      const key = String(opts.region);
+      let b = roleBones[key] || null; // canonical role resolves FIRST (the AI speaks roles, not per-rig names)
+      if (!b)
+        model.traverse((o) => {
+          if (o.isBone && o.name === key) b = o;
+        });
+      if (!b) regionMiss = `no role/bone '${key}' on this model`;
+      else {
+        const v = new THREE.Vector3();
+        b.getWorldPosition(v).project(camera);
+        const cx = ((v.x + 1) / 2) * innerWidth,
+          cy = ((1 - v.y) / 2) * innerHeight;
+        const wR = +opts.radius > 0 ? +opts.radius : 0.15 * (modelDims.h || BASE_H) * sizeScale; // ~a head of her height
+        const pr = Math.max(70, (wR * innerHeight) / worldH);
+        const x = Math.max(0, Math.floor(cx - pr)),
+          y = Math.max(0, Math.floor(cy - pr));
+        const w = Math.min(Math.round(innerWidth) - x, Math.ceil(cx + pr) - x),
+          h = Math.min(Math.round(innerHeight) - y, Math.ceil(cy + pr) - y);
+        if (w > 8 && h > 8) {
+          rect = { x, y, width: w, height: h };
+          regionUsed = key;
+        } else regionMiss = `region '${key}' is off-screen`;
+      }
+    }
+    if (
+      !rect &&
+      !opts.full &&
+      model &&
+      onMyDisplay() &&
+      hitRect &&
+      hitRect[2] > hitRect[0] &&
+      hitRect[3] > hitRect[1]
+    ) {
       const pad = opts.pad ?? 48;
       const x = Math.max(0, Math.floor(hitRect[0] - pad));
       const y = Math.max(0, Math.floor(hitRect[1] - pad));
@@ -2340,6 +2380,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (w > 8 && h > 8) rect = { x, y, width: w, height: h };
     }
     const r = await window.avatarIPC.capture({ rect, name: opts.name });
+    if (r && typeof r === "object") {
+      if (regionUsed) r.region = regionUsed; // the crop the caller asked for was honored
+      if (regionMiss) r.regionMiss = regionMiss; // honest: fell back to the whole-model rect, and why
+    }
     if (r && r.ok) setStatus(`snap ok ${r.width}x${r.height} -> ${r.path}`);
     else setStatus("snap failed: " + (r && r.error));
     console.log("[avatar] snap:", JSON.stringify(r));
