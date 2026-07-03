@@ -100,7 +100,12 @@ test("answer-handlers RETURN to the caller; void handlers reply undefined (the l
   assert.deepEqual(handleCommand({ action: "capabilities" }), { roles: 19 }, "capabilities answers the caller");
   assert.equal(handleCommand({ action: "perform", text: "hi [wave]" }), "clean line", "perform returns the clean line");
   assert.equal(handleCommand({ action: "query", what: "state" }), "Q", "query answers via answerQuery");
-  assert.equal(handleCommand({ action: "size", value: 0.8 }), undefined, "size is a void command");
+  EA.setSize.ret = { size: 0.8, anchor: "feet", anchorClamped: false };
+  assert.deepEqual(
+    handleCommand({ action: "size", value: 0.8 }),
+    { size: 0.8, anchor: "feet", anchorClamped: false },
+    "size forwards setSize's truth reply to the caller (2026-07-03 audit: silent clamps cost a session)"
+  );
 });
 
 test("pose / fingers / conjure forward the command to the control surface", () => {
@@ -117,11 +122,23 @@ test("pose / fingers / conjure forward the command to the control surface", () =
 test("move routes on its args: {px,py} = pixel-exact, {to} = by name (merged moveTo+goTo)", () => {
   const { handleCommand, EA } = makeRegistry();
   handleCommand({ action: "move", px: 700, py: 1100 });
-  assert.deepEqual(EA.moveTo.calls[0], [700, 1100], "pixel coords -> moveTo(px,py)");
+  assert.deepEqual(EA.moveTo.calls[0], [700, 1100, undefined], "pixel coords -> moveTo(px,py) (no dur)");
   handleCommand({ action: "move", to: "bottomright" });
-  assert.deepEqual(EA.goTo.calls[0], ["bottomright"], "a named anchor -> goTo(name)");
+  assert.deepEqual(EA.goTo.calls[0], ["bottomright", undefined], "a named anchor -> goTo(name)");
   handleCommand({ action: "move" });
-  assert.deepEqual(EA.goTo.calls[1], ["center"], "no args -> goTo('center')");
+  assert.deepEqual(EA.goTo.calls[1], ["center", undefined], "no args -> goTo('center')");
+});
+
+test("move: {dur} paces the glide and the reply carries the accepted-target truth", () => {
+  // 2026-07-03 audit: her default glide outruns a frame-blind driver (~1s per look), and a silently
+  // clamped target was only discoverable by a later query. dur + a truth reply close both gaps.
+  const { handleCommand, EA } = makeRegistry();
+  EA.moveTo.ret = { px: 700, py: 2016, clamped: true };
+  const r = handleCommand({ action: "move", px: 700, py: 2600, dur: 3 });
+  assert.deepEqual(EA.moveTo.calls[0], [700, 2600, 3], "dur (s) rides through to the glide");
+  assert.deepEqual(r, { px: 700, py: 2016, clamped: true }, "the reply is the ACCEPTED target, clamp named");
+  handleCommand({ action: "move", to: "center", dur: "garbage" });
+  assert.deepEqual(EA.goTo.calls[0], ["center", undefined], "a non-numeric dur is dropped, not forwarded");
 });
 
 test("morph drives+SAVES by default; {save:false} is a transient probe (merged morph+setMorph)", () => {

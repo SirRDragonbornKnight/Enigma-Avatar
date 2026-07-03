@@ -216,7 +216,9 @@ test("honest degradation: compositor verbs return {error} (not throw) when the m
 test("delegation: the facade forwards to the right engine fn (sample of the contract)", () => {
   const { surface, fn, physics, voice } = makeSurface();
   surface.moveTo(7, 8);
-  assert.deepEqual(fn.glideTo.calls[0], [7, 8], "moveTo -> glideTo");
+  assert.deepEqual(fn.glideTo.calls[0], [7, 8, undefined], "moveTo -> glideTo (dur rides through)");
+  surface.moveTo(7, 8, 2.5);
+  assert.deepEqual(fn.glideTo.calls[1], [7, 8, 2.5], "moveTo(px,py,dur) -> glideTo timed");
   surface.ball("throwball");
   assert.equal(fn.throwBall.calls.length, 1, "ball throwball -> throwBall");
   surface.ball("clearballs");

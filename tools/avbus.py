@@ -59,7 +59,19 @@ async def main():
         if isinstance(c, dict) and "reqId" in c:
             tag = f"{c.get('action', '')}/{c.get('what', '')}".strip("/")
             print(f"--- reqId {c['reqId']} ({tag}):")
-            print(json.dumps(results.get(c["reqId"], "NO REPLY"))[:2400])
+            body = json.dumps(results.get(c["reqId"], "NO REPLY"))
+            if len(body) <= 2400:
+                print(body)
+            else:
+                # NEVER truncate silently -- a mass-sorted bones reply once lost every small face
+                # bone below the cut and produced a false "no lip bones" conclusion (2026-07-03).
+                import tempfile
+
+                fd, path = tempfile.mkstemp(prefix=f"avbus_reply_{c['reqId']}_", suffix=".json")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(body)
+                print(body[:2400])
+                print(f"...TRUNCATED at 2400 of {len(body)} chars -- full reply: {path}")
 
 
 if __name__ == "__main__":

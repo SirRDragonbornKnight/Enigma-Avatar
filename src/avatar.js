@@ -291,6 +291,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let curDisp = { x: 0, y: 0, width: 1, height: 1 }; // the display she's currently on (DIP) — from main
   let gGlide = null; // smooth-move target (DIP); the brain steps gPos toward it
   let gliding = false;
+  let gGlideDur = 0, // >0 = timed glide: arrive in exactly this many seconds (smoothstep), else exponential
+    gGlideT = 0,
+    gGlideFrom = null; // start point of a timed glide
   let _gReady = false; // received the first global-pos broadcast yet?
   let _peerCount = 0; // other windows (gate the pose broadcast — skip on single-monitor)
   let _motionY = 0; // vertical jump/flip hop (LOCAL; never a global move)
@@ -399,10 +402,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const s = surfaceYAt(gPos.x, gPos.y);
     if (s != null && Math.abs(s - gPos.y) > 0.5) setGlide(gPos.x, s);
   }
-  function setGlide(gx, gy) {
-    if (!isFinite(gx) || !isFinite(gy)) return;
+  function setGlide(gx, gy, dur) {
+    // Returns the ACCEPTED target + whether the display clamp changed it, so a driver learns the
+    // truth in the reply instead of discovering a silent clamp screenshots later (2026-07-03 audit:
+    // the py clamp swallowed a head-anchored resize compensation and the head left the screen).
+    if (!isFinite(gx) || !isFinite(gy)) return null;
     gGlide = _clampToDisp({ x: gx, y: gy });
+    const clamped = Math.abs(gGlide.x - gx) > 0.5 || Math.abs(gGlide.y - gy) > 0.5;
+    gGlideDur = +dur > 0 ? Math.min(+dur, 30) : 0;
+    if (gGlideDur > 0) {
+      gGlideT = 0;
+      gGlideFrom = { x: gPos.x, y: gPos.y };
+    } else gGlideFrom = null;
     gliding = true;
+    return { x: gGlide.x, y: gGlide.y, clamped };
   }
   // --- AI movement: where is she + named anchors, resolved against her CURRENT display ---------
   function posScreen() {
@@ -412,10 +425,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // 12% edge margin; anchors sit a bit low (feet on the deck) — math in placement.js (unit-tested)
     return resolveAnchor(a, curDisp, localPxToGlobal(cursor.x, cursor.y));
   }
-  function glideTo(px, py) {
-    setGlide(curDisp.x + px, curDisp.y + py);
-  } // px,py = px within her current display
-  function goTo(target) {
+  function glideTo(px, py, dur) {
+    // px,py = px within her current display; dur (s) = timed glide (paces walks + lets a frame-blind
+    // driver watch the motion). Returns the accepted-target truth {px,py,clamped}.
+    const r = setGlide(curDisp.x + px, curDisp.y + py, dur);
+    return r ? { px: Math.round(r.x - curDisp.x), py: Math.round(r.y - curDisp.y), clamped: r.clamped } : null;
+  }
+  function goTo(target, dur) {
     // a named anchor (string) OR {px,py within current display}
     let g;
     if (typeof target === "string") {
@@ -424,10 +440,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     } else if (target && target.px != null) {
       g = [curDisp.x + +target.px, curDisp.y + +target.py];
     } else return null;
-    setGlide(g[0], g[1]);
+    const r = setGlide(g[0], g[1], dur);
     wake(1.2);
     setStatus("-> " + (typeof target === "string" ? target : Math.round(target.px) + "," + Math.round(target.py)));
-    return [Math.round(g[0] - curDisp.x), Math.round(g[1] - curDisp.y)];
+    return r ? { px: Math.round(r.x - curDisp.x), py: Math.round(r.y - curDisp.y), clamped: r.clamped } : null;
   }
   function whereAmI() {
     return {
@@ -540,17 +556,19 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // Net: manual sizing is unbounded-up / floored-down; auto-fit only ever shrinks.
   function applySize(s, anchor) {
     const n = +s;
-    if (!isFinite(n)) return; // bus is stringly-typed — `size "big"` must not set rig.scale = NaN (invisible model, unrecoverable hit-test)
+    if (!isFinite(n)) return null; // bus is stringly-typed — `size "big"` must not set rig.scale = NaN (invisible model, unrecoverable hit-test)
     const prev = sizeScale;
     sizeScale = Math.max(0.02, n || 0.02); // no upper cap (removed min/max); tiny floor so multiplicative resize can recover
     rig.scale.setScalar(sizeScale);
     // GROW-ANCHOR (user 2026-07-02): default scales from the FEET (gPos IS the feet point, so she
     // stays planted on the floor). anchor "hips"|"head" pins THAT body point on screen instead —
     // the fourth-wall "walk up to the screen" loom keeps her face in frame while she grows past it.
+    let anchorClamped = false; // truth for the reply: did the display clamp swallow the compensation?
     if ((anchor === "hips" || anchor === "head") && isFinite(worldH) && innerHeight > 0) {
       const frac = anchor === "head" ? 0.92 : 0.5; // the pinned point's height as a fraction of her height
       const dW = (modelDims.h || BASE_H) * (sizeScale - prev) * frac; // how far that point rose, world units
-      setGlide(gPos.x, gPos.y + (dW * innerHeight) / worldH); // drop the feet to compensate (display-clamped, published)
+      const r = setGlide(gPos.x, gPos.y + (dW * innerHeight) / worldH); // drop the feet to compensate (display-clamped, published)
+      anchorClamped = !!(r && r.clamped); // clamped = the pinned point will NOT hold (it drifts off-screen)
     }
     sizeByModel[curKey] = sizeScale;
     if (!window.avatarIPC || _isBrain)
@@ -558,6 +576,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         localStorage.setItem(SIZE_KEY, JSON.stringify(sizeByModel));
       } catch {} // ONE writer — a peer's fitToScreen must not clobber the shared size store with its module-load-stale copy
     setStatus(`size x${sizeScale.toFixed(2)}`);
+    return {
+      size: +sizeScale.toFixed(3),
+      anchor: anchor === "hips" || anchor === "head" ? anchor : "feet",
+      anchorClamped,
+    };
   }
   const resizeBy = (m) => applySize(sizeScale * m);
   // Keep the avatar fitting the screen: a too-large saved size makes the head/feet clip
@@ -2098,16 +2121,32 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // every window). DRAG is owned by main (it follows the OS cursor across monitors), so we don't touch
     // gPos while held — it arrives via onGlobalPos.
     if (!held && gGlide) {
-      const k = Math.min(1, dt * 4);
-      gPos.x += (gGlide.x - gPos.x) * k;
-      gPos.y += (gGlide.y - gPos.y) * k;
-      if (Math.hypot(gGlide.x - gPos.x, gGlide.y - gPos.y) < 1) {
-        gPos.x = gGlide.x;
-        gPos.y = gGlide.y;
-        gGlide = null;
-        gliding = false;
-        floorSnap();
-      } // arrivals settle onto a nearby surface (no-op when none is within the band)
+      if (gGlideDur > 0 && gGlideFrom) {
+        // timed glide: smoothstep from start to target over exactly gGlideDur seconds
+        gGlideT += dt;
+        const f = Math.min(1, gGlideT / gGlideDur);
+        const e = f * f * (3 - 2 * f);
+        gPos.x = gGlideFrom.x + (gGlide.x - gGlideFrom.x) * e;
+        gPos.y = gGlideFrom.y + (gGlide.y - gGlideFrom.y) * e;
+        if (f >= 1) {
+          gGlide = null;
+          gliding = false;
+          gGlideDur = 0;
+          gGlideFrom = null;
+          floorSnap();
+        }
+      } else {
+        const k = Math.min(1, dt * 4);
+        gPos.x += (gGlide.x - gPos.x) * k;
+        gPos.y += (gGlide.y - gPos.y) * k;
+        if (Math.hypot(gGlide.x - gPos.x, gGlide.y - gPos.y) < 1) {
+          gPos.x = gGlide.x;
+          gPos.y = gGlide.y;
+          gGlide = null;
+          gliding = false;
+          floorSnap();
+        } // arrivals settle onto a nearby surface (no-op when none is within the band)
+      }
       window.avatarIPC?.setGlobalPos?.(gPos.x, gPos.y);
     }
     const _bp = gToWorld(gPos.x, gPos.y);

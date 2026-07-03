@@ -67,12 +67,12 @@ export function createControlSurface(engine, services) {
 
   const EnigmaAvatar = {
     // (clip-playback API — actions / play / loopClip / playAnim / stopAnim — removed with the clip-library purge 2026-06-25)
-    moveTo(px, py) {
-      glideTo(px, py);
+    moveTo(px, py, dur) {
+      return glideTo(px, py, dur); // -> {px,py,clamped} accepted-target truth; dur (s) = timed glide
     }, // smooth-glide to screen px,py (stays there)
     nudge: (dx, dy) => nudge(dx, dy), // move by a fraction of the screen (arrow keys)
-    glideTo: (px, py) => glideTo(px, py),
-    goTo: (target) => goTo(target), // move by NAME ("center","topleft","cursor",…) — AI movement without pixel math
+    glideTo: (px, py, dur) => glideTo(px, py, dur),
+    goTo: (target, dur) => goTo(target, dur), // move by NAME ("center","topleft","cursor",…) — AI movement without pixel math
     where: () => whereAmI(), // her screen-px position + screen size + cursor (AI spatial awareness)
     setSize: (s, anchor) => applySize(s, anchor), // anchor: "feet"(default)|"hips"|"head" — which body point stays put
     size: () => engine.sizeScale,

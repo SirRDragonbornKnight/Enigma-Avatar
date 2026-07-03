@@ -165,10 +165,13 @@ function startDevReload() {
     const live = liveWindows();
     for (const w of live) {
       try {
-        w.win.reload();
+        // MUST bypass the HTTP cache: app://enigma responses ride net.fetch with no cache headers,
+        // so Chromium caches the JS and a plain reload() re-parses STALE code — dev-reload served
+        // old modules for a whole session (2026-07-03) while logging success.
+        w.win.webContents.reloadIgnoringCache();
       } catch {}
     }
-    console.error("[dev] renderer change -> reloaded " + live.length + " window(s)");
+    console.error("[dev] renderer change -> reloaded " + live.length + " window(s), cache bypassed");
   };
   const onEvt = (_evt, file) => {
     if (!file) return;

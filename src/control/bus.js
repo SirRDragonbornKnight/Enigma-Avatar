@@ -96,14 +96,13 @@ export function createBusRegistry(engine, services) {
     // --- PLACE / TRANSFORM -------------------------------------------------------------------------
     move: (c) => {
       // place her: {px,py} = pixel-exact on her monitor; {to:"center"|"cursor"|"topleft"|...} = by name.
-      // (was moveTo + goTo — one verb, routes on the args it gets.)
-      if (c.to != null || c.anchor != null) return EnigmaAvatar.goTo(c.to ?? c.anchor);
-      if (c.px != null || c.py != null) return EnigmaAvatar.moveTo(c.px ?? 0, c.py ?? 0);
-      return EnigmaAvatar.goTo("center");
+      // {dur} (s) = timed glide. Replies with the ACCEPTED target {px,py,clamped} — never silent.
+      const dur = +c.dur > 0 ? +c.dur : undefined;
+      if (c.to != null || c.anchor != null) return EnigmaAvatar.goTo(c.to ?? c.anchor, dur);
+      if (c.px != null || c.py != null) return EnigmaAvatar.moveTo(c.px ?? 0, c.py ?? 0, dur);
+      return EnigmaAvatar.goTo("center", dur);
     },
-    size: (c) => {
-      EnigmaAvatar.setSize(c.value ?? 1, c.anchor); // optional anchor "hips"|"head" pins that point on screen (default: feet)
-    },
+    size: (c) => EnigmaAvatar.setSize(c.value ?? 1, c.anchor), // optional anchor "hips"|"head" pins that point on screen; replies {size,anchor,anchorClamped}
     rotate: (c) => {
       // turn the avatar — {x,y,z}°, {axis,deg}, or legacy {deg}=yaw
       if (c.x != null || c.y != null || c.z != null) {
