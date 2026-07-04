@@ -140,6 +140,67 @@ test("radius is calibrated in BIND units — normalization scale must not change
   assert.ok(!ok.error && ok.verts > 0, "an explicit bind-unit radius selects normally under any display scale");
 });
 
+test("displacement amplitude is bind-calibrated: a scaled bindMatrix must not shrink/blow the stretch", () => {
+  // Two identical grabs; one rig's MESH node carries scale 2 at bind time (cm-style export).
+  // amp is authored in bind units — written raw into geometry units it rendered 2x off.
+  const mk = (s) => {
+    const { g, mesh, bone } = skinnedBox();
+    if (s !== 1) {
+      mesh.scale.setScalar(s);
+      g.updateMatrixWorld(true);
+      mesh.bind(mesh.skeleton); // re-bind so bindMatrix carries the scale
+    }
+    return { g, mesh, bone };
+  };
+  const maxDelta = (mesh, pristine) => {
+    const now = posCopy(mesh);
+    let m = 0;
+    for (let i = 0; i < now.length; i++) m = Math.max(m, Math.abs(now[i] - pristine[i]));
+    return m;
+  };
+  const a = mk(1),
+    b = mk(2);
+  const pa = posCopy(a.mesh),
+    pb = posCopy(b.mesh);
+  const softA = buildSoftMesh(a.g),
+    softB = buildSoftMesh(b.g);
+  // same BIND-unit pull relative to each body (b's bind body is 2x taller, so pull 2x too)
+  assert.ok(!softA.grab(a.bone, { radius: 2, pull: [0.4, 0, 0] }).error);
+  assert.ok(!softB.grab(b.bone, { radius: 4, pull: [0.8, 0, 0] }).error);
+  for (let i = 0; i < 60; i++) {
+    softA.update(1 / 60);
+    softB.update(1 / 60);
+  }
+  const dA = maxDelta(a.mesh, pa),
+    dB = maxDelta(b.mesh, pb);
+  // b's stretch is 2x in BIND units but its geometry units are half-sized: geometry deltas match
+  assert.ok(dA > 0 && dB > 0, `both grabs displace (${dA.toFixed(4)} / ${dB.toFixed(4)})`);
+  assert.ok(
+    Math.abs(dA - dB) < 0.05 * Math.max(dA, dB),
+    `geometry-space deltas must match across bind scales (got ${dA.toFixed(4)} vs ${dB.toFixed(4)} — a mismatch means amp ignored the bindMatrix scale)`
+  );
+});
+
+test("two SkinnedMeshes sharing ONE geometry: claims are keyed by the buffer, restore stays bit-exact", () => {
+  const { g, mesh, bone } = skinnedBox();
+  // a second skinned mesh sharing the SAME geometry + skeleton (legal three.js topology)
+  const twin = new THREE.SkinnedMesh(mesh.geometry, new THREE.MeshBasicMaterial());
+  twin.bind(mesh.skeleton, mesh.bindMatrix);
+  g.add(twin);
+  g.updateMatrixWorld(true);
+  const pristine = posCopy(mesh);
+  const soft = buildSoftMesh(g);
+  const r1 = soft.grab(bone, { radius: 2, pull: [0.4, 0, 0], id: "first" });
+  assert.ok(!r1.error && r1.verts > 0, `first grab lands once, not twice (${JSON.stringify(r1)})`);
+  for (let i = 0; i < 30; i++) soft.update(1 / 60); // deformed now
+  // the second grab must NOT capture the deformed buffer as its pristine base via the twin mesh
+  const r2 = soft.grab(bone, { radius: 2, pull: [0, 0.4, 0], id: "second" });
+  assert.ok(r2.error, `overlapping grab through a shared buffer is refused (${JSON.stringify(r2)})`);
+  soft.release(true);
+  for (let i = 0; i < 900; i++) soft.update(1 / 60);
+  assert.deepEqual(posCopy(mesh), pristine, "shared geometry restored BIT-EXACTLY (no deformed-base corruption)");
+});
+
 function skinnedStrip(nBones, spacing = 10) {
   // nBones clusters of vertices, each skinned to its own bone at x = i*spacing -> disjoint grab regions
   const pos = [],

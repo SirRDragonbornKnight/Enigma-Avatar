@@ -52,7 +52,10 @@ export function buildSoftMesh(model) {
   const modelH = Math.max(_ext.x, _ext.y, _ext.z) || 1; // largest extent: height for humanoids, length for crawlers — axis-agnostic (bind frames vary in up-axis)
 
   const grabs = new Map(); // id -> grab record
-  const claimed = new Map(); // mesh -> Set(vertIndex) owned by an active grab (no double-booking)
+  // Claims are keyed by the POSITION ATTRIBUTE — the actual shared resource. Keyed by mesh, two
+  // SkinnedMeshes sharing one geometry let a second grab capture the FIRST grab's deformation as
+  // its "pristine" base and restore corruption permanently (audit 2026-07-04).
+  const claimed = new Map(); // position attribute -> Set(vertIndex) owned by an active grab
   let _gid = 0;
 
   const _m4 = new THREE.Matrix4();
@@ -69,10 +72,13 @@ export function buildSoftMesh(model) {
   function select(anchor, radius) {
     const entries = [];
     const v = new THREE.Vector3();
+    const seenAttr = new Set(); // meshes sharing one geometry: select its vertices ONCE
     for (const m of meshes) {
       const pos = m.geometry.attributes.position;
+      if (seenAttr.has(pos)) continue;
+      seenAttr.add(pos);
       const nrm = m.geometry.attributes.normal || null;
-      const already = claimed.get(m);
+      const already = claimed.get(pos);
       const idx = [],
         w = [],
         base = [],
@@ -94,14 +100,15 @@ export function buildSoftMesh(model) {
 
   function claim(entries) {
     for (const e of entries) {
-      let set = claimed.get(e.mesh);
-      if (!set) claimed.set(e.mesh, (set = new Set()));
+      const key = e.mesh.geometry.attributes.position;
+      let set = claimed.get(key);
+      if (!set) claimed.set(key, (set = new Set()));
       for (const i of e.idx) set.add(i);
     }
   }
   function unclaim(entries) {
     for (const e of entries) {
-      const set = claimed.get(e.mesh);
+      const set = claimed.get(e.mesh.geometry.attributes.position);
       if (set) for (const i of e.idx) set.delete(i);
     }
   }
@@ -114,7 +121,7 @@ export function buildSoftMesh(model) {
       for (let k = 0; k < e.idx.length; k++) {
         const i = e.idx[k],
           b = 3 * k,
-          s = g.amp * e.w[k];
+          s = g.amp * e.w[k] * (e.toGeo || 1); // amp is bind units; the buffer is geometry units
         if (g.mode === "normal" && e.normals) v.set(e.normals[b], e.normals[b + 1], e.normals[b + 2]);
         else v.copy(e.dirGeo);
         pos.setXYZ(i, e.base[b] + v.x * s, e.base[b + 1] + v.y * s, e.base[b + 2] + v.z * s);
@@ -159,10 +166,15 @@ export function buildSoftMesh(model) {
         if (!entries.length) return { error: `no vertex normals near '${bone.name}' — poke needs a mesh with normals` };
       }
       if (!entries.length) return { error: `no vertices within ${radius.toFixed(3)} of '${bone.name}'` };
-      // dir per mesh in GEOMETRY space: bind-frame dir through the inverse bind rotation
-      const nq = new THREE.Quaternion();
+      // dir per mesh in GEOMETRY space: bind-frame dir through the inverse bind rotation.
+      // amp is authored in BIND units but written into GEOMETRY units — divide out the
+      // bindMatrix scale or a cm-export rig gets an invisible dimple / a scaled one a spike.
+      const nq = new THREE.Quaternion(),
+        _sp = new THREE.Vector3(),
+        _ss = new THREE.Vector3();
       for (const e of entries) {
-        e.mesh.bindMatrix.decompose(new THREE.Vector3(), nq, new THREE.Vector3());
+        e.mesh.bindMatrix.decompose(_sp, nq, _ss);
+        e.toGeo = 1 / Math.max(1e-6, Math.abs(_ss.x) || 1); // bind units -> geometry units
         e.dirGeo = new THREE.Vector3(0, 0, 1).copy(_dirOf(pull)).applyQuaternion(nq.invert());
       }
       claim(entries);
@@ -183,9 +195,12 @@ export function buildSoftMesh(model) {
       };
       grabs.set(g.id, g);
     } else if (pull.some((n) => n !== 0)) {
-      const nq = new THREE.Quaternion();
+      const nq = new THREE.Quaternion(),
+        _sp = new THREE.Vector3(),
+        _ss = new THREE.Vector3();
       for (const e of g.entries) {
-        e.mesh.bindMatrix.decompose(new THREE.Vector3(), nq, new THREE.Vector3());
+        e.mesh.bindMatrix.decompose(_sp, nq, _ss);
+        e.toGeo = 1 / Math.max(1e-6, Math.abs(_ss.x) || 1);
         e.dirGeo = _dirOf(pull).applyQuaternion(nq.invert());
       }
       g.holding = true;
