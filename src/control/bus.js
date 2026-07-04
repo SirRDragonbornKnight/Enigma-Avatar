@@ -51,6 +51,18 @@ export function createBusRegistry(engine, services) {
     uiHueShift,
   } = services;
 
+  // Resolve a stretch/poke target: canonical role FIRST (the AI speaks roles), then raw bone name.
+  const _softBone = (key) => {
+    if (!key) return null;
+    const rb = engine.roleBones || {};
+    if (rb[key]) return rb[key];
+    let b = null;
+    engine.model?.traverse?.((o) => {
+      if (o.isBone && o.name === String(key)) b = o;
+    });
+    return b;
+  };
+
   const COMMANDS = {
     // Null prototype: action names come off the wire, and a plain object literal inherits
     // Object.prototype — {action:"toString"} would dispatch and {action:"hasOwnProperty"} would
@@ -94,6 +106,25 @@ export function createBusRegistry(engine, services) {
       const f = engine.facial;
       if (!f?.setExpr) return { error: "no facial rig on this model" };
       return f.setExpr({ smile: c.smile, brows: c.brows });
+    },
+    stretch: (c) => {
+      // soft-mesh GRAB: {bone|role, radius?, pull:[x,y,z]} pulls the skin region and HOLDS it;
+      // re-send with {id, pull} to drag a held grab; {release:true|id} lets go (spring-back).
+      // Replies truth ({grabbed,verts,applied,max} / {released} / named {error}) — never silence.
+      const soft = engine.soft;
+      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
+      if (c.release != null) return soft.release(c.release === true ? true : String(c.release));
+      const bone = _softBone(c.bone ?? c.role);
+      wake(2.5);
+      return soft.grab(bone, { radius: c.radius, pull: c.pull, id: c.id });
+    },
+    poke: (c) => {
+      // soft-mesh POKE along vertex normals: amount>0 bulges out (the pushed-from-inside cheek),
+      // amount<0 dents in. One-shot: presses, releases, jelly-wobbles back to pristine.
+      const soft = engine.soft;
+      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
+      wake(2.5);
+      return soft.poke(_softBone(c.bone ?? c.role), { radius: c.radius, amount: c.amount ?? c.value });
     },
 
     // --- CONJURE (prop spawning) + the physics-ball toy (distinct features) -------------------------

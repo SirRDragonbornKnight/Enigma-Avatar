@@ -15,9 +15,9 @@ from __future__ import annotations
 ACTIONS: tuple[str, ...] = (
     "attach", "ball", "blink", "capabilities", "conjure", "detach", "expr", "facialTune", "fingers", "gallery",
     "highlightBone", "hue", "impulse", "load", "mesh", "monitor", "morph", "mouth", "move",
-    "nameBone", "outfit", "perform", "platform", "pose", "query", "recolor", "regionWeight",
+    "nameBone", "outfit", "perform", "platform", "poke", "pose", "query", "recolor", "regionWeight",
     "resetColors", "rotate", "rotateMode", "say", "settings", "showBones", "size", "snap", "springTune",
-    "stop", "tuneAttachment",
+    "stop", "stretch", "tuneAttachment",
 )
 
 # The `what` values the `query` verb accepts (plus "actions", handled by the registry itself).

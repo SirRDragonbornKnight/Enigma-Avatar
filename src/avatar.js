@@ -19,6 +19,7 @@ import { createBusRegistry } from "./control/bus.js"; // AI bus command table (a
 import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable setup (headless engine module, carve S1-a)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
+import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
 import { createPhysics } from "./motion/physics.js";
 import { buildFacial } from "./face/facial.js";
 import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./interaction/hittest.js"; // pure, unit-tested click-through math
@@ -38,13 +39,14 @@ import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, l
 // On a VRM, vrm.update() would normally copy the rest-pose normalized humanoid bones BACK over the
 // raw bones — wiping the pose proc just wrote — UNLESS autoUpdateHumanBones was disabled at load (#1).
 // Pure w.r.t. its args (no module globals).
-export function stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm } = {}) {
+export function stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm, soft } = {}) {
   if (proc) proc.update(dt, false); // base pose + cursor-look + the AI's motion layers + grip (no idle, no clips, no canned gestures)
   if (facial && facialOn) facial.update(dt); // blink + lip-sync (jaw / morphs / VRM weights)
   if (spring && springOn) {
     rig?.updateWorldMatrix?.(false, true);
     spring.update(dt);
   } // hair/tail/wires sway
+  if (soft) soft.update(dt); // soft-mesh grabs/pokes: eased take-up while held, spring-back after release
   if (vrm) vrm.update(dt); // VRM spring bones / look-at / expressions (humanoid copy-back is OFF — see #1 at load)
 }
 
@@ -181,6 +183,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let proc = null,
     spring = null,
     facial = null,
+    soft = null, // soft-mesh grab/poke deformation layer (softmesh.js, 2026-07-03)
     BONE_LIMITS = {};
   let _weightMass = null,
     _springNeverExtra = []; // skin-weight pass state (per loaded model): bone→mass + the sprung twin chains excluded by dedup
@@ -596,6 +599,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   function disposeModel() {
     if (!model) return;
     voice.stop(); // stop any in-flight speech/lip-sync before tearing down the model
+    if (soft) {
+      soft.restoreAll(); // geometry back to pristine before dispose (grabs must never outlive the model)
+      soft = null;
+    }
     if (boneHelper) {
       scene.remove(boneHelper);
       boneHelper.geometry?.dispose?.();
@@ -969,6 +976,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     {
       // facial v2: per-channel ladders (mouth + blink independent); the geometric tiers need the
       // resolved HEAD + the body frame to anchor their eye/mouth bands on any rig.
+      soft = buildSoftMesh(model); // soft-mesh grab/poke layer (bind-space vertex regions; rides skinning)
       const _fa = proc?.jointAngles ? proc.jointAngles().fwd : null;
       facial = buildFacial(model, vrm, {
         headBone: roleBones.head || null,
@@ -2155,7 +2163,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // `wake(s)` holds full rate for s seconds after a kick (emote / drag-release / load) so spring
   // settle + emotes still look smooth.
   // The animate loop drives the seam (defined at module top) with live module state.
-  const stepProcVrm = (dt) => stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm });
+  const stepProcVrm = (dt) => stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm, soft });
   const FPS_ACTIVE = 60,
     FPS_IDLE = 30,
     FPS_REST = 15;
@@ -2526,6 +2534,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       proc: () => proc,
       facial: () => facial,
       spring: () => spring,
+      soft: () => soft, // soft-mesh grab/poke layer (bus stretch/poke verbs)
       model: () => model,
       vrm: () => vrm,
       sizeScale: () => sizeScale,

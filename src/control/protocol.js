@@ -29,6 +29,8 @@
 /** @typedef {{ action: "mouth", value: number } & WithReqId} MouthCommand */
 /** @typedef {{ action: "blink", value?: number } & WithReqId} BlinkCommand */
 /** @typedef {{ action: "expr", smile?: number, brows?: number } & WithReqId} ExprCommand */
+/** @typedef {{ action: "stretch", bone?: string, role?: string, radius?: number, pull?: number[], id?: string, release?: boolean | string } & WithReqId} StretchCommand */
+/** @typedef {{ action: "poke", bone?: string, role?: string, radius?: number, amount?: number, value?: number } & WithReqId} PokeCommand */
 
 // ── CONJURE + PHYSICS TOY ──────────────────────────────────────────────────────
 /** @typedef {{ action: "conjure", url?: string, move?: string, to?: number[] | string, dismiss?: string, clear?: boolean, id?: string, size?: number, at?: number[], bone?: string, dur?: number, float?: number } & WithReqId} ConjureCommand */
@@ -140,6 +142,7 @@ export const ACTIONS = Object.freeze([
   "outfit",
   "perform",
   "platform",
+  "poke",
   "pose",
   "query",
   "recolor",
@@ -154,6 +157,7 @@ export const ACTIONS = Object.freeze([
   "snap",
   "springTune",
   "stop",
+  "stretch",
   "tuneAttachment",
 ]);
 

@@ -1,4 +1,4 @@
-// seam.test.js — the PUBLIC CONTRACT guard for the closure-decomposition refactor.
+﻿// seam.test.js â€” the PUBLIC CONTRACT guard for the closure-decomposition refactor.
 //
 // The `EnigmaAvatar` facade (src/control/surface.js) and the bus move set (src/control/bus.js
 // COMMANDS) are the stable seam every driver depends on: the AI bus, devtools/`window.EnigmaAvatar`,
@@ -6,7 +6,7 @@
 // the avatar.js closure behind this facade is that NONE of those observe a change.
 //
 // These two frozen lists lock that contract. A refactor that accidentally renames/drops/adds a verb
-// fails here LOUDLY. A DELIBERATE vocabulary change is fine — it just has to update the fixture in
+// fails here LOUDLY. A DELIBERATE vocabulary change is fine â€” it just has to update the fixture in
 // the same commit, so the surface change is visible in review instead of silent. (Built with an empty
 // deps object: the factories destructure their api lazily and don't invoke any handler at build, so
 // the key set is exactly the public surface.)
@@ -101,6 +101,7 @@ const BUS_COMMANDS = [
   "outfit",
   "perform",
   "platform",
+  "poke", // soft-mesh dent/bulge along normals (2026-07-03, stretch feature)
   "pose",
   "query",
   "recolor",
@@ -115,6 +116,7 @@ const BUS_COMMANDS = [
   "snap",
   "springTune",
   "stop",
+  "stretch", // soft-mesh grab/pull/spring-back (2026-07-03, stretch feature)
   "tuneAttachment",
 ];
 
@@ -123,7 +125,7 @@ test("seam: the EnigmaAvatar facade surface is unchanged", () => {
   assert.deepEqual(
     Object.keys(ea).sort(),
     SURFACE_METHODS,
-    "EnigmaAvatar method set changed — if deliberate, update SURFACE_METHODS in the same commit"
+    "EnigmaAvatar method set changed â€” if deliberate, update SURFACE_METHODS in the same commit"
   );
 });
 
@@ -132,6 +134,6 @@ test("seam: the bus COMMANDS move set is unchanged", () => {
   assert.deepEqual(
     Object.keys(COMMANDS).sort(),
     BUS_COMMANDS,
-    "bus move set changed — if deliberate, update BUS_COMMANDS in the same commit"
+    "bus move set changed â€” if deliberate, update BUS_COMMANDS in the same commit"
   );
 });
