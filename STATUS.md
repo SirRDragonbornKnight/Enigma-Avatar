@@ -1,6 +1,6 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-02 (Source-rig leg fix, role-aware highlightBone, size anchor, object-physics knobs)._
+_Last updated 2026-07-04 (expr/stretch/poke drive surface, bone see-it checkboxes, the 26-finding audit fix pass)._
 
 ## 2026-07-02 (later) -- animation session findings + 4 fixes (UNCOMMITTED)
 
@@ -100,9 +100,9 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `node --test` -> **267 pass / 0 fail / 11 skipped** (2026-07-02, incl. the localurl mapping
-  and strict-wire tests); pytest **21/21** (origin gate incl. `app://enigma`, reply routing, protocol
-  mirror, bone data, voice service); eslint + prettier + tsc clean.
+- Suite: `node --test` -> **302 pass / 0 fail / 12 skipped** (2026-07-04, incl. softmesh, expression
+  channels and the audit regressions); pytest **21/21** (origin gate incl. `app://enigma`, reply routing,
+  protocol mirror, bone data, voice service); eslint + prettier + tsc clean.
 
 ## Motion compositor & AI control (P1-P4)
 
@@ -124,6 +124,12 @@ bus (`handleCommand`):
   (transform-based; rapier stays for throw/drop). `conjure spawn|move|dismiss|clear`. A bare prop
   name resolves through `resolvePropName`/`CONJURE_ASSETS` (unknown name = honest error, not a
   silent guess); a miss surfaces via `onMiss`. `moveTo` preserves a 2D prop's depth when z is omitted.
+- **`expr` / `stretch` / `poke`** (2026-07-03/04) -- `expr {smile,brows}` drives expression channels
+  down per-channel ladders (VRM preset -> named morph -> face bones -> honest none; the reply's `via`
+  names the tier per channel, `query capabilities`.expressions reports it up front). `stretch`
+  grabs a bind-space skin region near any role/bone, holds/drags it, springs back bit-exact on
+  release; `poke` dents/bulges along vertex normals (`softmesh.js`). All three live on the
+  `EnigmaAvatar` facade too (devtools-drivable) and reply truth, never silence.
 - **`perform`** (P4 substrate) -- `control.js` parses inline tags in the LLM's own speech
   (`[emotion]` / `[conjure:x]` / `[pose:role=val]` / `[look:dir]`) into motion AND returns the clean
   TTS line. `[pose:role=val]` drives a full `[pitch,yaw,roll]` triple (`val` or `p/y/r`), not pitch-
@@ -154,7 +160,11 @@ Files are folderized by concern (2026-06-29): `shell/` (Electron main), `src/<co
   bones are passed as an `exclude` set so a humanoid's limbs never get sprung. Geometric-fallback
   chains no longer sag under gravity at rest (gravity is gated on real body motion).
 - **`facial.js`** -- VRM expr -> morph -> jaw-bone -> none; lip-sync + blink, with independent mouth
-  and blink ladders. Blink is strict (no free-running timer): driven only on speech onset or the bus.
+  and blink ladders, plus smile/brows EXPRESSION channels (morph -> face-bone tiers, mesh-aware
+  morph ownership so channels never fight). Blink is strict (no free-running timer): driven only
+  on speech onset or the bus.
+- **`softmesh.js`** -- soft-body mesh deformation: grab/pull/hold/spring-back + poke along normals,
+  selected + calibrated in BIND space (rides GPU skinning); claim-exclusive regions restore bit-exact.
 - **`loader.js`** -- multi-format loading (glTF/GLB/VRM/FBX only, spec-gloss compat, FBX material
   bind with failures surfaced to the log).
 - **`voice.js`** -- speech playback + RMS-driven mouth.

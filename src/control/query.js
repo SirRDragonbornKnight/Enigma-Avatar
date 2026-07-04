@@ -41,11 +41,22 @@ export function createQueryReporter(engine, services) {
     }
     if (what === "facial")
       return facial
-        ? { mode: facial.mode, info: facial.info, lipSync: facial.mode !== "none" }
-        : { mode: "none", lipSync: false };
+        ? {
+            mode: facial.mode,
+            info: facial.info,
+            lipSync: facial.mode !== "none",
+            exprMode: facial.exprMode || { smile: "none", brows: "none" }, // which ladder tier answers each expr channel (audit 2026-07-04: this existed but was dropped from the report)
+          }
+        : { mode: "none", lipSync: false, exprMode: { smile: "none", brows: "none" } };
     if (what === "model") return { url: curKey, size: +sizeScale.toFixed(2) };
     if (what === "where") return EnigmaAvatar.where(); // screen-px position + screen size + cursor (AI movement)
-    if (what === "capabilities" || what === "caps") return proc ? proc.capabilities() : null; // what the brain can drive: roles, flex-able limbs, expressions, channels, limits
+    if (what === "capabilities" || what === "caps") {
+      // what the brain can drive: roles, flex-able limbs, channels, limits + the expression
+      // channels (audit 2026-07-04: `expr` existed but was NOT machine-discoverable — a driver
+      // grounding itself here concluded the model had no expressions and never sent it)
+      if (!proc) return null;
+      return { ...proc.capabilities(), expressions: facial?.exprMode || { smile: "none", brows: "none" } };
+    }
     if (what === "roles") return proc ? { bones: proc.roleBones(), flex: proc.flexAxes() } : null; // DIAGNOSTIC: role → actual bone name + flex axes
     if (what === "joints") return proc ? proc.jointAngles() : null; // DIAGNOSTIC: live knee/elbow angles
     if (what === "stance") return proc?.stance ? proc.stance() : null; // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs

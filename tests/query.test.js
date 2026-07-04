@@ -52,22 +52,34 @@ test("query('model') reports the current model + size, and reads it LIVE", () =>
   assert.equal(aq("model").url, "model-B", "a later model swap is reflected on the next query");
 });
 
-test("query('facial') is honest when there is no face rig", () => {
+test("query('facial') is honest when there is no face rig — and always reports exprMode", () => {
+  const NONE = { smile: "none", brows: "none" };
   const { aq, live } = makeReporter({ facial: null });
-  assert.deepEqual(aq("facial"), { mode: "none", lipSync: false }, "no facial -> honest 'none', not a throw");
-  live.facial = { mode: "jaw", info: { axis: "x" } };
   assert.deepEqual(
     aq("facial"),
-    { mode: "jaw", info: { axis: "x" }, lipSync: true },
-    "a real mode reports lipSync=true"
+    { mode: "none", lipSync: false, exprMode: NONE },
+    "no facial -> honest 'none', not a throw"
+  );
+  live.facial = { mode: "jaw", info: { axis: "x" }, exprMode: { smile: "bones", brows: "none" } };
+  assert.deepEqual(
+    aq("facial"),
+    { mode: "jaw", info: { axis: "x" }, lipSync: true, exprMode: { smile: "bones", brows: "none" } },
+    "a real mode reports lipSync=true and the live expression tiers (audit 2026-07-04: exprMode was dropped)"
   );
 });
 
-test("query('capabilities') returns the driver's capabilities, or null when no rig resolved", () => {
+test("query('capabilities') returns the driver's capabilities + expression channels, or null when no rig resolved", () => {
   const caps = { roles: 19, flexRoles: 10 };
-  const { aq } = makeReporter({ proc: { capabilities: () => caps } });
-  assert.equal(aq("capabilities"), caps);
-  assert.equal(aq("caps"), caps, "the 'caps' alias is equivalent");
+  const { aq, live } = makeReporter({ proc: { capabilities: () => caps } });
+  // expr must be machine-DISCOVERABLE here (audit 2026-07-04: a driver grounding itself against
+  // capabilities concluded the model had no expressions and never sent the verb).
+  assert.deepEqual(aq("capabilities"), { ...caps, expressions: { smile: "none", brows: "none" } });
+  live.facial = { exprMode: { smile: "morph", brows: "bones" } };
+  assert.deepEqual(
+    aq("caps").expressions,
+    { smile: "morph", brows: "bones" },
+    "the 'caps' alias reports the live tiers"
+  );
   assert.equal(makeReporter({ proc: null }).aq("capabilities"), null, "no proc -> null, never a fake answer");
 });
 

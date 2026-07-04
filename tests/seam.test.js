@@ -19,7 +19,7 @@ import { createBusRegistry } from "../src/control/bus.js";
 globalThis.innerWidth = globalThis.innerWidth ?? 1920;
 globalThis.innerHeight = globalThis.innerHeight ?? 1080;
 
-// The 53 public facade methods (sorted). Generated from the real factory, not hand-counted.
+// The 56 public facade methods (sorted). Generated from the real factory, not hand-counted.
 const SURFACE_METHODS = [
   "attach",
   "attachments",
@@ -31,6 +31,7 @@ const SURFACE_METHODS = [
   "conjure",
   "connect",
   "detach",
+  "expr",
   "facialTune",
   "fingers",
   "getRotateMode",
@@ -49,6 +50,7 @@ const SURFACE_METHODS = [
   "moveTo",
   "nudge",
   "perform",
+  "poke",
   "poseLayer",
   "recolor",
   "resetColors",
@@ -72,11 +74,12 @@ const SURFACE_METHODS = [
   "springTune",
   "state",
   "stopSpeak",
+  "stretch",
   "tuneAttachment",
   "where",
 ];
 
-// The 37 bus move-set verbs (sorted). One name per concept (the 2026-06-29 alias purge).
+// The 40 bus move-set verbs (sorted). One name per concept (the 2026-06-29 alias purge).
 const BUS_COMMANDS = [
   "attach",
   "ball",

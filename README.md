@@ -118,7 +118,10 @@ that protocol drives her -- Enigma, Odysseus, or the CLIs below.
 - `EnigmaAvatar.springTune({ stiffness, drag, gravity })` -- hair/tail feel (saved per avatar).
 - `EnigmaAvatar.facialTune({ jawAxis:'x', jawOpen:0.32 })` -- jaw-flap axis/amount (per-rig; needs your eyes).
 - `EnigmaAvatar.say("file:///...wav")` / `EnigmaAvatar.mouth(0.5)` -- speech + manual jaw.
-- `EnigmaAvatar.capabilities()` -- what THIS model can drive (roles, flex-able limbs, finger names, angle + speed limits, units).
+- `EnigmaAvatar.expr({ smile:1, brows:0.5 })` -- expression channels 0..1 down per-channel ladders (VRM preset -> named morph -> face bones -> honest none); the reply's `via` names the tier that answered.
+- `EnigmaAvatar.stretch({ role:'head', pull:[0.1,0,0] })` -- grab a skin region and HOLD it (re-send `{id,pull}` to drag, `{release:true|id}` to let go -- it springs back bit-exact).
+- `EnigmaAvatar.poke({ role:'head', amount:-0.2 })` -- one-shot dent (or bulge, amount>0) along vertex normals; wobbles back on its own.
+- `EnigmaAvatar.capabilities()` -- what THIS model can drive (roles, flex-able limbs, finger names, angle + speed limits, units, expression channels).
 - `EnigmaAvatar.state()` -- debug (size, pos, springBones, facial mode, toggles).
 
 ## Needs your eyes (can't be verified headless)

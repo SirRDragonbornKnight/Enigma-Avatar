@@ -75,7 +75,8 @@
  * Any command a driver can send over the bus. The body's handleCommand dispatches on `action`;
  * an unknown/garbage action is an honest no-op (never a throw).
  * @typedef {PoseCommand | FingersCommand | ImpulseCommand | PerformCommand
- *   | SayCommand | StopCommand | MouthCommand | BlinkCommand
+ *   | SayCommand | StopCommand | MouthCommand | BlinkCommand | ExprCommand
+ *   | StretchCommand | PokeCommand
  *   | ConjureCommand | BallCommand
  *   | MoveCommand | SizeCommand | RotateCommand | RotateModeCommand | MonitorCommand | PlatformCommand
  *   | LoadCommand | RecolorCommand | ResetColorsCommand | HueCommand | MeshCommand | MorphCommand
@@ -96,11 +97,13 @@
  * procedural.js `capabilities()`; the driver grounds its tags against this before sending.
  * @typedef {{
  *   roles: string[],
+ *   roleBones: Record<string, string>,
  *   flexRoles: string[],
  *   channels: { pose: boolean, flex: boolean, layers: boolean, fingers: { L: string[], R: string[] } },
  *   limits: Record<string, unknown>,
  *   units: { offsets: "radians", flex: "radians", limits: "degrees" },
- *   fsign: number
+ *   fsign: number,
+ *   expressions: { smile: string, brows: string }
  * }} Capabilities
  */
 
