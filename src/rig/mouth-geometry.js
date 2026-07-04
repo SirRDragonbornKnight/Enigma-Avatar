@@ -23,6 +23,9 @@ export function detectMouthMorph(model, opts = {}) {
   if (!model) return null;
   model.updateWorldMatrix(true, true);
   syncSkinnedBind(model); // pre-first-frame: refresh stale bindMatrixInverse or skinned coords are garbage
+  model.traverse((o) => {
+    if (o.isSkinnedMesh) o.boundingBox = null; // drop boxes CACHED before that sync — r184's Box3.expandByObject reuses object.boundingBox, and an earlier pre-sync scan poisons it (audit 2026-07-04)
+  });
 
   const meshes = [];
   model.traverse((o) => {

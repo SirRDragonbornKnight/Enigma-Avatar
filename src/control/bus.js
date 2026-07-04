@@ -51,18 +51,6 @@ export function createBusRegistry(engine, services) {
     uiHueShift,
   } = services;
 
-  // Resolve a stretch/poke target: canonical role FIRST (the AI speaks roles), then raw bone name.
-  const _softBone = (key) => {
-    if (!key) return null;
-    const rb = engine.roleBones || {};
-    if (rb[key]) return rb[key];
-    let b = null;
-    engine.model?.traverse?.((o) => {
-      if (o.isBone && o.name === String(key)) b = o;
-    });
-    return b;
-  };
-
   const COMMANDS = {
     // Null prototype: action names come off the wire, and a plain object literal inherits
     // Object.prototype — {action:"toString"} would dispatch and {action:"hasOwnProperty"} would
@@ -100,32 +88,11 @@ export function createBusRegistry(engine, services) {
       if (c.value != null && isFinite(n)) engine.facial?.setBlink?.(n);
       else engine.facial?.blink?.();
     }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
-    expr: (c) => {
-      // expressions 0..1 by channel: {smile,brows}. Replies {applied,via} — via names the ladder
-      // tier per channel ("vrm"|"morph"|"bones"|"none"), so a driver knows what actually moved.
-      const f = engine.facial;
-      if (!f?.setExpr) return { error: "no facial rig on this model" };
-      return f.setExpr({ smile: c.smile, brows: c.brows });
-    },
-    stretch: (c) => {
-      // soft-mesh GRAB: {bone|role, radius?, pull:[x,y,z]} pulls the skin region and HOLDS it;
-      // re-send with {id, pull} to drag a held grab; {release:true|id} lets go (spring-back).
-      // Replies truth ({grabbed,verts,applied,max} / {released} / named {error}) — never silence.
-      const soft = engine.soft;
-      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
-      if (c.release != null) return soft.release(c.release === true ? true : String(c.release));
-      const bone = _softBone(c.bone ?? c.role);
-      wake(2.5);
-      return soft.grab(bone, { radius: c.radius, pull: c.pull, id: c.id });
-    },
-    poke: (c) => {
-      // soft-mesh POKE along vertex normals: amount>0 bulges out (the pushed-from-inside cheek),
-      // amount<0 dents in. One-shot: presses, releases, jelly-wobbles back to pristine.
-      const soft = engine.soft;
-      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
-      wake(2.5);
-      return soft.poke(_softBone(c.bone ?? c.role), { radius: c.radius, amount: c.amount ?? c.value });
-    },
+    // expr/stretch/poke live on the FACADE like every other verb (audit 2026-07-04: they read the
+    // engine directly, so the documented devtools/EnigmaAvatar path could not drive them at all).
+    expr: (c) => EnigmaAvatar.expr(c), // smile/brows 0..1; reply names the tier per channel
+    stretch: (c) => EnigmaAvatar.stretch(c), // soft-mesh grab/drag/release — truth replies, never silence
+    poke: (c) => EnigmaAvatar.poke(c), // soft-mesh dent/bulge along normals, one-shot
 
     // --- CONJURE (prop spawning) + the physics-ball toy (distinct features) -------------------------
     conjure: (c) => EnigmaAvatar.conjure(c), // spawn/move/dismiss/clear a conjured prop (transform-based)

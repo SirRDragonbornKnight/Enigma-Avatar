@@ -29,6 +29,10 @@ async def main():
         cmds = json.loads(arg)
     if isinstance(cmds, dict):
         cmds = [cmds]
+    for c in cmds:  # a sleep step is consumed locally, never sent — a reqId on one can NEVER be answered
+        if isinstance(c, dict) and "sleep" in c and "action" not in c and "reqId" in c:
+            print(f"ERROR: a sleep step cannot carry a reqId ({json.dumps(c)}) -- it is not sent to the overlay")
+            return
     want = {c["reqId"] for c in cmds if isinstance(c, dict) and "reqId" in c}
     results = {}
     try:
@@ -37,18 +41,29 @@ async def main():
         print("CONNECT FAILED:", repr(e))
         return
     async with ws:
+        # The reader's silence budget is a SHARED DEADLINE the send loop extends past every
+        # send/sleep -- a fixed per-recv timeout starved on stacked sleeps (>30s of quiet wire
+        # killed the reader SILENTLY and every later reqId printed NO REPLY though answered).
+        loop = asyncio.get_running_loop()
+        deadline = [loop.time() + 35.0]  # 35s past the LAST step: `load` replies when the model is BUILT (big models >6s)
 
         async def reader():
             try:
                 while want:
-                    # 30s: a `load` reply now arrives when the model is BUILT — big models take >6s
-                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
+                    left = deadline[0] - loop.time()
+                    if left <= 0:
+                        print(f"READER TIMEOUT: no reply for reqIds {sorted(want, key=str)}")
+                        return
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=min(30.0, max(0.1, left)))
+                    except asyncio.TimeoutError:
+                        continue  # re-check the deadline (a sleep step may have extended it)
                     msg = json.loads(raw)
                     if msg.get("type") == "reply" and msg.get("reqId") in want:
                         results[msg["reqId"]] = msg.get("result")
                         want.discard(msg["reqId"])
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"READER DIED: {type(e).__name__}: {e}")  # loud, never a silent pass (audit 2026-07-04)
 
         rt = asyncio.create_task(reader())
         for c in cmds:
@@ -56,8 +71,10 @@ async def main():
                 # {"sleep": ms} pseudo-command: deterministic settle inside ONE batch (glides,
                 # mouth smoother, reloads) instead of a PowerShell round-trip per pause.
                 await asyncio.sleep(min(30.0, max(0.0, float(c["sleep"]) / 1000)))
+                deadline[0] = loop.time() + 35.0
                 continue
             await ws.send(json.dumps(c))
+            deadline[0] = loop.time() + 35.0
             await asyncio.sleep(0.4)
         if want:
             await rt

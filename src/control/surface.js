@@ -66,6 +66,18 @@ export function createControlSurface(engine, services) {
   // Stable in-place state objects (mutated, never reassigned) — read straight off the live container.
   const { pos, cursor, CONJURE_ASSETS } = engine;
 
+  // Resolve a stretch/poke target: canonical role FIRST (drivers speak roles), then raw bone name.
+  const softBone = (key) => {
+    if (!key) return null;
+    const rb = engine.roleBones || {};
+    if (rb[key]) return rb[key];
+    let b = null;
+    engine.model?.traverse?.((o) => {
+      if (o.isBone && o.name === String(key)) b = o;
+    });
+    return b;
+  };
+
   const EnigmaAvatar = {
     // (clip-playback API — actions / play / loopClip / playAnim / stopAnim — removed with the clip-library purge 2026-06-25)
     moveTo(px, py, dur) {
@@ -79,7 +91,7 @@ export function createControlSurface(engine, services) {
     size: () => engine.sizeScale,
     load(url) {
       if (!url) return;
-      const done = awaitNextLoad ? awaitNextLoad() : undefined; // hook FIRST (the relay can build synchronously in-process)
+      const done = awaitNextLoad ? awaitNextLoad(url) : undefined; // hook FIRST (the relay can build synchronously in-process); keyed to THIS url so another load path's completion can't masquerade as ours
       engine.uiLoadModel(url, url);
       return done; // thenable -> the bus replies when the model is BUILT ({loaded,facial,blink,size} or {error}), not merely requested
     }, // relayed — a devtools/global load must reach every window like any other
@@ -290,6 +302,30 @@ export function createControlSurface(engine, services) {
     }, // how many morph targets to probe across
     say: (url, opts) => voice.speak(url, opts), // play speech audio + lip-sync
     stopSpeak: () => voice.stop(),
+    expr: (p) => {
+      // smile/brows 0..1 down the per-channel ladders; the reply names the tier that answered
+      // each channel ("vrm"|"morph"|"bones"|"none"). Facade home so devtools can drive it too
+      // (audit 2026-07-04: the bus verbs had no EnigmaAvatar counterpart).
+      const f = engine.facial;
+      if (!f?.setExpr) return { error: "no facial rig on this model" };
+      return f.setExpr({ smile: p?.smile, brows: p?.brows });
+    },
+    stretch: (c = {}) => {
+      // soft-mesh GRAB: {bone|role, radius?, pull:[x,y,z]} pulls the skin region and HOLDS it;
+      // re-send with {id, pull} to drag; {release:true|id} lets go (spring-back). Truth replies.
+      const soft = engine.soft;
+      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
+      if (c.release != null && c.release !== false) return soft.release(c.release === true ? true : String(c.release)); // release:false = "not a release", never a grab named "false"
+      wake(2.5);
+      return soft.grab(softBone(c.bone ?? c.role), { radius: c.radius, pull: c.pull, id: c.id });
+    },
+    poke: (c = {}) => {
+      // soft-mesh POKE along vertex normals: amount>0 bulges out, <0 dents in. One-shot wobble-back.
+      const soft = engine.soft;
+      if (!soft) return { error: "no soft-mesh layer (no model loaded)" };
+      wake(2.5);
+      return soft.poke(softBone(c.bone ?? c.role), { radius: c.radius, amount: c.amount ?? c.value });
+    },
     attach: (url, opts) => engine.uiAttach(url, opts), // prop/accessory → bone (opts: bone,pos,rot,scale) — relayed (consistent ids + every window's copy)
     detach: (id) => engine.uiDetach(id),
     clearAttachments: () => engine.uiClearAttachments(),

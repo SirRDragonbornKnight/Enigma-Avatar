@@ -680,16 +680,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       } catch {}
       enterNoModel();
       setStatus(`load failed: ${(e && e.message) || "rig build error"}`);
-      _signalLoaded({ error: String((e && e.message) || "rig build error") });
+      _signalLoaded({ error: String((e && e.message) || "rig build error"), url: curKey }); // carry WHICH load failed — the keyed waiter must not adopt another load's failure
     }
   }
   function _buildLoadedModel(asset) {
     disposeModel();
+    if (!asset.scene) throw new Error("asset has no scene"); // THROW into the boundary guard — a bare return fell through to the SUCCESS reply with a blank screen (audit 2026-07-04)
     model = asset.scene;
-    if (!model) {
-      setStatus("load failed: no scene");
-      return;
-    }
     vrm = asset.vrm || null;
     // #1: STOP vrm.update() from copying the rest-pose normalized humanoid bones back over the AI
     // pose every frame. With autoUpdateHumanBones on, the procedural compositor writes a head/arm pose
@@ -978,10 +975,28 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       // resolved HEAD + the body frame to anchor their eye/mouth bands on any rig.
       soft = buildSoftMesh(model); // soft-mesh grab/poke layer (bind-space vertex regions; rides skinning)
       const _fa = proc?.jointAngles ? proc.jointAngles().fwd : null;
+      const _fwd = _fa ? new THREE.Vector3(_fa[0], _fa[1], _fa[2]) : new THREE.Vector3(0, 0, 1);
+      // ONE morph classification, HERE at load: rest pose + the rig's real facing (audit
+      // 2026-07-04: the lazy query-path re-scan classified whatever pose she happened to be
+      // HOLDING and cached that for the session, in a head-only frame that could disagree with
+      // the facial build's — and the second-scale scan ran twice per model).
+      _morphGeo = null;
+      if (roleBones.head && morphMeshes().n) {
+        try {
+          _morphGeo = analyzeMorphGeometry(model, {
+            head: roleBones.head,
+            bodyUp: new THREE.Vector3(0, 1, 0),
+            forward: _fwd,
+          });
+        } catch (e) {
+          console.warn("[avatar] morph classification failed:", e);
+        }
+      }
       facial = buildFacial(model, vrm, {
         headBone: roleBones.head || null,
         bodyUp: new THREE.Vector3(0, 1, 0), // rig-up post-normalization
-        forward: _fa ? new THREE.Vector3(_fa[0], _fa[1], _fa[2]) : new THREE.Vector3(0, 0, 1),
+        forward: _fwd,
+        geo: _morphGeo, // share the load-time analysis — facial's lazy fallback only runs if this is null
       });
     }
     if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial); // per-avatar jaw/face tuning
@@ -1102,16 +1117,29 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // Bus 'load' completion signal (2026-07-03): load used to be fire-and-forget, so a driver had to
   // GUESS settle time with sleeps (8-15s per model this session). One waiter slot: the newest load
   // owns it; a superseded asker gets {superseded:true}, a failed build an honest {error}.
-  let _loadNotify = null;
+  let _loadNotify = null,
+    _loadNotifyKey = null; // the url the armed waiter asked for (audit 2026-07-04: unkeyed, ANY load path's build resolved a pending bus reqId with the WRONG model's success)
   function _signalLoaded(result) {
     const n = _loadNotify;
+    if (!n) return;
+    const id = result && (result.url ?? (result.loaded !== "none" ? result.loaded : DEFAULT_KEY));
+    if (_loadNotifyKey != null && id != null && id !== _loadNotifyKey) {
+      // a DIFFERENT load (gallery click / drag-drop) finished while the waiter's own load was
+      // in flight and seq-dropped — honest supersession, never a fake success for the wrong model
+      _loadNotify = null;
+      _loadNotifyKey = null;
+      n({ superseded: true, by: id });
+      return;
+    }
     _loadNotify = null;
-    if (n) n(result);
+    _loadNotifyKey = null;
+    n(result);
   }
-  function awaitNextLoad() {
+  function awaitNextLoad(key) {
     return new Promise((res) => {
       if (_loadNotify) _loadNotify({ superseded: true });
       _loadNotify = res;
+      _loadNotifyKey = key != null ? String(key) : null;
     });
   }
   function loadModel(url, label) {
@@ -1757,25 +1785,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     return null;
   }
-  // Lazy per-model morph classification (2026-07-03 audit finding 4): the geometric eye/mouth-band
+  // Per-model morph classification (2026-07-03 audit finding 4): the geometric eye/mouth-band
   // analysis always existed but was facial.js-private, so a model with 42 unnamed morphs meant 42
-  // blind snap probes. Cached per model; reset alongside the rig on load.
-  let _morphGeo = null,
-    _morphGeoTried = false;
+  // blind snap probes. Computed ONCE at load — rest pose, real facing — in the facial build block
+  // (audit 2026-07-04: computing lazily at query time classified the LIVE pose and cached it).
+  let _morphGeo = null;
   function resetMorphGeo() {
     _morphGeo = null;
-    _morphGeoTried = false;
   }
   function morphGeoAnalysis() {
-    if (_morphGeoTried) return _morphGeo;
-    _morphGeoTried = true;
-    if (!model || !roleBones.head) return null; // no head anchor -> honestly unclassified, never guessed
-    try {
-      _morphGeo = analyzeMorphGeometry(model, { head: roleBones.head });
-    } catch (e) {
-      console.warn("[avatar] morph classification failed:", e);
-    }
-    return _morphGeo;
+    return _morphGeo; // null = honestly unclassified (no head anchor / no morphs / analysis failed)
   }
   function allMorphsInfo() {
     const { meshes, n } = morphMeshes();
