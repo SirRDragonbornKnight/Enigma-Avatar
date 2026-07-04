@@ -15,6 +15,7 @@ import { toAppUrl } from "../util/localurl.js";
 export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, setStatus } = {}) {
   let audioCtx = null,
     srcNode = null,
+    anNode = null,
     raf = 0,
     seq = 0,
     speaking = false;
@@ -34,6 +35,14 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
         srcNode.disconnect();
       } catch {}
       srcNode = null;
+    }
+    if (anNode) {
+      // the analyser stays wired to destination otherwise — one zombie node per utterance on the
+      // never-closed shared AudioContext
+      try {
+        anNode.disconnect();
+      } catch {}
+      anNode = null;
     }
     const f = getFacial?.();
     if (f) f.setMouth(0);
@@ -101,6 +110,7 @@ export function createVoice({ getFacial, onSpeakStart, onEnvelope, onSpeakEnd, s
       src.connect(an);
       an.connect(audioCtx.destination);
       srcNode = src;
+      anNode = an;
       const buf = new Uint8Array(an.fftSize);
       const tick = () => {
         if (myseq !== seq) return;

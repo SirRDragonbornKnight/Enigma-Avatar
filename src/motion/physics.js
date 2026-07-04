@@ -8,6 +8,7 @@
 // zero cost for users who never throw anything. v1 limitation (documented in TODO): physics props
 // live in the BRAIN window's scene only, so they render on the primary monitor.
 import * as THREE from "three";
+import { disposeMeshTree } from "../util/dispose.js"; // every throw re-parses the ball GLB into fresh textures — eviction must free them too
 
 export function createPhysics({ scene, loadAsset }) {
   let RAPIER = null,
@@ -129,10 +130,7 @@ export function createPhysics({ scene, loadAsset }) {
           while (props.length >= 24) {
             const old = props.shift();
             scene.remove(old.obj);
-            old.obj.traverse((o) => {
-              if (o.geometry) o.geometry.dispose();
-              if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
-            });
+            disposeMeshTree(old.obj);
             if (world) world.removeRigidBody(old.body);
           } // HARD CAP: a stuck bus / AI loop must not spawn rapier bodies until the step + VRAM choke
           props.push({ body, obj, radius: r });
@@ -146,10 +144,7 @@ export function createPhysics({ scene, loadAsset }) {
   function clearProps() {
     for (const p of props) {
       scene.remove(p.obj);
-      p.obj.traverse((o) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
-      });
+      disposeMeshTree(p.obj);
       if (world) world.removeRigidBody(p.body);
     }
     props.length = 0;
