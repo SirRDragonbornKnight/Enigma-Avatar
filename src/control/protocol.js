@@ -33,7 +33,7 @@
 /** @typedef {{ action: "poke", bone?: string, role?: string, radius?: number, amount?: number, value?: number } & WithReqId} PokeCommand */
 
 // ── CONJURE + PHYSICS TOY ──────────────────────────────────────────────────────
-/** @typedef {{ action: "conjure", url?: string, move?: string, to?: number[] | string, dismiss?: string, clear?: boolean, id?: string, size?: number, at?: number[], bone?: string, dur?: number, float?: number } & WithReqId} ConjureCommand */
+/** @typedef {{ action: "conjure", url?: string, move?: string, to?: number[] | {x?: number, y?: number, z?: number}, dismiss?: string, clear?: boolean, id?: string, size?: number, at?: number[] | {x?: number, y?: number, z?: number}, bone?: string, dur?: number, float?: number } & WithReqId} ConjureCommand */
 /** @typedef {{ action: "ball", name?: string, value?: string } & WithReqId} BallCommand */
 
 // ── PLACE / TRANSFORM ──────────────────────────────────────────────────────────
@@ -241,8 +241,30 @@ export function validateCommand(raw) {
   if (typeof action !== "string") return { ok: false, reason: "missing string 'action'" };
   if (!isAction(action)) return { ok: false, reason: `unknown action '${action}'` };
   const req = REQUIRED_FIELDS[action];
-  if (req && /** @type {Record<string, unknown>} */ (raw)[req] === undefined) {
-    return { ok: false, reason: `'${action}' requires '${req}'` };
+  if (req) {
+    // presence must mean USABLE presence: null / "" dispatched, hit the handler's truthiness
+    // guard, and answered a reqId caller with silent `undefined` — the exact non-answer the
+    // strict wire exists to prevent.
+    const v = /** @type {Record<string, unknown>} */ (raw)[req];
+    if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) {
+      return { ok: false, reason: `'${action}' requires '${req}'` };
+    }
+  }
+  // recolor's requirement is one-of-two (index OR name) — inexpressible in the single-field map,
+  // and without it {action:"recolor"} validated, dispatched, and no-oped silently.
+  if (action === "recolor") {
+    const r = /** @type {{ index?: unknown, name?: unknown }} */ (raw);
+    if (r.index == null && (r.name == null || r.name === "")) {
+      return { ok: false, reason: "'recolor' requires 'index' or 'name'" };
+    }
+  }
+  // a GARBAGE query.what is a typo, not a request for the full state snapshot (a missing `what`
+  // still falls through to state() — that contract stands).
+  if (action === "query") {
+    const w = /** @type {{ what?: unknown }} */ (raw).what;
+    if (w != null && !(typeof w === "string" && (QUERY_KINDS.includes(w) || w === "actions"))) {
+      return { ok: false, reason: `unknown query what '${String(w)}'` }; // "actions" is registry-answered, outside QUERY_KINDS
+    }
   }
   return { ok: true, command: /** @type {BusCommand} */ (raw) };
 }

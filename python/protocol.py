@@ -63,6 +63,20 @@ def validate_command(raw: object) -> tuple[bool, str | None]:
     if action not in ACTIONS:
         return False, f"unknown action '{action}'"
     req = REQUIRED_FIELDS.get(action)
-    if req and req not in raw:
-        return False, f"'{action}' requires '{req}'"
+    if req:
+        # presence must mean USABLE presence: a present-but-None/"" value dispatches and dies
+        # silently in the handler (mirrors the protocol.js rule)
+        v = raw.get(req)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return False, f"'{action}' requires '{req}'"
+    # recolor needs index OR name (one-of-two, inexpressible in the single-field map)
+    if action == "recolor":
+        if raw.get("index") is None and not raw.get("name"):
+            return False, "'recolor' requires 'index' or 'name'"
+    # a garbage query.what is a typo, not a request for the state snapshot ("actions" is
+    # registry-answered, outside QUERY_KINDS; a MISSING what still falls through to state())
+    if action == "query":
+        w = raw.get("what")
+        if w is not None and not (isinstance(w, str) and (w in QUERY_KINDS or w == "actions")):
+            return False, f"unknown query what '{w}'"
     return True, None

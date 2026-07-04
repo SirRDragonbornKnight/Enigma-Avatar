@@ -229,11 +229,17 @@ export function createControlSurface(engine, services) {
         return { conjured: [] };
       }
       if (c.dismiss) {
-        conjurer.dismiss(String(c.dismiss));
+        // dismiss/moveTo return false for an unknown id — a typo must get the honest error the
+        // spawn branch already gives, not a fake {dismissed}/{moved} success
+        if (!conjurer.dismiss(String(c.dismiss)))
+          return { error: `no conjured prop '${c.dismiss}'`, ids: conjurer.ids() };
         return { dismissed: c.dismiss, ids: conjurer.ids() };
       }
       if (c.move && c.to) {
-        conjurer.moveTo(String(c.move), c.to, { dur: c.dur });
+        if (typeof c.to === "string")
+          return { error: "conjure move 'to' takes [x,y,z] or {x,y,z} (named targets are not a feature)" };
+        if (!conjurer.moveTo(String(c.move), c.to, { dur: c.dur }))
+          return { error: `no conjured prop '${c.move}'`, ids: conjurer.ids() };
         return { moved: c.move };
       }
       const url = resolvePropName(c.url, CONJURE_ASSETS);

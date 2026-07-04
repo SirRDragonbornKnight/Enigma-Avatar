@@ -84,8 +84,9 @@ export function createBusRegistry(engine, services) {
       EnigmaAvatar.mouth(c.value); // manual jaw drive (testing) — coerced+guarded inside
     },
     blink: (c) => {
-      const n = +c.value;
-      if (c.value != null && isFinite(n)) engine.facial?.setBlink?.(n);
+      const raw = typeof c.value === "string" && c.value.trim() === "" ? null : c.value; // "" coerces to 0 — that would HOLD the lids, not blink
+      const n = +raw;
+      if (raw != null && isFinite(n)) engine.facial?.setBlink?.(n);
       else engine.facial?.blink?.();
     }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
     // expr/stretch/poke live on the FACADE like every other verb (audit 2026-07-04: they read the

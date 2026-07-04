@@ -5,6 +5,7 @@
 // (popScale / floatBob / easeInOut — all unit-tested) and this file is just the plumbing.
 import * as THREE from "three";
 import { popScale, floatBob, easeInOut } from "./motionmath.js";
+import { disposeMeshTree } from "../util/dispose.js";
 
 export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
   const items = new Map(); // id -> rec
@@ -14,6 +15,9 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
   // (NaN from a stringly value, or Infinity) lerped into obj.position propagates through three.js
   // and blanks/explodes the prop. Coerce every coordinate to a finite number where it ENTERS here.
   const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+  // The wire documents `at`/`to` as number[] too ({action:"conjure", at:[x,y,z]}) — reading .x
+  // off an array silently no-oped every axis. Accept both shapes; null = unusable target.
+  const xyz = (t) => (Array.isArray(t) ? { x: t[0], y: t[1], z: t[2] } : t && typeof t === "object" ? t : null);
 
   function spawn(url, opts = {}) {
     const id = String(opts.id || "conj" + ++_n);
@@ -23,7 +27,7 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
       if (oldest == null) break;
       _remove(oldest);
     } // HARD CAP: an AI looping [conjure:x] must not spawn props without bound
-    const at = opts.at || {};
+    const at = xyz(opts.at) || {};
     const rec = {
       obj: null,
       base: 1,
@@ -43,7 +47,10 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
     loadAsset(
       url,
       (asset) => {
-        if (!asset?.scene || !items.has(id)) return; // load lost a race with a dismiss
+        // record identity, not id presence: a same-id respawn replaces the map entry, and the
+        // FIRST load completing late would add its orphaned scene — an undismissable ghost prop
+        // that also grows the click-capture silhouette
+        if (!asset?.scene || items.get(id) !== rec) return; // load lost a race with a dismiss/respawn
         const obj = asset.scene;
         const bb = new THREE.Box3().setFromObject(obj);
         const span = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) || 1;
@@ -66,12 +73,13 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
 
   function moveTo(id, target, opts = {}) {
     const rec = items.get(id);
-    if (!rec || !rec.obj || !target) return false;
+    const t = xyz(target);
+    if (!rec || !rec.obj || !t) return false;
     rec.from = rec.obj.position.clone();
     rec.to = new THREE.Vector3(
-      fin(target.x, rec.obj.position.x),
-      fin(target.y, rec.obj.position.y),
-      fin(target.z, rec.obj.position.z) // omitted/garbage axis keeps current value (don't teleport to 0 or NaN)
+      fin(t.x, rec.obj.position.x),
+      fin(t.y, rec.obj.position.y),
+      fin(t.z, rec.obj.position.z) // omitted/garbage axis keeps current value (don't teleport to 0 or NaN)
     );
     rec.moveT = 0;
     rec.moveDur = +opts.dur > 0 ? +opts.dur : 0.8;
@@ -93,10 +101,7 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
     const rec = items.get(id);
     if (rec?.obj) {
       scene.remove(rec.obj);
-      rec.obj.traverse((o) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
-      });
+      disposeMeshTree(rec.obj); // incl. textures — every despawn leaked the prop's texture set
     }
     items.delete(id);
   }

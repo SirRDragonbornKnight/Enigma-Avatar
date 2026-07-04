@@ -63,3 +63,32 @@ test("validateCommand is STRUCTURAL only — it does NOT coerce or reject loose 
   assert.equal(validateCommand({ action: "size", value: "huge" }).ok, true);
   assert.equal(validateCommand({ action: "mouth", value: NaN }).ok, true);
 });
+
+test("required-field presence means USABLE presence: null and empty-string are named errors, not silent dispatch", () => {
+  // {action:"say", url:null} used to validate, dispatch, hit the handler's truthiness guard, and
+  // answer a reqId caller with silent `undefined` — the exact non-answer the strict wire forbids.
+  for (const bad of [null, "", "   "]) {
+    const r = validateCommand({ action: "say", url: bad });
+    assert.equal(r.ok, false, `say url=${JSON.stringify(bad)} must be rejected`);
+    assert.match(r.reason, /'say' requires 'url'/);
+  }
+  assert.equal(validateCommand({ action: "load", url: "" }).ok, false);
+  // a present-but-numeric value stays fine (mouth value 0 is legal)
+  assert.equal(validateCommand({ action: "mouth", value: 0 }).ok, true);
+});
+
+test("recolor requires index OR name (one-of-two beyond the single-field map)", () => {
+  const r = validateCommand({ action: "recolor" });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /'recolor' requires 'index' or 'name'/);
+  assert.equal(validateCommand({ action: "recolor", index: 0 }).ok, true);
+  assert.equal(validateCommand({ action: "recolor", name: "Hair" }).ok, true);
+});
+
+test("a garbage query.what is a named error; missing what and the registry-handled 'actions' stay valid", () => {
+  const g = validateCommand({ action: "query", what: "platfroms" }); // the typo class
+  assert.equal(g.ok, false);
+  assert.match(g.reason, /unknown query what 'platfroms'/);
+  assert.equal(validateCommand({ action: "query" }).ok, true);
+  assert.equal(validateCommand({ action: "query", what: "actions" }).ok, true);
+});
