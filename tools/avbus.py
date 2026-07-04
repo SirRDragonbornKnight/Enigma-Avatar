@@ -41,7 +41,8 @@ async def main():
         async def reader():
             try:
                 while want:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=6)
+                    # 30s: a `load` reply now arrives when the model is BUILT — big models take >6s
+                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
                     msg = json.loads(raw)
                     if msg.get("type") == "reply" and msg.get("reqId") in want:
                         results[msg["reqId"]] = msg.get("result")
@@ -51,6 +52,11 @@ async def main():
 
         rt = asyncio.create_task(reader())
         for c in cmds:
+            if isinstance(c, dict) and "sleep" in c and "action" not in c:
+                # {"sleep": ms} pseudo-command: deterministic settle inside ONE batch (glides,
+                # mouth smoother, reloads) instead of a PowerShell round-trip per pause.
+                await asyncio.sleep(min(30.0, max(0.0, float(c["sleep"]) / 1000)))
+                continue
             await ws.send(json.dumps(c))
             await asyncio.sleep(0.4)
         if want:

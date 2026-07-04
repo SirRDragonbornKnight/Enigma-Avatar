@@ -26,6 +26,7 @@ export function createControlSurface(engine, services) {
     goTo,
     whereAmI,
     applySize,
+    awaitNextLoad,
     springTune,
     facialTune,
     throwBall,
@@ -77,7 +78,10 @@ export function createControlSurface(engine, services) {
     setSize: (s, anchor) => applySize(s, anchor), // anchor: "feet"(default)|"hips"|"head" — which body point stays put
     size: () => engine.sizeScale,
     load(url) {
+      if (!url) return;
+      const done = awaitNextLoad ? awaitNextLoad() : undefined; // hook FIRST (the relay can build synchronously in-process)
       engine.uiLoadModel(url, url);
+      return done; // thenable -> the bus replies when the model is BUILT ({loaded,facial,blink,size} or {error}), not merely requested
     }, // relayed — a devtools/global load must reach every window like any other
     matched: () => {
       const proc = engine.proc;

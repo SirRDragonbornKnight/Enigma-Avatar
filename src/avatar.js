@@ -660,6 +660,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // disposed, no new one, no honest message. Catch it here -> the canonical no-model state + a reason.
     try {
       _buildLoadedModel(asset);
+      _signalLoaded({
+        loaded: curKey,
+        facial: facial?.mode || "none",
+        blink: facial?.blinkMode || "none",
+        size: +sizeScale.toFixed(2),
+      }); // the bus 'load' reply: the model is BUILT (rig+facial+springs live), not merely requested
     } catch (e) {
       console.error("[avatar] model build failed -> honest no-model fallback:", e);
       try {
@@ -667,6 +673,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       } catch {}
       enterNoModel();
       setStatus(`load failed: ${(e && e.message) || "rig build error"}`);
+      _signalLoaded({ error: String((e && e.message) || "rig build error") });
     }
   }
   function _buildLoadedModel(asset) {
@@ -1084,6 +1091,21 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   let _loadSeq = 0;
   const _peerRetries = {}; // url -> failed mirror-load attempts (peer only)
+  // Bus 'load' completion signal (2026-07-03): load used to be fire-and-forget, so a driver had to
+  // GUESS settle time with sleeps (8-15s per model this session). One waiter slot: the newest load
+  // owns it; a superseded asker gets {superseded:true}, a failed build an honest {error}.
+  let _loadNotify = null;
+  function _signalLoaded(result) {
+    const n = _loadNotify;
+    _loadNotify = null;
+    if (n) n(result);
+  }
+  function awaitNextLoad() {
+    return new Promise((res) => {
+      if (_loadNotify) _loadNotify({ superseded: true });
+      _loadNotify = res;
+    });
+  }
   function loadModel(url, label) {
     _cancelMotion(); // a model switch zeroes any in-flight jump hop (stale baseline / rotation)
     if (held) {
@@ -1094,6 +1116,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (url === DEFAULT_KEY) {
       enterNoModel();
       showOnboarding();
+      _signalLoaded({ loaded: "none" });
       return;
     } // #13: no-model state (inert marker + DOM message), NOT a self-made character
     setStatus(`loading ${label || url} ...`);
@@ -1110,6 +1133,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       (err) => {
         if (seq !== _loadSeq) return;
         setStatus(`load failed: ${err?.message || err}`);
+        _signalLoaded({ error: String(err?.message || err), url });
         console.error(err);
         try {
           window.avatarIPC?.log?.(`LOAD FAILED ${url}: ${err?.message || err}`);
@@ -2536,6 +2560,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     goTo,
     whereAmI,
     applySize,
+    awaitNextLoad, // bus 'load' replies when the model is BUILT (no more guessed sleeps)
     springTune,
     facialTune,
     throwBall,

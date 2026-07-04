@@ -132,7 +132,7 @@ export function createBusRegistry(engine, services) {
 
     // --- APPEARANCE --------------------------------------------------------------------------------
     load: (c) => {
-      if (c.url) EnigmaAvatar.load(c.url);
+      if (c.url) return EnigmaAvatar.load(c.url); // async reply: {loaded,facial,blink,size} when BUILT, {error} on failure
     },
     recolor: (c) => {
       if (c.index == null && !c.name) return;
