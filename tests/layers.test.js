@@ -72,6 +72,26 @@ test("a timed layer self-expires after dur", () => {
   assert.deepEqual(proc.layerIds(), [], "expired layer removed from the stack");
 });
 
+test("no-hinge flex + parts pitch clamp COMBINED to the role's pitch limit, not 2x", () => {
+  // head has no flexAxis, so its flex channel falls back to LOCAL PITCH — the same physical axis
+  // as parts pitch. Clamped separately, 0.7+0.7 rad reached ~80deg against an advertised 40.
+  const LIM = {
+    bones: { head: { pitch_min: -40, pitch_max: 40, yaw_min: -80, yaw_max: 80, roll_min: -30, roll_max: 30 } },
+  };
+  const proc = buildProceduralRig(fullBiped(), LIM);
+  const bones = proc.roles();
+  const restHead = bones.head.quaternion.clone();
+  proc.setLayer("a", { parts: { head: [0.7, 0, 0] }, flex: { head: [0.7] } });
+  for (let i = 0; i < 30; i++) proc.update(0.016); // no speed_limit entry -> clamp inert, arrives immediately; iterate for settle anyway
+  const total = angOff(bones.head, restHead);
+  const cap = (40 * Math.PI) / 180;
+  assert.ok(
+    total <= cap + 0.03,
+    `combined parts+flex head pitch ${total.toFixed(3)} rad must respect the ${cap.toFixed(3)} rad limit`
+  );
+  assert.ok(total > cap - 0.1, "and it should actually REACH the limit (the clamp bites, the motion isn't lost)");
+});
+
 test("a flex-channel layer bends a limb about its hinge", () => {
   const proc = buildProceduralRig(fullBiped(), {});
   const bones = proc.roles();

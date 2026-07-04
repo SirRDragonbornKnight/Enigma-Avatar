@@ -732,13 +732,20 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
           b.quaternion.multiply(_lq.setFromAxisAngle(ax, FSIGN * v0.ang));
           if (e.abd && abductAxis[role]) {
             v0.abd = _vclamp(v0.abd, clampAbd(role, e.abd), maxStep);
-            b.quaternion.multiply(_lq.setFromAxisAngle(abductAxis[role], v0.abd));
-          } else v0.abd = 0;
+          } else {
+            v0.abd = _vclamp(v0.abd, 0, maxStep); // ease the released splay at the speed limit — a hard 0 was the one snap left in the compositor
+          }
+          if (v0.abd && abductAxis[role]) b.quaternion.multiply(_lq.setFromAxisAngle(abductAxis[role], v0.abd));
         } else {
-          v0.ang = _vclamp(v0.ang, clampFlex(role, e.ang), maxStep); // no hinge axis (torso) -> local pitch, like flex()
+          // no hinge axis (head/torso): flex falls back to LOCAL PITCH — the SAME physical axis the
+          // parts channel just applied, so clamp the COMBINED pitch once (clamped separately,
+          // {parts:{head:[.7,0,0]}, flex:{head:[.7]}} reached ~2x the advertised limit); a role
+          // with no limits entry keeps the old FLEX_CAP net
+          const tgt = limits[role] ? clamp(role, "pitch", v0.p + e.ang) - v0.p : clampFlex(role, e.ang);
+          v0.ang = _vclamp(v0.ang, tgt, maxStep);
           _le.set(v0.ang, 0, 0, "XYZ");
           b.quaternion.multiply(_lq.setFromEuler(_le));
-          v0.abd = 0;
+          v0.abd = _vclamp(v0.abd, 0, maxStep);
         }
       } else {
         // Likewise ease residual flex/abduction to 0 rather than snapping (mirrors the release loop).
@@ -875,9 +882,16 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         }
         return r;
       };
-      const clean = { ...spec, _t: 0, weight: fin(spec.weight, 1), amp: fin(spec.amp, 1), speed: fin(spec.speed, 1) };
-      if (spec.dur != null) clean.dur = fin(spec.dur, 0);
-      if (Array.isArray(spec.env)) clean.env = spec.env.map((x) => fin(x, 0));
+      // Shape guards beyond finiteness: weight/env/speed are magnitudes — a NEGATIVE value inverts
+      // offsets / runs a fn layer backwards instead of failing; a negative dur made an
+      // intended-timed layer immortal (L.dur > 0 false → never expires).
+      const pos = (v, d) => Math.max(0, fin(v, d));
+      const clean = { ...spec, _t: 0, weight: pos(spec.weight, 1), amp: fin(spec.amp, 1), speed: pos(spec.speed, 1) };
+      if (spec.dur != null) {
+        clean.dur = fin(spec.dur, 0);
+        if (clean.dur < 0) clean.dur = 0.1; // garbage-timed still self-expires, never immortal
+      }
+      if (Array.isArray(spec.env)) clean.env = spec.env.map((x) => pos(x, 0));
       if (spec.parts && typeof spec.parts === "object") clean.parts = triples(spec.parts);
       if (spec.flex && typeof spec.flex === "object") clean.flex = triples(spec.flex);
       layers.set(k, clean);
