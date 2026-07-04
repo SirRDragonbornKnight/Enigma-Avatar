@@ -35,9 +35,21 @@ export function buildSoftMesh(model) {
     const pos = o.isSkinnedMesh ? o.geometry?.attributes?.position : null;
     if (pos && !pos.isInterleavedBufferAttribute) meshes.push(o); // interleaved: can't own the buffer -> skip honestly
   });
-  const size = new THREE.Vector3();
-  new THREE.Box3().setFromObject(model).getSize(size);
-  const modelH = size.y || 1;
+  // Characteristic body scale in BIND units — the SAME frame select() measures distances in.
+  // (Audit 2026-07-04: the world box was wrong twice — normalization scale made "8% of height"
+  // mean 30%+ of the body on meter rigs / "no vertices" on cm rigs, and setFromObject() included
+  // display furniture. The skinned meshes ARE the character; their geometry boxes through
+  // bindMatrix are bind-frame, cheap, and pose-independent.)
+  const _bb = new THREE.Box3(),
+    _mb = new THREE.Box3();
+  for (const m of meshes) {
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    _mb.copy(m.geometry.boundingBox).applyMatrix4(m.bindMatrix);
+    _bb.union(_mb);
+  }
+  const _ext = new THREE.Vector3();
+  if (!_bb.isEmpty()) _bb.getSize(_ext);
+  const modelH = Math.max(_ext.x, _ext.y, _ext.z) || 1; // largest extent: height for humanoids, length for crawlers — axis-agnostic (bind frames vary in up-axis)
 
   const grabs = new Map(); // id -> grab record
   const claimed = new Map(); // mesh -> Set(vertIndex) owned by an active grab (no double-booking)
@@ -129,17 +141,23 @@ export function buildSoftMesh(model) {
    */
   function grab(bone, opts = {}) {
     if (!meshes.length) return { error: "no skinned meshes on this model" };
-    if (grabs.size >= 8 && opts.id == null) return { error: "too many active grabs (max 8)" };
+    if (opts.pull != null && (!Array.isArray(opts.pull) || opts.pull.length !== 3))
+      return { error: "pull must be [x,y,z]" }; // a short array would Math.hypot(..,undefined) -> NaN into the mesh, permanently
     const pull = Array.isArray(opts.pull) ? opts.pull.map(Number) : [0, 0, 0];
     if (!pull.every(isFinite)) return { error: "pull must be finite [x,y,z]" };
     const existing = opts.id != null ? grabs.get(String(opts.id)) : null;
+    if (!existing && grabs.size >= 8) return { error: "too many active grabs (max 8)" }; // cap every NEW grab — a fresh driver id must not bypass it
     let g = existing;
     if (!g) {
       if (!bone || !bone.isObject3D) return { error: "no such bone/role to grab" };
       const anchor = bindPosOfBone(bone);
       if (!anchor) return { error: `bone '${bone.name}' skins no soft mesh` };
       const radius = Math.min(0.6 * modelH, Math.max(0.001 * modelH, +opts.radius > 0 ? +opts.radius : 0.08 * modelH)); // floor at 0.1% of height: a driver may pinch TIGHT (zhu's cheek needed < 0.005H)
-      const entries = select(anchor, radius);
+      let entries = select(anchor, radius);
+      if (opts.mode === "normal") {
+        entries = entries.filter((e) => e.normals); // poke displaces along NORMALS — a normal-less mesh would silently shove +Z (a guess)
+        if (!entries.length) return { error: `no vertex normals near '${bone.name}' — poke needs a mesh with normals` };
+      }
       if (!entries.length) return { error: `no vertices within ${radius.toFixed(3)} of '${bone.name}'` };
       // dir per mesh in GEOMETRY space: bind-frame dir through the inverse bind rotation
       const nq = new THREE.Quaternion();
@@ -148,8 +166,12 @@ export function buildSoftMesh(model) {
         e.dirGeo = new THREE.Vector3(0, 0, 1).copy(_dirOf(pull)).applyQuaternion(nq.invert());
       }
       claim(entries);
+      let autoId = null;
+      if (opts.id == null)
+        do autoId = "g" + ++_gid;
+        while (grabs.has(autoId)); // never collide with a driver-chosen id (a collision orphaned the old grab's pristine copies)
       g = {
-        id: String(opts.id != null ? opts.id : "g" + ++_gid),
+        id: opts.id != null ? String(opts.id) : autoId,
         entries,
         radius,
         maxStretch: 0.9 * radius,

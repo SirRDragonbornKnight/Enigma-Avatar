@@ -109,3 +109,103 @@ test("guards: garbage pull / unknown bone / no skinned meshes all answer with na
   const empty = buildSoftMesh(new THREE.Group());
   assert.ok(empty.grab(bone, { pull: [1, 0, 0] }).error, "no soft meshes -> honest error");
 });
+
+// ---- audit 2026-07-04 regressions ---------------------------------------------------------------
+
+test("a short pull array is REFUSED, never NaN into the mesh (audit: hypot(undefined))", () => {
+  const { g, mesh, bone } = skinnedBox();
+  const pristine = posCopy(mesh);
+  const soft = buildSoftMesh(g);
+  for (const bad of [[0.3], [0.3, 0.1], [1, 2, 3, 4], "0.3,0,0"]) {
+    const r = soft.grab(bone, { radius: 2, pull: bad });
+    assert.ok(r.error, `pull ${JSON.stringify(bad)} -> named error (${JSON.stringify(r)})`);
+  }
+  for (let i = 0; i < 30; i++) soft.update(1 / 60);
+  assert.deepEqual(posCopy(mesh), pristine, "refused pulls left the geometry untouched");
+});
+
+test("radius is calibrated in BIND units — normalization scale must not change what a grab selects", () => {
+  // Same mesh, but the model root is display-normalized 4x (what avatar.js always does).
+  // The default radius must stay a fraction of the BIND-frame body, not the world box.
+  const { g, bone } = skinnedBox();
+  g.scale.setScalar(4);
+  g.updateMatrixWorld(true);
+  const soft = buildSoftMesh(g);
+  const r = soft.grab(bone, {}); // default radius; box verts sit >=0.5 from the bone in bind units
+  assert.ok(
+    r.error && /0\.080/.test(r.error),
+    `default radius = 8% of the BIND body (~0.080), not of the scaled world box (0.320): ${JSON.stringify(r)}`
+  );
+  const ok = soft.grab(bone, { radius: 2, pull: [0.2, 0, 0] });
+  assert.ok(!ok.error && ok.verts > 0, "an explicit bind-unit radius selects normally under any display scale");
+});
+
+function skinnedStrip(nBones, spacing = 10) {
+  // nBones clusters of vertices, each skinned to its own bone at x = i*spacing -> disjoint grab regions
+  const pos = [],
+    si = [],
+    sw = [];
+  for (let b = 0; b < nBones; b++)
+    for (const [dx, dy, dz] of [
+      [0.1, 0, 0],
+      [-0.1, 0, 0],
+      [0, 0.1, 0],
+    ]) {
+      pos.push(b * spacing + dx, dy, dz);
+      si.push(b, 0, 0, 0);
+      sw.push(1, 0, 0, 0);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(si, 4));
+  geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(sw, 4));
+  const bones = [];
+  for (let b = 0; b < nBones; b++) {
+    const bn = new THREE.Bone();
+    bn.name = "b" + b;
+    bn.position.set(b * spacing, 0, 0);
+    bones.push(bn);
+  }
+  const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshBasicMaterial());
+  mesh.add(bones[0]);
+  for (let b = 1; b < nBones; b++) bones[0].add(bones[b]); // flat-ish chain; world = local offsets
+  const g = new THREE.Group();
+  g.add(mesh);
+  g.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones)); // bind AFTER world update -> boneInverses carry each bone's true position
+  return { g, mesh, bones };
+}
+
+test("the max-8 cap fires for EVERY new grab — a fresh driver id cannot bypass it (audit)", () => {
+  const { g, bones } = skinnedStrip(10);
+  const soft = buildSoftMesh(g);
+  for (let i = 0; i < 8; i++)
+    assert.ok(!soft.grab(bones[i], { radius: 1, pull: [0.05, 0, 0], id: "drv" + i }).error, `grab ${i} lands`);
+  const ninth = soft.grab(bones[8], { radius: 1, pull: [0.05, 0, 0], id: "drv8" });
+  assert.ok(/max 8/.test(ninth.error || ""), `9th NEW grab refused even with a fresh id (${JSON.stringify(ninth)})`);
+  const reAim = soft.grab(bones[3], { id: "drv3", pull: [0, 0.05, 0] });
+  assert.ok(!reAim.error, "re-aiming an EXISTING id still works at the cap");
+});
+
+test("auto ids never collide with driver-chosen ids (audit: 'g1' collision orphaned the old grab)", () => {
+  const { g, mesh, bones } = skinnedStrip(3);
+  const pristine = posCopy(mesh);
+  const soft = buildSoftMesh(g);
+  assert.ok(!soft.grab(bones[0], { radius: 1, pull: [0.08, 0, 0], id: "g1" }).error, "driver grab 'g1' lands");
+  const auto = soft.grab(bones[1], { radius: 1, pull: [0.08, 0, 0] });
+  assert.ok(!auto.error && auto.grabbed !== "g1", `auto id skipped the taken name (${auto.grabbed})`);
+  assert.equal(soft.list().length, 2, "both grabs tracked — nothing overwritten");
+  soft.release(true);
+  for (let i = 0; i < 900; i++) soft.update(1 / 60);
+  assert.deepEqual(posCopy(mesh), pristine, "both restore bit-exactly (no orphaned displacement)");
+});
+
+test("poke on a mesh without vertex normals is an honest error, not a +Z shove (audit)", () => {
+  const { g, mesh, bones } = skinnedStrip(1);
+  mesh.geometry.deleteAttribute("normal"); // legal glTF: normals are optional
+  const pristine = posCopy(mesh);
+  const soft = buildSoftMesh(g);
+  const r = soft.poke(bones[0], { radius: 1, amount: -0.2 });
+  assert.ok(/normals/.test(r.error || ""), `named error (${JSON.stringify(r)})`);
+  assert.deepEqual(posCopy(mesh), pristine, "geometry untouched");
+});
