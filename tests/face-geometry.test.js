@@ -143,3 +143,48 @@ test("byIndex merges same-index morphs across meshes by MAX; bad/zero meshes are
   );
   assert.deepEqual(r.eyes, [0], "one logical candidate, not one per mesh");
 });
+
+test("armature-scale skinned rig (the ryuri disease): placement lives in the BONES, not mesh.matrixWorld", () => {
+  // Real Sketchfab rips bind a centimeter-scale mesh to a meter-scale skeleton: raw verts x
+  // matrixWorld sit BELOW the head bone, so a matrixWorld-only span measured <=0 and the
+  // classifier bailed to zero records while the model rendered full-size (2026-07-03 audit).
+  // Fixture: the canonical grid + morphs authored at 1/100 scale, skinned to one bone whose
+  // scale(100) does the real placement. Scores must match the plain-mesh canonical case.
+  const S = 0.01;
+  const scale = (a) => a.map((v) => v * S);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(scale(gridBase()), 3));
+  g.morphAttributes.position = [blink(), mouthOpen()].map((d) => new THREE.Float32BufferAttribute(scale(d), 3));
+  g.morphTargetsRelative = true;
+  const n = gridBase().length / 3;
+  g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(new Array(n * 4).fill(0), 4));
+  g.setAttribute(
+    "skinWeight",
+    new THREE.Float32BufferAttribute(
+      Array.from({ length: n * 4 }, (_, i) => (i % 4 === 0 ? 1 : 0)),
+      4
+    )
+  );
+  const mesh = new THREE.SkinnedMesh(g, new THREE.MeshBasicMaterial());
+  mesh.name = "face";
+  const skinBone = new THREE.Bone();
+  const skeleton = new THREE.Skeleton([skinBone], [new THREE.Matrix4()]); // identity bind inverse
+  mesh.add(skinBone);
+  mesh.bind(skeleton, new THREE.Matrix4()); // identity bindMatrix -> skin(v) = boneWorld x v
+  skinBone.scale.setScalar(1 / S); // the armature owns the scale, exactly like the rips
+  const head = new THREE.Bone();
+  head.position.set(0, 1, 0); // same anchor as the canonical fixture
+  const root = new THREE.Group();
+  root.add(mesh, head);
+  // Off-origin root AFTER bind(): bindMatrixInverse was captured as identity and only the render
+  // loop's updateMatrixWorld re-syncs it (bindMode "attached") — exactly the pre-first-frame state
+  // the facial build runs in. Without syncSkinnedBind this makes every skinned position garbage.
+  root.position.set(3, 0.5, -2);
+  root.updateWorldMatrix(true, true);
+  const r = analyzeMorphGeometry(root, OPTS(head));
+  assert.ok(r.morphs.length > 0, "skinned rig classifies (matrixWorld-only span used to bail to zero records)");
+  assert.strictEqual(r.eyes[0], 0, "blink still tops eyes through the skinning transform");
+  assert.strictEqual(r.mouth[0], 1, "mouth-open still tops mouth");
+  assert.ok(r.byIndex.get(0).eyeScore > 0.5, `confident eye score (${r.byIndex.get(0).eyeScore})`);
+  assert.ok(r.byIndex.get(1).mouthScore > 0.5, `confident mouth score (${r.byIndex.get(1).mouthScore})`);
+});

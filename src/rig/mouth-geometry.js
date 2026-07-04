@@ -17,10 +17,12 @@
 // jaw/chin sits just under it) upward: cut = headY - 0.35*span (span = head bone -> topmost vertex
 // along bodyUp). Hair above the skull just adds morph-free verts. No head bone -> legacy bbox top.
 import * as THREE from "three";
+import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs (the ryuri disease, 2026-07-03)
 
 export function detectMouthMorph(model, opts = {}) {
   if (!model) return null;
   model.updateWorldMatrix(true, true);
+  syncSkinnedBind(model); // pre-first-frame: refresh stale bindMatrixInverse or skinned coords are garbage
 
   const meshes = [];
   model.traverse((o) => {
@@ -56,7 +58,7 @@ export function detectMouthMorph(model, opts = {}) {
       if (!pos) return;
       const st = Math.max(1, Math.floor(pos.count / 4000));
       for (let i = 0; i < pos.count; i += st) {
-        const h = _w.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).sub(origin).dot(up);
+        const h = vertexWorld(o, i, _w).sub(origin).dot(up);
         if (h > span) span = h;
       }
     });
@@ -86,9 +88,9 @@ export function detectMouthMorph(model, opts = {}) {
       if (!d) continue;
       let down = 0;
       for (let v = 0; v < N; v += stride) {
-        _v.fromBufferAttribute(pos, v).applyMatrix4(mesh.matrixWorld); // world rest position
+        vertexWorld(mesh, v, _v); // world rest position (skinning-aware)
         if (_v.dot(up) < headCut) continue; // head only (same up-axis as the cut)
-        _v.fromBufferAttribute(d, v).applyMatrix3(_lin); // world-space displacement
+        morphDeltaWorld(mesh, d, v, true, _lin, _v); // world-space displacement (skinning-aware; this detector has always read targets as DELTAS)
         const dn = -_v.dot(up);
         if (dn > 0) down += dn; // downward (along -up) → jaw drop
       }

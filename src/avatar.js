@@ -24,6 +24,7 @@ import { buildFacial } from "./face/facial.js";
 import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./interaction/hittest.js"; // pure, unit-tested click-through math
 import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./interaction/placement.js"; // pure, unit-tested placement math
 import { resolveRig, ROLES } from "./rig/rig.js";
+import { analyzeMorphGeometry } from "./rig/face-geometry.js"; // morph region classification, exposed via query morphs (2026-07-03 audit)
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
 // clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
 // (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character. The old
@@ -607,6 +608,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (o.geometry) o.geometry.dispose();
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
     });
+    _boneMarks.clear(); // the checkbox markers rode this model's bones — just disposed by the traverse above
     model = null;
     vrm = null;
     proc = null;
@@ -624,6 +626,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     curKey = DEFAULT_KEY;
     modelDims = { w: 1, h: 2 };
     roleBones = {};
+    resetMorphGeo();
     _weightMass = null;
     _springNeverExtra = [];
     _poseBones = [];
@@ -753,6 +756,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // system — it only ever ran for hand-written rig_overrides entries, which no longer exist.)
     const resolved = resolveRig(model, vrm);
     roleBones = resolved.roles || {}; // expose role→bone for attach-by-role (structural; trust no names)
+    resetMorphGeo(); // new model, new head anchor -> re-classify morphs lazily on next query
     // SKIN-WEIGHT AUTO-ADOPTION (2026-06-12, the system pass): generalize the parallel-limb surgery.
     // Any DEFORMING bone that is a coincident twin of a resolved role bone but lives OUTSIDE its
     // subtree (a Rigify DEF chain rooted on the spine/shoulder, follow-constraints baked away) gets
@@ -1082,7 +1086,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const _peerRetries = {}; // url -> failed mirror-load attempts (peer only)
   function loadModel(url, label) {
     _cancelMotion(); // a model switch zeroes any in-flight jump hop (stale baseline / rotation)
-    _bonePick = null; // …and any armed bone-pick (it survived switches and ate the first grab on the next model)
     if (held) {
       held = false;
       window.avatarIPC?.dragEnd?.();
@@ -1722,13 +1725,51 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     return null;
   }
+  // Lazy per-model morph classification (2026-07-03 audit finding 4): the geometric eye/mouth-band
+  // analysis always existed but was facial.js-private, so a model with 42 unnamed morphs meant 42
+  // blind snap probes. Cached per model; reset alongside the rig on load.
+  let _morphGeo = null,
+    _morphGeoTried = false;
+  function resetMorphGeo() {
+    _morphGeo = null;
+    _morphGeoTried = false;
+  }
+  function morphGeoAnalysis() {
+    if (_morphGeoTried) return _morphGeo;
+    _morphGeoTried = true;
+    if (!model || !roleBones.head) return null; // no head anchor -> honestly unclassified, never guessed
+    try {
+      _morphGeo = analyzeMorphGeometry(model, { head: roleBones.head });
+    } catch (e) {
+      console.warn("[avatar] morph classification failed:", e);
+    }
+    return _morphGeo;
+  }
   function allMorphsInfo() {
     const { meshes, n } = morphMeshes();
     if (!n) return [];
     const cur = meshes[0]?.morphTargetInfluences || [];
     const owned = new Set(facial?.ownedMorphs || []); // morphs the lip-sync/blink layer auto-drives → a manual set won't hold (flag them so the UI explains it)
+    const g = morphGeoAnalysis();
     const out = [];
-    for (let i = 0; i < n; i++) out.push({ index: i, name: morphNameAt(i), value: +(cur[i] || 0), auto: owned.has(i) });
+    for (let i = 0; i < n; i++) {
+      const s = g?.byIndex?.get(i);
+      const region = !s
+        ? null
+        : s.mouthScore > s.eyeScore && s.mouthScore > 0.05
+          ? "mouth"
+          : s.eyeScore > 0.05
+            ? "eyes"
+            : null;
+      out.push({
+        index: i,
+        name: morphNameAt(i),
+        value: +(cur[i] || 0),
+        auto: owned.has(i),
+        region, // geometric band guess ("mouth"|"eyes"|null) — a hunting driver starts HERE, not at 42 blind probes
+        score: s ? +Math.max(s.mouthScore, s.eyeScore).toFixed(2) : 0,
+      });
+    }
     return out;
   }
   function setMorphValue(i, v) {
@@ -1786,44 +1827,54 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   // --- BONE IDENTIFICATION (user 2026-06-12: "i will need a way of identifying them") -------------
   // highlightBone: a hot-pink marker rides the named bone for a moment (relayed → shows on whichever
-  // monitor she's on). armBonePick: the REVERSE lookup — the next click on her body picks the nearest
-  // bone (screen-space) and hands its name back to the Settings list. Together: see-a-part → click it
-  // → name it, or hover a row → see which part lights up.
-  let _hlMark = null,
-    _hlTimer = 0;
-  function highlightBone(name, dur = 1.6) {
-    if (!model || !name) return false;
+  // monitor she's on) — the AI/bus's way to point AT a part. For the HUMAN, Settings → Bones puts a
+  // checkbox on every row (setBoneMark): ✓ = the marker stays on that bone until unchecked. The old
+  // click-modes (click-her-to-pick + hover-a-row-to-flash) were replaced at user direction
+  // (2026-07-03: "i do not like the click the bone idea — just make it a checkbox to see the bone").
+  function _findBone(name) {
     const key = String(name);
     let b = roleBones[key] || null; // canonical role ("left_arm") resolves FIRST — the AI speaks roles, not per-rig bone names
     if (!b)
       model.traverse((o) => {
         if (o.isBone && o.name === key) b = o;
       });
+    return b;
+  }
+  function _makeMarkMesh() {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xff2bd6,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.85,
+      })
+    );
+    m.renderOrder = 1001;
+    m.frustumCulled = false;
+    return m;
+  }
+  function _rideBone(mark, b) {
+    b.add(mark); // riding the bone = it follows every pose, on every window's copy
+    const ws = new THREE.Vector3();
+    b.getWorldScale(ws);
+    const want = Math.max(0.03, (modelDims.h || 2) * sizeScale * 0.02); // ~2% of her on-screen height
+    mark.scale.setScalar(want / Math.max(1e-6, Math.abs(ws.x) || 1));
+    mark.position.set(0, 0, 0);
+  }
+  let _hlMark = null,
+    _hlTimer = 0;
+  function highlightBone(name, dur = 1.6) {
+    if (!model || !name) return false;
+    const b = _findBone(name);
     if (!b) {
       setStatus(`no bone "${name}"`);
       return false;
     }
-    if (!_hlMark) {
-      _hlMark = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 14, 10),
-        new THREE.MeshBasicMaterial({
-          color: 0xff2bd6,
-          depthTest: false,
-          depthWrite: false,
-          transparent: true,
-          opacity: 0.85,
-        })
-      );
-      _hlMark.renderOrder = 1001;
-      _hlMark.frustumCulled = false;
-    }
+    if (!_hlMark) _hlMark = _makeMarkMesh();
     _hlMark.removeFromParent();
-    b.add(_hlMark); // riding the bone = it follows every pose, on every window's copy
-    const ws = new THREE.Vector3();
-    b.getWorldScale(ws);
-    const want = Math.max(0.03, (modelDims.h || 2) * sizeScale * 0.02); // ~2% of her on-screen height
-    _hlMark.scale.setScalar(want / Math.max(1e-6, Math.abs(ws.x) || 1));
-    _hlMark.position.set(0, 0, 0);
+    _rideBone(_hlMark, b);
     clearTimeout(_hlTimer);
     _hlTimer = setTimeout(
       () => {
@@ -1836,32 +1887,36 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     wake((+dur || 1.6) + 0.4);
     return true;
   }
-  let _bonePick = null; // one-shot callback armed by Settings ("click her to pick")
-  function armBonePick(cb) {
-    _bonePick = typeof cb === "function" ? cb : null;
-    setStatus(_bonePick ? "bone pick: click a spot on her (Esc cancels)" : "bone pick cancelled");
-    return !!_bonePick;
+  // Persistent markers (the Settings checkboxes). One mesh per checked bone so several can be
+  // compared at once; cleared with the model (disposeModel — the meshes ride its bones).
+  const _boneMarks = new Map(); // raw bone name -> marker mesh riding that bone
+  function setBoneMark(name, on) {
+    const key = String(name || "");
+    if (!key) return false;
+    const cur = _boneMarks.get(key);
+    if (!on) {
+      if (!cur) return true; // already off
+      cur.removeFromParent();
+      cur.geometry.dispose();
+      cur.material.dispose();
+      _boneMarks.delete(key);
+      wake(0.5);
+      return true;
+    }
+    if (cur) return true; // already marked
+    if (!model) return false;
+    const b = _findBone(key);
+    if (!b) {
+      setStatus(`no bone "${key}"`);
+      return false;
+    }
+    const m = _makeMarkMesh();
+    _rideBone(m, b);
+    _boneMarks.set(key, m);
+    wake(0.5);
+    return true;
   }
-  function pickBoneAt(cx, cy) {
-    // nearest bone to a click, in screen px (the click already hit her silhouette)
-    if (!model) return null;
-    const v = new THREE.Vector3();
-    let best = null,
-      bestD = Infinity;
-    model.traverse((o) => {
-      if (!o.isBone) return;
-      o.getWorldPosition(v);
-      v.project(camera);
-      const px = ((v.x + 1) / 2) * innerWidth,
-        py = ((1 - v.y) / 2) * innerHeight;
-      const d = (px - cx) * (px - cx) + (py - cy) * (py - cy);
-      if (d < bestD) {
-        bestD = d;
-        best = o;
-      }
-    });
-    return best ? best.name : null;
-  }
+  const boneMarks = () => [..._boneMarks.keys()]; // which bones are checked — Settings re-reads this on every re-open/re-render
 
   // --- AUTHORED ANIMATION CLIPS on ANY rig (system work, 2026-06-12) -----------------------------
 
@@ -2672,6 +2727,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     deleteOutfit: { scope: "all", bound: true, fn: (n) => deleteOutfit(n) },
     setBoneLabel: { scope: "all", bound: true, fn: (n, l) => setBoneLabel(n, l) },
     highlightBone: { scope: "all", bound: true, fn: (n, d) => highlightBone(n, d) }, // the marker must show on whichever monitor she's standing on
+    setBoneMark: { scope: "all", bound: true, fn: (n, on) => setBoneMark(n, on) }, // Settings checkbox: pin/unpin a marker on a bone — same every-monitor rule
     setMorphValue: { scope: "all", bound: true, fn: (i, v) => setMorphValue(i, v) },
     setRot: { scope: "all", bound: true, fn: (r) => setRot(r) },
     setRotAxis: { scope: "all", bound: true, fn: (a, d) => setRotAxis(a, d) },
@@ -2740,7 +2796,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     uiSetMeshVisible = relayed("setMeshVisible"),
     uiSetMorphValue = relayed("setMorphValue");
   const uiSetBoneLabel = relayed("setBoneLabel"); // name a bone — Settings input + the bus 'nameBone' action share this relay
-  const uiHighlightBone = relayed("highlightBone"); // flash a marker on a bone — Settings rows, the pick mode + the bus share it
+  const uiHighlightBone = relayed("highlightBone"); // flash a marker on a bone — the bus's point-at-a-part
+  const uiSetBoneMark = relayed("setBoneMark"); // pin/unpin a bone marker — the Settings "see it" checkboxes
   const uiSaveOutfit = relayed("saveOutfit"),
     uiWearOutfit = relayed("wearOutfit"),
     uiDeleteOutfit = relayed("deleteOutfit"); // outfit presets (Settings → Parts + bus 'outfit')
@@ -2864,7 +2921,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     bones: () => EnigmaAvatar.bones(),
     setBoneLabel: relayed("setBoneLabel"), // name bones (Settings → Bones)
     highlightBone: uiHighlightBone,
-    pickBone: (cb) => armBonePick(cb), // identify bones: row hover/click → marker on her; 🎯 pick = next click on her selects the nearest bone
+    setBoneMark: uiSetBoneMark, // Settings → Bones checkbox: ✓ = marker rides that bone until unchecked
+    boneMarks: () => boneMarks(), // which bones are currently marked (checkbox state across re-renders)
     outfits: () => outfitNames(),
     saveOutfit: uiSaveOutfit,
     wearOutfit: uiWearOutfit,
@@ -2943,10 +3001,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   });
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (_bonePick) {
-        armBonePick(null);
-        return;
-      }
       ui.hideMenu();
       ui.hideSettings();
       ui.hideGallery();
@@ -3006,23 +3060,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     cursor.y = e.clientY;
     computeOver();
     ui.hideMenu(); // the right-click menu always dismisses on an outside click
-    if (_bonePick) {
-      // pick mode (Settings → Bones): ONE-SHOT, always — a click on her picks a bone;
-      const cb = _bonePick;
-      _bonePick = null; // a click anywhere else CANCELS (a stuck pick was eating the next grab; user 2026-06-12)
-      if (cursor.over) {
-        const n = pickBoneAt(cursor.x, cursor.y);
-        if (n) {
-          uiHighlightBone(n, 3);
-          setStatus("picked bone: " + n);
-          try {
-            cb(n);
-          } catch {}
-        }
-        return;
-      }
-      setStatus("bone pick cancelled");
-    }
     if (cursor.over) {
       ui.hideGallery();
       if (!locked) {

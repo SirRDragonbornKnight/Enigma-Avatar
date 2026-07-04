@@ -12,6 +12,7 @@
 // midline, opening downward. Pure module: no DOM, no engine imports, silent (facial.js owns the
 // verdict log); callers rank the returned 0..1 per-channel scores and may override any band.
 import * as THREE from "three";
+import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs (the ryuri disease, 2026-07-03)
 
 // Bands as FRACTIONS of the head span (head-bone origin → topmost vertex along bodyUp). Rigs
 // disagree on where "head" sits (neck-top vs skull-centre), so every knob is overridable via
@@ -41,7 +42,8 @@ export function analyzeMorphGeometry(model, opts = {}) {
   // No head bone = no anchor frame: report "nothing classifiable" so the caller falls back to
   // other ladder tiers (names/clips/bone poses) instead of us guessing a frame off the bbox.
   if (!model || !head || !head.isObject3D) return out;
-  model.updateWorldMatrix(true, true); // bind-pose world transforms; skinning never needed
+  model.updateWorldMatrix(true, true); // world transforms for bones + meshes
+  syncSkinnedBind(model); // pre-first-frame: refresh stale bindMatrixInverse or skinned coords are garbage
   const p = {
     eyeFrac: opts.eyeFrac ?? DEF.eyeFrac,
     mouthFrac: opts.mouthFrac ?? DEF.mouthFrac,
@@ -62,15 +64,14 @@ export function analyzeMorphGeometry(model, opts = {}) {
   // (teeth/lash strips) whose own extent would garbage the bands; the model's topmost vertex
   // above the head bone is the scalp/hair line on anything remotely humanoid.
   const _v = new THREE.Vector3(),
-    _d = new THREE.Vector3(),
-    _b = new THREE.Vector3();
+    _d = new THREE.Vector3();
   let span = 0;
   model.traverse((o) => {
     const pos = o.isMesh ? o.geometry?.attributes?.position : null;
     if (!pos) return;
     const st = Math.max(1, Math.floor(pos.count / 4000)); // one-shot load-time scan — sampling is fine
     for (let i = 0; i < pos.count; i += st) {
-      const h = _v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).sub(origin).dot(up);
+      const h = vertexWorld(o, i, _v).sub(origin).dot(up);
       if (h > span) span = h;
     }
   });
@@ -92,18 +93,13 @@ export function analyzeMorphGeometry(model, opts = {}) {
       H = [],
       Z = []; // sampled base verts in head-frame coords, computed once for every morph
     for (let i = 0; i < pos.count; i += st) {
-      _v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).sub(origin);
+      vertexWorld(o, i, _v).sub(origin);
       idxs.push(i);
       X.push(_v.dot(right));
       H.push(_v.dot(up));
       Z.push(_v.dot(fwd));
     }
-    const delta = (t, k) => {
-      // world-space displacement of sample k
-      _d.fromBufferAttribute(t, idxs[k]);
-      if (!rel) _d.sub(_b.fromBufferAttribute(pos, idxs[k]));
-      return _d.applyMatrix3(lin);
-    };
+    const delta = (t, k) => morphDeltaWorld(o, t, idxs[k], rel, lin, _d); // world-space displacement of sample k (skinning-aware)
     for (let mi = 0; mi < targets.length; mi++) {
       const t = targets[mi];
       let maxLen = 0;
