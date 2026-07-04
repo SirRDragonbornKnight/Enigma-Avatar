@@ -170,3 +170,56 @@ test("GUARD: setMouth(NaN) is ignored; the mouth stays drivable (no permanent fr
     `mouth RECOVERS after the NaN (influence ${mesh.morphTargetInfluences[0].toFixed(2)}; before the fix it stuck at NaN forever)`
   );
 });
+
+// ---- EXPRESSION channels (2026-07-03, audit finding 6): smile/brows ladder ----
+
+test("smile: named morph resolves exprMode 'morph' and setExpr drives it", () => {
+  const mesh = meshWithMorphs({ MouthSmile: 0 });
+  const f = buildFacial(model(mesh), null);
+  assert.strictEqual(f.exprMode.smile, "morph", "named smile morph resolves the channel");
+  const r = f.setExpr({ smile: 0.8 });
+  assert.strictEqual(r.via.smile, "morph", "the reply names the tier that answers");
+  for (let i = 0; i < 60; i++) f.update(1 / 60, false);
+  assert.ok(mesh.morphTargetInfluences[0] > 0.7, `smile morph driven (${mesh.morphTargetInfluences[0].toFixed(2)})`);
+  f.setExpr({ smile: 0 });
+  for (let i = 0; i < 120; i++) f.update(1 / 60, false);
+  assert.ok(mesh.morphTargetInfluences[0] < 0.05, "smile releases back toward rest");
+});
+
+test("smile: lip-corner BONES resolve when no morph exists; corners rise and widen; 0 restores rest", () => {
+  // Daz-style pair: two corner bones under a head parent, 0.3 apart (mouth width scale).
+  const head = bone("head");
+  const l = bone("lLipCorner");
+  const r = bone("rLipCorner");
+  l.position.set(0.15, 0, 0.1);
+  r.position.set(-0.15, 0, 0.1);
+  head.add(l);
+  head.add(r);
+  const f = buildFacial(model(meshWithMorphs(null, 0), head), null);
+  assert.strictEqual(f.exprMode.smile, "bones", "corner bones resolve the smile channel");
+  const restL = l.position.clone();
+  f.setExpr({ smile: 1 });
+  for (let i = 0; i < 120; i++) f.update(1 / 60, false);
+  assert.ok(l.position.y > restL.y + 1e-4, `left corner rose (dy ${(l.position.y - restL.y).toFixed(4)})`);
+  assert.ok(l.position.x > restL.x + 1e-5, "left corner widened outward (+x side moves +x)");
+  assert.ok(r.position.x < -0.15 - 1e-5, "right corner widened outward (-x side moves -x)");
+  f.setExpr({ smile: 0 });
+  for (let i = 0; i < 240; i++) f.update(1 / 60, false);
+  assert.ok(l.position.distanceTo(restL) < 1e-3, "smile 0 returns the corner to rest");
+});
+
+test("expr: garbage/absent fields HOLD their channel; no channels reply via 'none'", () => {
+  const head = bone("head");
+  const l = bone("lLipCorner");
+  const r = bone("rLipCorner");
+  l.position.set(0.1, 0, 0);
+  r.position.set(-0.1, 0, 0);
+  head.add(l);
+  head.add(r);
+  const f = buildFacial(model(meshWithMorphs(null, 0), head), null);
+  f.setExpr({ smile: 0.7 });
+  const r2 = f.setExpr({ smile: "garbage" }); // held, not zeroed, not NaN
+  assert.strictEqual(r2.applied.smile, 0.7, "garbage smile holds the previous target");
+  const none = buildFacial(model(meshWithMorphs(null, 0)), null);
+  assert.strictEqual(none.setExpr({ smile: 1 }).via.smile ?? "none", "none", "no channel answers honestly");
+});

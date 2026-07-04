@@ -88,6 +88,13 @@ export function createBusRegistry(engine, services) {
       if (c.value != null && isFinite(n)) engine.facial?.setBlink?.(n);
       else engine.facial?.blink?.();
     }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
+    expr: (c) => {
+      // expressions 0..1 by channel: {smile,brows}. Replies {applied,via} — via names the ladder
+      // tier per channel ("vrm"|"morph"|"bones"|"none"), so a driver knows what actually moved.
+      const f = engine.facial;
+      if (!f?.setExpr) return { error: "no facial rig on this model" };
+      return f.setExpr({ smile: c.smile, brows: c.brows });
+    },
 
     // --- CONJURE (prop spawning) + the physics-ball toy (distinct features) -------------------------
     conjure: (c) => EnigmaAvatar.conjure(c), // spawn/move/dismiss/clear a conjured prop (transform-based)

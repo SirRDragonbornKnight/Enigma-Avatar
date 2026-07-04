@@ -28,6 +28,7 @@
 /** @typedef {{ action: "stop" } & WithReqId} StopCommand */
 /** @typedef {{ action: "mouth", value: number } & WithReqId} MouthCommand */
 /** @typedef {{ action: "blink", value?: number } & WithReqId} BlinkCommand */
+/** @typedef {{ action: "expr", smile?: number, brows?: number } & WithReqId} ExprCommand */
 
 // ── CONJURE + PHYSICS TOY ──────────────────────────────────────────────────────
 /** @typedef {{ action: "conjure", url?: string, move?: string, to?: number[] | string, dismiss?: string, clear?: boolean, id?: string, size?: number, at?: number[], bone?: string, dur?: number, float?: number } & WithReqId} ConjureCommand */
@@ -122,6 +123,7 @@ export const ACTIONS = Object.freeze([
   "capabilities",
   "conjure",
   "detach",
+  "expr",
   "facialTune",
   "fingers",
   "gallery",

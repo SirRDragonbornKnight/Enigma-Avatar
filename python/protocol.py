@@ -13,7 +13,7 @@ from __future__ import annotations
 
 # The bus move set — one verb per concept. MUST equal protocol.js ACTIONS (drift-guarded by the test).
 ACTIONS: tuple[str, ...] = (
-    "attach", "ball", "blink", "capabilities", "conjure", "detach", "facialTune", "fingers", "gallery",
+    "attach", "ball", "blink", "capabilities", "conjure", "detach", "expr", "facialTune", "fingers", "gallery",
     "highlightBone", "hue", "impulse", "load", "mesh", "monitor", "morph", "mouth", "move",
     "nameBone", "outfit", "perform", "platform", "pose", "query", "recolor", "regionWeight",
     "resetColors", "rotate", "rotateMode", "say", "settings", "showBones", "size", "snap", "springTune",

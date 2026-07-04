@@ -84,6 +84,7 @@ const BUS_COMMANDS = [
   "capabilities",
   "conjure",
   "detach",
+  "expr", // expression channels smile/brows (2026-07-03, audit finding 6)
   "facialTune",
   "fingers",
   "gallery",

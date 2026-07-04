@@ -19,6 +19,15 @@ const OPEN_RE =
 const BLINK_RE = /blink|eyes?.?clos|wink|fcl[._-]?eye[._-]?close|まばたき|ウィンク/i;
 const JAW_RE = /jaw/i;
 const LID_RE = /eye.?lid|eyelid|(^|[._-])lid($|[._-])|eye.?flap/i; // eye.?flap: glados' aperture flaps ARE her eyelids
+// EXPRESSION channels (2026-07-03, audit finding 6): smile + brows, each down its own ladder
+// (VRM expression → named morph → face BONES → honest none). Dictionaries follow the same
+// research base as OPEN_RE: ARKit, VRoid Fcl_*, CC, MMD, plus Daz-Genesis face-bone names.
+const SMILE_RE =
+  /smile|mouthsmile|fcl[._-]?(mth|all)[._-]?fun|fcl[._-]?all[._-]?joy|(^|[._-])joy($|[._-])|grin|笑い|にこ/i;
+const BROW_UP_RE = /brow.?(up|raise|outer.?up|inner.?up)|surprised|fcl[._-]?brw[._-]?(fun|surprised)|眉.?上/i;
+const CORNER_RE = /lip.?corner|mouth.?corner|corner.?lip|nasolabial.?mouth/i; // Daz: l/rLipCorner + l/rNasolabialMouthCorner
+const CHEEK_UP_RE = /cheek.?upper|upper.?cheek/i; // subtle assist: a real smile raises the upper cheeks
+const BROW_BONE_RE = /brow/i;
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const BLINK_DUR = 0.22; // one blink's close-open envelope (s) — fired ONLY by blink(), never autonomously
@@ -50,10 +59,16 @@ export function buildFacial(model, vrm = null, opts = {}) {
     const names = exprNames();
     const has = (n) => names.some((x) => x.toLowerCase() === n);
     const mouthName = has("mouthopen") ? "mouthOpen" : has("jawopen") ? "jawOpen" : "aa"; // best opener, else 'aa'
+    // expression channels via the VRM presets (happy = smile, surprised = brow raise)
+    const smileName = has("happy") ? "happy" : null;
+    const browName = has("surprised") ? "surprised" : null;
+    const exprCur = { smile: 0, brows: 0 },
+      exprTgt = { smile: 0, brows: 0 };
     return {
       mode: "vrm",
       blinkMode: "vrm",
-      info: `VRM expressions (mouth '${mouthName}' / blink)`,
+      exprMode: { smile: smileName ? "vrm" : "none", brows: browName ? "vrm" : "none" },
+      info: `VRM expressions (mouth '${mouthName}' / blink${smileName ? ` / smile '${smileName}'` : ""})`,
       ownedMorphs: [], // VRM drives expressions, not raw morph indices
       params: P,
       setParams: (p) => Object.assign(P, p),
@@ -61,6 +76,16 @@ export function buildFacial(model, vrm = null, opts = {}) {
         const n = +a;
         if (isFinite(n)) mouthTgt = clamp01(n);
       }, // ignore a NaN/garbage amplitude -> mouth holds last target, never freezes open until reload
+      setExpr(p = {}) {
+        const via = {};
+        for (const k of ["smile", "brows"]) {
+          const n = +p[k];
+          if (p[k] == null || !isFinite(n)) continue; // absent/garbage -> channel holds (guard at the boundary)
+          exprTgt[k] = clamp01(n);
+          via[k] = (k === "smile" ? smileName : browName) ? "vrm" : "none";
+        }
+        return { applied: { ...exprTgt }, via }; // truth: what will be driven, and through which channel
+      },
       setBlink: (v) => {
         manualBlink = v == null || v < 0 ? -1 : clamp01(v);
       }, // hold the lids; <0 = released (eyes open)
@@ -70,6 +95,9 @@ export function buildFacial(model, vrm = null, opts = {}) {
       update(dt, blinkOn = true) {
         mouth += (mouthTgt - mouth) * Math.min(1, dt * 18);
         set(mouthName, mouth * P.open);
+        for (const k of ["smile", "brows"]) exprCur[k] += (exprTgt[k] - exprCur[k]) * Math.min(1, dt * 10);
+        if (smileName) set(smileName, exprCur.smile);
+        if (browName) set(browName, exprCur.brows);
         if (manualBlink >= 0) {
           set("blink", manualBlink);
           wasOn = blinkOn;
@@ -125,7 +153,20 @@ export function buildFacial(model, vrm = null, opts = {}) {
     if (!jaw && JAW_RE.test(o.name)) jaw = o;
     if (LID_RE.test(o.name)) lids.push(o);
   });
-  const P = { open: 1.0, jawAxis: "x", jawOpen: 0.32, lidAxis: "x", lidClose: 0.5, lidLower: -0.5, lidCorner: 0.3 };
+  const P = {
+    open: 1.0,
+    jawAxis: "x",
+    jawOpen: 0.32,
+    lidAxis: "x",
+    lidClose: 0.5,
+    lidLower: -0.5,
+    lidCorner: 0.3,
+    // expression bone-driver amounts, as FRACTIONS of the mouth/brow spread (facialTune-able per rig)
+    smileUp: 0.22, // lip corners rise
+    smileOut: 0.1, // ...and widen
+    cheekLift: 0.08, // upper cheeks assist (subtle)
+    browLift: 0.12, // brow raise
+  };
   for (const k in P) if (opts[k] != null) P[k] = opts[k]; // caller-supplied face params (also set live via facialTune/setParams) — face rigs differ wildly
   const _e = new THREE.Euler(),
     _q = new THREE.Quaternion();
@@ -254,18 +295,132 @@ export function buildFacial(model, vrm = null, opts = {}) {
     }
   }
 
+  // ---------- EXPRESSION ladders (2026-07-03): smile + brows — named morph → face BONES → none ----------
+  // Bone drivers TRANSLATE face bones in parent-local space (offsets ride the head like the skin
+  // does). Sides come from POSITION relative to the corner midpoint, never from name parsing.
+  const mouthOwned = new Set(mouthDrv?.owned || []);
+  let smileDrv = null,
+    browDrv = null;
+  {
+    const hits = morphHits(SMILE_RE).filter((h) => !mouthOwned.has(h.idx)); // never double-book the lip-sync morph
+    if (hits.length)
+      smileDrv = {
+        kind: "morph",
+        info: `smile morphs [${hits.map((h) => h.name).join(",")}]`,
+        owned: [...new Set(hits.map((h) => h.idx))],
+        set: (v) => setMorph(hits, v),
+      };
+  }
+  if (!smileDrv) {
+    const corners = [];
+    model.traverse((o) => {
+      if (o.isBone && CORNER_RE.test(o.name)) corners.push(o);
+    });
+    if (corners.length >= 2) {
+      model.updateWorldMatrix(true, true);
+      const wp = corners.map((b) => b.getWorldPosition(new THREE.Vector3()));
+      const mid = wp.reduce((a, v) => a.add(v), new THREE.Vector3()).multiplyScalar(1 / wp.length);
+      let width = 0; // mouth width (max corner spread) = the scale every offset is a fraction of
+      for (let i = 0; i < wp.length; i++)
+        for (let j = i + 1; j < wp.length; j++) width = Math.max(width, wp[i].distanceTo(wp[j]));
+      if (width > 1e-6) {
+        const upW = new THREE.Vector3(0, 1, 0);
+        const _pq = new THREE.Quaternion();
+        const items = corners.map((b, i) => {
+          const outW = wp[i].clone().sub(mid);
+          outW.addScaledVector(upW, -outW.dot(upW)); // lateral only (toward THIS corner)
+          if (outW.lengthSq() > 1e-12) outW.normalize();
+          const inv = b.parent.getWorldQuaternion(_pq).clone().invert();
+          return {
+            bone: b,
+            rest: b.position.clone(),
+            upL: upW.clone().applyQuaternion(inv),
+            outL: outW.applyQuaternion(inv),
+          };
+        });
+        const cheeks = [];
+        model.traverse((o) => {
+          if (o.isBone && CHEEK_UP_RE.test(o.name)) cheeks.push(o);
+        });
+        const cheekItems = cheeks.map((b) => ({
+          bone: b,
+          rest: b.position.clone(),
+          upL: upW.clone().applyQuaternion(b.parent.getWorldQuaternion(_pq).clone().invert()),
+        }));
+        smileDrv = {
+          kind: "bones",
+          info: `${corners.length} lip-corner bone(s)${cheekItems.length ? ` + ${cheekItems.length} cheek` : ""}`,
+          bones: corners.map((b) => b.name),
+          set: (v) => {
+            for (const it of items)
+              it.bone.position
+                .copy(it.rest)
+                .addScaledVector(it.upL, v * P.smileUp * width)
+                .addScaledVector(it.outL, v * P.smileOut * width);
+            for (const c of cheekItems) c.bone.position.copy(c.rest).addScaledVector(c.upL, v * P.cheekLift * width);
+          },
+        };
+      }
+    }
+  }
+  {
+    const hits = morphHits(BROW_UP_RE).filter((h) => !mouthOwned.has(h.idx));
+    if (hits.length)
+      browDrv = {
+        kind: "morph",
+        info: `brow morphs [${hits.map((h) => h.name).join(",")}]`,
+        owned: [...new Set(hits.map((h) => h.idx))],
+        set: (v) => setMorph(hits, v),
+      };
+  }
+  if (!browDrv) {
+    const brows = [];
+    model.traverse((o) => {
+      if (o.isBone && BROW_BONE_RE.test(o.name)) brows.push(o);
+    });
+    if (brows.length) {
+      model.updateWorldMatrix(true, true);
+      // scale: brow spread (same trick as the mouth), falling back to inter-brow midpoint height sanity
+      const wp = brows.map((b) => b.getWorldPosition(new THREE.Vector3()));
+      let spread = 0;
+      for (let i = 0; i < wp.length; i++)
+        for (let j = i + 1; j < wp.length; j++) spread = Math.max(spread, wp[i].distanceTo(wp[j]));
+      if (spread > 1e-6) {
+        const upW = new THREE.Vector3(0, 1, 0);
+        const _pq = new THREE.Quaternion();
+        const items = brows.map((b) => ({
+          bone: b,
+          rest: b.position.clone(),
+          upL: upW.clone().applyQuaternion(b.parent.getWorldQuaternion(_pq).clone().invert()),
+        }));
+        browDrv = {
+          kind: "bones",
+          info: `${brows.length} brow bone(s)`,
+          bones: brows.map((b) => b.name),
+          set: (v) => {
+            for (const it of items) it.bone.position.copy(it.rest).addScaledVector(it.upL, v * P.browLift * spread);
+          },
+        };
+      }
+    }
+  }
+
   // ---------- compose ONE facade (shared mouth smoother + one-shot blink, whatever the channel kinds) ----------
-  if (!mouthDrv && !blinkDrv) {
+  if (!mouthDrv && !blinkDrv && !smileDrv && !browDrv) {
     // No channel at all — ACKNOWLEDGE it, never fake one (speech still plays, the face stays still).
     // Same facade SHAPE as the live one (#8): every method present, just inert.
     return {
       mode: "none",
       blinkMode: "none",
+      exprMode: { smile: "none", brows: "none" },
       info: "no mouth channel and no blink channel — no jaw/lids, no named or geometric face morphs (speech plays without lip-sync)",
       ownedMorphs: [],
       params: {},
       setParams() {},
       setMouth() {},
+      setExpr() {
+        return { applied: {}, via: { smile: "none", brows: "none" } }; // honest: no face to express with
+      },
       setBlink() {},
       blink() {},
       update() {},
@@ -276,17 +431,42 @@ export function buildFacial(model, vrm = null, opts = {}) {
     blinking = 0,
     manualBlink = -1,
     wasOn = false;
+  const exprCur = { smile: 0, brows: 0 },
+    exprTgt = { smile: 0, brows: 0 };
+  const exprDrv = { smile: smileDrv, brows: browDrv };
   return {
     mode: mouthDrv ? mouthDrv.kind : "none", // consumers read mode as "does she have a MOUTH"; blink reports separately now
     blinkMode: blinkDrv ? blinkDrv.kind : "none",
-    info: `mouth: ${mouthDrv ? mouthDrv.info : "NONE"} · blink: ${blinkDrv ? blinkDrv.info : "NONE"}`,
-    ownedMorphs: [...new Set([...(mouthDrv?.owned || []), ...(blinkDrv?.owned || [])])], // auto-driven morphs (a manual UI set won't stick)
+    exprMode: { smile: smileDrv ? smileDrv.kind : "none", brows: browDrv ? browDrv.kind : "none" },
+    info:
+      `mouth: ${mouthDrv ? mouthDrv.info : "NONE"} · blink: ${blinkDrv ? blinkDrv.info : "NONE"}` +
+      ` · smile: ${smileDrv ? smileDrv.info : "NONE"} · brows: ${browDrv ? browDrv.info : "NONE"}`,
+    ownedMorphs: [
+      ...new Set([
+        ...(mouthDrv?.owned || []),
+        ...(blinkDrv?.owned || []),
+        ...(smileDrv?.owned || []),
+        ...(browDrv?.owned || []),
+      ]),
+    ], // auto-driven morphs (a manual UI set won't stick)
     params: P,
     setParams: (p) => Object.assign(P, p),
     setMouth: (a) => {
       const n = +a;
       if (isFinite(n)) mouthTgt = clamp01(n);
     }, // ignore a NaN/garbage amplitude -> mouth holds last target, never freezes open until reload
+    setExpr(p = {}) {
+      // drive smile/brows 0..1; absent/garbage fields hold their channel. Replies TRUTH: the
+      // accepted targets + which ladder tier answers each channel ("morph"|"bones"|"none").
+      const via = {};
+      for (const k of ["smile", "brows"]) {
+        const n = +p[k];
+        if (p[k] == null || !isFinite(n)) continue;
+        exprTgt[k] = clamp01(n);
+        via[k] = exprDrv[k] ? exprDrv[k].kind : "none";
+      }
+      return { applied: { ...exprTgt }, via };
+    },
     setBlink: (v) => {
       manualBlink = v == null || v < 0 ? -1 : clamp01(v);
     }, // hold the lids (wink/squint/calibration); <0 = released (eyes open)
@@ -297,6 +477,12 @@ export function buildFacial(model, vrm = null, opts = {}) {
       if (mouthDrv) {
         mouth += (mouthTgt - mouth) * Math.min(1, dt * 18);
         mouthDrv.set(mouth * P.open);
+      }
+      for (const k of ["smile", "brows"]) {
+        if (!exprDrv[k]) continue;
+        const prev = exprCur[k];
+        exprCur[k] += (exprTgt[k] - exprCur[k]) * Math.min(1, dt * 10);
+        if (exprCur[k] !== prev || exprCur[k] > 0) exprDrv[k].set(exprCur[k]);
       }
       if (!blinkDrv) {
         wasOn = blinkOn;
