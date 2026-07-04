@@ -92,8 +92,11 @@ async def _handler(ws) -> None:
                 if c is ws:
                     continue  # don't echo back to the producer
                 await _send(c, data)
-    except Exception:
-        pass  # a dropped client must not crash the hub
+    except Exception as e:
+        # a dropped client must not crash the hub — but a HUB LOGIC bug must not hide as a
+        # normal disconnect either (fail honestly: normal closes are ConnectionClosed)
+        if type(e).__name__ not in ("ConnectionClosed", "ConnectionClosedOK", "ConnectionClosedError"):
+            print(f"avatar bus: client pump error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
     finally:
         CLIENTS.discard(ws)
         for k in [k for k, v in PENDING.items() if v[0] is ws]:
