@@ -753,11 +753,10 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       ],
     });
     m.api.setBoneLabel = (n, l) => m.calls.push(["setBoneLabel", n, l]);
-    m.api.highlightBone = (n, d) => m.calls.push(["highlightBone", n, d]);
-    let pickCb = null;
-    m.api.pickBone = (cb) => {
-      pickCb = cb;
-      m.calls.push(["pickBone"]);
+    m.api.boneMarks = () => ["DEF-spine006_016"]; // engine says this bone is already marked -> renders pre-checked
+    m.api.setBoneMark = (n, on) => {
+      m.calls.push(["setBoneMark", n, on]);
+      return true;
     };
     createUI(m.api).showSettings();
     const filt = [...document.querySelectorAll("input")].find((i) => /filter bones/i.test(i.placeholder || ""));
@@ -772,21 +771,26 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       m.calls.some((c) => c[0] === "setBoneLabel" && c[1] === "Shibahu_Tail1_0199" && c[2] === "tail base"),
       "-> setBoneLabel(raw name, label)"
     );
-    // IDENTIFY (2026-06-12): hovering a row's raw name highlights that bone on her body…
-    const raw = [...document.querySelectorAll("span")].find((s) => /Shibahu_Tail1_0199/.test(s.textContent || ""));
-    assert.ok(raw, "raw bone name span exists");
-    fire(raw, "mouseenter");
+    // IDENTIFY (2026-07-03 redesign): each row leads with a checkbox — ✓ pins a marker on that bone…
+    const seeIt = (i) => i.type === "checkbox" && /show this bone/i.test(i.title || "");
+    const boxes = [...document.querySelectorAll("input")].filter(seeIt);
+    assert.equal(boxes.length, 1, "one see-it checkbox per visible row");
+    boxes[0].checked = true;
+    fire(boxes[0], "change");
     assert.ok(
-      m.calls.some((c) => c[0] === "highlightBone" && c[1] === "Shibahu_Tail1_0199"),
-      "hover -> highlightBone(raw name)"
+      m.calls.some((c) => c[0] === "setBoneMark" && c[1] === "Shibahu_Tail1_0199" && c[2] === true),
+      "checkbox -> setBoneMark(raw name, true)"
     );
-    // …and the 🎯 pick button arms a click-on-her pick whose result lands in the filter.
-    const pk = [...document.querySelectorAll("button")].find((b) => /Pick a bone/i.test(b.textContent || ""));
-    assert.ok(pk, "pick button exists");
-    pk.click();
-    assert.ok(pickCb, "pick armed a callback");
-    pickCb("DEF-spine006_016");
-    assert.equal(filt.value, "DEF-spine006_016", "picked bone name lands in the filter");
+    // …the old click-modes are gone…
+    assert.ok(
+      ![...document.querySelectorAll("button")].some((b) => /Pick a bone/i.test(b.textContent || "")),
+      "no click-her-to-pick button"
+    );
+    // …and a bone the engine reports as already marked renders pre-checked.
+    filt.value = "spine";
+    fire(filt, "input");
+    const pre = [...document.querySelectorAll("input")].find(seeIt);
+    assert.ok(pre && pre.checked, "already-marked bone renders with its checkbox ticked");
   } finally {
     dom.cleanup();
   }

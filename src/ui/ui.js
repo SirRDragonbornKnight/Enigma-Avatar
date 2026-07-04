@@ -886,29 +886,12 @@ export function createUI(api) {
           filt.style.cssText =
             "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
           filt.onkeydown = (e) => e.stopPropagation(); // typing must not trigger global hotkeys
-          // IDENTIFY bones (user 2026-06-12): Pick = the next click ON HER selects the nearest bone
-          // into the filter; hovering/clicking a row's raw name flashes a pink marker on that bone.
-          let showAll = false,
-            allCb = null;
-          if (api.pickBone) {
-            const pk = document.createElement("button");
-            const IDLE_TXT = "Pick a bone — click a spot on her body";
-            pk.textContent = IDLE_TXT;
-            pk.style.cssText =
-              "border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eee;border-radius:4px;font:12px system-ui;padding:3px 8px;cursor:pointer;margin:2px 0 4px;display:block;";
-            pk.onclick = (e) => {
-              e.stopPropagation();
-              pk.textContent = "…now click her (anywhere else cancels)";
-              api.pickBone((name) => {
-                filt.value = name;
-                showAll = true;
-                if (allCb) allCb.checked = true;
-                render();
-                pk.textContent = IDLE_TXT;
-              }); // a picked helper bone must be visible in the list
-            };
-            bbox.appendChild(pk);
-          }
+          // IDENTIFY bones — a checkbox per row (user 2026-07-03: "i do not like the click the bone
+          // idea — just make it a checkbox to see the bone"): ✓ = a marker rides that bone until
+          // unchecked; several can be on at once to compare. Replaced the click-her-to-pick button
+          // + hover-to-flash rows. `marked` mirrors the engine so ✓s survive filter re-renders.
+          const marked = new Set(api.boneMarks ? api.boneMarks() : []);
+          let showAll = false;
           const list = document.createElement("div");
           const CAP = 30;
           let allRow = null;
@@ -919,7 +902,6 @@ export function createUI(api) {
               "display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7;margin:0 0 4px;cursor:pointer;";
             const cb = document.createElement("input");
             cb.type = "checkbox";
-            allCb = cb;
             cb.onchange = (e) => {
               e.stopPropagation();
               showAll = cb.checked;
@@ -943,6 +925,18 @@ export function createUI(api) {
             for (const b of hits.slice(0, CAP)) {
               const row = document.createElement("div");
               row.style.cssText = "display:flex;align-items:center;gap:7px;padding:3px 0;";
+              const see = document.createElement("input"); // ✓ = see this bone (marker stays until unchecked)
+              see.type = "checkbox";
+              see.checked = marked.has(b.name);
+              see.title = "show this bone on her (marker follows it until unchecked)";
+              see.style.cssText = "flex:0 0 auto;margin:0;cursor:pointer;";
+              see.onchange = (e) => {
+                e.stopPropagation();
+                if (api.setBoneMark && api.setBoneMark(b.name, see.checked)) {
+                  if (see.checked) marked.add(b.name);
+                  else marked.delete(b.name);
+                } else see.checked = false; // engine said no (no such bone / no model) — don't show a lying ✓
+              };
               const nm = document.createElement("input");
               nm.type = "text";
               nm.value = b.label || "";
@@ -960,17 +954,9 @@ export function createUI(api) {
               const raw = document.createElement("span");
               raw.textContent = b.name + (b.role ? "  ·  " + b.role : "");
               raw.style.cssText =
-                "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;";
-              raw.title = b.name + " — hover/click: show this bone on her";
-              if (api.highlightBone) {
-                // identify: light the bone up on her body
-                raw.onmouseenter = () => api.highlightBone(b.name, 1.2);
-                raw.onclick = (e) => {
-                  e.stopPropagation();
-                  api.highlightBone(b.name, 3);
-                };
-              }
-              row.append(nm, raw);
+                "opacity:.55;font:11px ui-monospace,Consolas,monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+              raw.title = b.name;
+              row.append(see, nm, raw);
               list.appendChild(row);
             }
             if (hits.length > CAP) {
