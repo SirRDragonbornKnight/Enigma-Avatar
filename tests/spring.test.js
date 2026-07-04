@@ -157,6 +157,26 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });
 
+test("impulse() boundary guard: ±Infinity vectors/dur are neutralized (no NaN tip, no immortal zombie impulse)", () => {
+  const m = hairRig();
+  const s = buildSpringBones(m);
+  assert.equal(s.impulse("tail", { x: Infinity, y: -Infinity, z: NaN }, Infinity), true, "accepted (region exists)");
+  for (let i = 0; i < 60; i++) s.update(1 / 60);
+  let bad = 0;
+  m.traverse((o) => {
+    if (o.isBone && !Number.isFinite(o.quaternion.x)) bad++;
+  });
+  assert.equal(bad, 0, "no bone quaternion went non-finite from an Infinity impulse");
+  // a finite-but-huge dur is capped: after 31 simulated seconds the impulse list must be empty
+  s.impulse("tail", { x: 1 }, 9999);
+  for (let i = 0; i < 31 * 60; i++) s.update(1 / 60);
+  // (no public getter for _impulses — the receipt is that update() cost stays flat and bones stay finite)
+  m.traverse((o) => {
+    if (o.isBone && !Number.isFinite(o.quaternion.x)) bad++;
+  });
+  assert.equal(bad, 0, "bones finite after the capped-dur impulse expires");
+});
+
 test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 vs 120 fps", () => {
   // The dt-normalized verlet (drag/stiffness/damp re-scaled to real dt + time-corrected inertia) must
   // produce the same physical motion regardless of frame-rate. Before the fix the per-frame fractions

@@ -45,7 +45,10 @@ export function rotToSave(r) {
 export function regionFeel(w, stiffness, drag, isGeo) {
   if (!(w > 0.001)) return { pin: true };
   const bounce = w > 1 ? w : 1; // >1 → loosen stiffness + drag for a bouncier feel
-  const stiff = ((isGeo ? 1.5 : 1) * stiffness) / (0.4 + 0.6 * bounce);
+  // stiff is consumed as pow(1-stiff, kFrame): a value ≥1 makes pow(negative, fraction) = NaN
+  // (geo chains hit 1.5*stiffness at user-legal stiffness > 2/3 → every chain froze at rest,
+  // NaN-reset each frame). Cap below 1 so max stiffness means "snaps to rest", never NaN.
+  const stiff = clamp(((isGeo ? 1.5 : 1) * stiffness) / (0.4 + 0.6 * bounce), 0, 0.995);
   const dragv = clamp(drag / bounce, 0.05, 0.95);
   const damp = w < 1 ? 1 - w : 0; // w<1 → damp amplitude toward rest (0 at w≥1)
   return { pin: false, bounce, stiff, dragv, damp };

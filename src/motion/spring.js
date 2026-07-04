@@ -138,7 +138,17 @@ export function buildSpringBones(model, opts = {}) {
     if (!items.some((it) => it.region === region)) return false;
     const w = region in P.regionWeight ? P.regionWeight[region] : (P.regionWeight._all ?? 1);
     if (!(w > 0.001)) return false; // region pinned rigid by the user → a kick would land invisibly; return false so the fidget scheduler tries another appendage
-    _impulses.push({ region, x: +v.x || 0, y: +v.y || 0, z: +v.z || 0, t: 0, dur: Math.max(0.05, +dur || 0.4) });
+    // finiteness guard at the engine boundary: `+v.x || 0` let ±Infinity through (NaN tip after
+    // setLength), and an Infinity dur made an immortal zombie impulse iterated every frame
+    const fin = (n) => (Number.isFinite(+n) ? +n : 0);
+    _impulses.push({
+      region,
+      x: fin(v.x),
+      y: fin(v.y),
+      z: fin(v.z),
+      t: 0,
+      dur: Math.max(0.05, Math.min(30, Number.isFinite(+dur) ? +dur : 0.4)),
+    });
     return true;
   }
 

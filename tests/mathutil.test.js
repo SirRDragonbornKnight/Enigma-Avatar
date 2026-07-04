@@ -115,6 +115,18 @@ test("regionFeel: geo chains are stiffer; dragv is clamped to a floor", () => {
   assert.ok(close(regionFeel(2, 0.14, 0.05, false).dragv, 0.05), "dragv floor 0.05 (0.05/2 would underflow)");
 });
 
+test("regionFeel: stiff stays below 1 at max user stiffness (pow(1-stiff, frac-kFrame) must never be pow(negative, fraction) = NaN)", () => {
+  // geo chains multiply stiffness by 1.5: any user stiffness > 2/3 used to yield stiff > 1,
+  // which froze EVERY geo-sprung chain (tail/wings) at rest via a per-frame NaN reset.
+  for (const s of [0.7, 0.9, 1]) {
+    for (const geo of [true, false]) {
+      const f = regionFeel(1, s, 0.5, geo);
+      assert.ok(f.stiff < 1, `stiffness=${s} geo=${geo} → stiff ${f.stiff} must stay < 1`);
+      assert.ok(Number.isFinite(Math.pow(1 - f.stiff, 0.7)), "the verlet's fractional pow stays finite");
+    }
+  }
+});
+
 test("pickFps: full rate when active; idle → IDLE; deep-rest → REST", () => {
   assert.strictEqual(pickFps(true, 999, 60, 30, 15, 6), 60);
   assert.strictEqual(pickFps(false, 3, 60, 30, 15, 6), 30); // recently active
