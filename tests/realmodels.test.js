@@ -29,6 +29,7 @@ function discover(dir) {
   if (!fs.existsSync(dir)) return [];
   const out = [];
   for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (d.name.startsWith("_")) continue; // models/_trash holds retired models — not installed
     if (d.isDirectory()) {
       const sub = path.join(dir, d.name);
       const files = fs.readdirSync(sub);
@@ -44,32 +45,38 @@ function discover(dir) {
 }
 
 const EXPECT = {
+  // ---- installed in models/ (ALL FIVE exercise the cascade on every run; audit 2026-07-04
+  // found only makiro biting — the rest of this table pointed at renamed/removed files) ----
   makiro: 19,
-  "51dc47334dee42b9bb8e53ee07aa8006": 19,
-  roxanne_wolf: 19,
-  "mal0_scp-1471": 19,
-  "fexa_-_fnaf__cryptiacurves": 19,
+  miku_brazilian_chiku_by_manolo122lq_beta: 19,
+  rachnera__monster_musume: 19,
+  // ryuri is a LAMIA — humanoid torso on a ~112-bone snake tail, NO legs. 12 is FULL coverage
+  // for her body plan (hips/leg roles honestly vacant; the tail is spring physics, not roles).
+  ryuri: 12,
+  // zhu_yuan locks the Daz Genesis naming support (was 4/19 before 8edf66e; a side-detection
+  // regression would drop it straight back). Dir renamed from zhu_yuan__nsfw__zzz — the old key
+  // silently SKIPPED this lock until 2026-07-04.
+  zhu_yuan: 19,
+  // ---- the external flat library (C:\Users\SirKn\3d Avatar\Avatars) — these bite when
+  // AVATAR_MODELS_DIR points there; keyed by lowercased file stem. Re-measured 2026-07-04
+  // via tools/rig_report.mjs against the CURRENT filenames (the old keys — mal0_scp-1471,
+  // fexa_-_fnaf__cryptiacurves, glados, roxanne_wolf, 51dc…, grace_howard, toothless, spyro —
+  // named files that no longer exist there). ----
+  fexa_blender: 19,
+  "mal0_-_v_2_0": 19,
   "love-taste-toy-chica": 19,
-  // lolbit/mangle re-measured 2026-07-02 (pad/jiggle SKIP + joint-style arm promotion): still 16
-  // roles each, but the RIGHT 16 — left_arm/right_arm now resolve (driveable over the bus; they
-  // were structurally EMPTY before) and the clavicle-less shoulder slots are honestly vacant.
-  // The old 17/15 described the since-deleted models/ copies; the Desktop and 3d Avatar library
-  // files hash-match each other and both measure 16 via tools/rig_report.mjs.
+  // lolbit/mangle: 16 roles each — the RIGHT 16 (joint-style arm promotion 2026-07-02);
+  // clavicle-less shoulder slots honestly vacant (lolbit also lacks chest; mangle lacks hips).
   fnaf_help_wanted__lolbit: 16,
   glamrock_mangleupdated: 16,
-  // zhu_yuan is IN models/ (user-imported) — locks the Daz Genesis naming support (was 4/19
-  // before 8edf66e; a side-detection regression would drop it straight back). Audit-added.
-  zhu_yuan__nsfw__zzz: 19,
-  glados: 2,
-  grace_howard: 0,
-  toothless: 0,
-  spyro: "static", // no skin/joints → no bone snapshot at all
+  "g.l.a.d.o.s": 2, // head/neck only (no body) — a jump means the cascade is hallucinating limbs
 };
 
 const keyOf = (f) =>
-  path.dirname(f) === path.resolve(MODELS)
+  (path.dirname(f) === path.resolve(MODELS)
     ? path.basename(f).replace(/\.(glb|gltf|vrm)$/i, "") // flat library file -> keyed by stem
-    : path.basename(path.dirname(f)); // models/<id>/scene.gltf -> keyed by the id dir
+    : path.basename(path.dirname(f))
+  ).toLowerCase(); // models/<id>/scene.gltf -> keyed by the id dir; lowercased so Makiro.glb == makiro/
 const byDir = new Map(discover(MODELS).map((f) => [keyOf(f), f]));
 const matchedKeys = Object.keys(EXPECT).filter((dir) => byDir.has(dir));
 
@@ -112,5 +119,27 @@ test(
   { skip: byDir.size ? false : "no models present on this machine" },
   () => {
     assert.ok(matchedKeys.length > 0, `covered: ${matchedKeys.join(", ") || "none"}`);
+  }
+);
+
+// COMPLETENESS (the stronger guard, repo library only): every model INSTALLED in models/ must be
+// locked by an EXPECT entry. The one-match guard above passed for months while 4 of 5 installed
+// models exercised nothing (renamed dirs made their keys skip silently — audit 2026-07-04).
+test(
+  "every installed repo model is locked by an EXPECT entry (no silent coverage holes)",
+  {
+    skip: process.env.AVATAR_MODELS_DIR
+      ? "external library (curated coverage only)"
+      : byDir.size
+        ? false
+        : "no models present",
+  },
+  () => {
+    const missing = [...byDir.keys()].filter((k) => !(k in EXPECT));
+    assert.deepEqual(
+      missing,
+      [],
+      `models/ has unlocked model(s): ${missing.join(", ")} — measure with 'node tools/rig_report.mjs' and add them to EXPECT`
+    );
   }
 );
