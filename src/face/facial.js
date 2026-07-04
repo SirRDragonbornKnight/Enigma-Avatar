@@ -22,9 +22,16 @@ const LID_RE = /eye.?lid|eyelid|(^|[._-])lid($|[._-])|eye.?flap/i; // eye.?flap:
 // EXPRESSION channels (2026-07-03, audit finding 6): smile + brows, each down its own ladder
 // (VRM expression → named morph → face BONES → honest none). Dictionaries follow the same
 // research base as OPEN_RE: ARKit, VRoid Fcl_*, CC, MMD, plus Daz-Genesis face-bone names.
-const SMILE_RE =
-  /smile|mouthsmile|fcl[._-]?(mth|all)[._-]?fun|fcl[._-]?all[._-]?joy|(^|[._-])joy($|[._-])|grin|笑い|にこ/i;
-const BROW_UP_RE = /brow.?(up|raise|outer.?up|inner.?up)|surprised|fcl[._-]?brw[._-]?(fun|surprised)|眉.?上/i;
+// MOUTH-scope only (audit 2026-07-04): Fcl_ALL_Joy / Fcl_EYE_Joy / 笑い are eye-CLOSING morphs —
+// a smile that owns them shuts the eyes and the blink channel can never reopen them.
+const SMILE_RE = /smile|mouthsmile|fcl[._-]?mth[._-]?fun|grin|にこ/i;
+// No bare 'surprised' (audit 2026-07-04): it captured Fcl_MTH/EYE/ALL_Surprised — mouth and eyes
+// driven by the BROW channel, fighting lip-sync and blink every frame.
+const BROW_UP_RE = /brow.?(up|raise|outer.?up|inner.?up)|fcl[._-]?brw[._-]?(fun|surprised)|眉.?上/i;
+// Channel exclusion nets (belt+braces beyond the scoped REs): a smile hit must not be an eye
+// morph ("EyeSmile"), a brow hit must not be an eye or mouth morph. eye(?![._-]?brow) keeps "EyeBrowUp".
+const SMILE_EXCLUDE_RE = /(^|[._-])eye(?![._-]?brow)|wink|ウィンク|目/i;
+const BROW_EXCLUDE_RE = /(^|[._-])eye(?![._-]?brow)|mouth|(^|[._-])mth|口|目/i;
 const CORNER_RE = /lip.?corner|mouth.?corner|corner.?lip|nasolabial.?mouth/i; // Daz: l/rLipCorner + l/rNasolabialMouthCorner
 const CHEEK_UP_RE = /cheek.?upper|upper.?cheek/i; // subtle assist: a real smile raises the upper cheeks
 const BROW_BONE_RE = /brow/i;
@@ -79,9 +86,9 @@ export function buildFacial(model, vrm = null, opts = {}) {
       setExpr(p = {}) {
         const via = {};
         for (const k of ["smile", "brows"]) {
-          const n = +p[k];
-          if (p[k] == null || !isFinite(n)) continue; // absent/garbage -> channel holds (guard at the boundary)
-          exprTgt[k] = clamp01(n);
+          const raw = p[k];
+          if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" coerced garbage into a jammed smile (audit 2026-07-04); anything else HOLDS
+          exprTgt[k] = clamp01(raw);
           via[k] = (k === "smile" ? smileName : browName) ? "vrm" : "none";
         }
         return { applied: { ...exprTgt }, via }; // truth: what will be driven, and through which channel
@@ -174,8 +181,8 @@ export function buildFacial(model, vrm = null, opts = {}) {
     _e.set(axis === "x" ? ang : 0, axis === "y" ? ang : 0, axis === "z" ? ang : 0, "XYZ");
     bone.quaternion.copy(rest).multiply(_q.setFromEuler(_e));
   };
-  let _geo = null,
-    _geoTried = false; // lazy shared geometric analysis (only when a ladder reaches it)
+  let _geo = opts.geo || null,
+    _geoTried = !!opts.geo; // the loader shares its load-time analysis — ONE scan per model (audit 2026-07-04); the lazy path is only a fallback when none was passed
   const geoAnalysis = () => {
     if (_geoTried) return _geo;
     _geoTried = true;
@@ -202,6 +209,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         kind: "morph",
         info: `mouth morphs [${hits.map((h) => h.name).join(",")}]`,
         owned: [...new Set(hits.map((h) => h.idx))],
+        ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx), // mesh-AWARE ownership: bare indices cross-matched other meshes' morphs (audit 2026-07-04)
         set: (v) => setMorph(hits, v),
       };
   }
@@ -225,6 +233,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
           kind: "morph-geom",
           info: `mouth morph #${top} (geometric mouth band, score ${g.byIndex.get(top).mouthScore.toFixed(2)})`,
           owned: [top],
+          ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx),
           set: (v) => setMorph(hits, v),
         };
     }
@@ -235,6 +244,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
           kind: "morph-geom",
           info: `morph #${geo.index} on 1 mesh (geometric jaw-drop, score ${geo.score.toFixed(2)} of ${geo.morphs})`,
           owned: [geo.index],
+          ownedPairs: [geo.mesh.uuid + ":" + geo.index],
           set: (v) => {
             geo.mesh.morphTargetInfluences[geo.index] = v;
           },
@@ -252,6 +262,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         kind: "morph",
         info: `blink morphs [${hits.map((h) => h.name).join(",")}]`,
         owned: [...new Set(hits.map((h) => h.idx))],
+        ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx),
         set: (c) => setMorph(hits, c),
       };
   }
@@ -290,6 +301,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
           kind: "morph-geom",
           info: `blink morph #${top} (geometric eye band, score ${g.byIndex.get(top).eyeScore.toFixed(2)})`,
           owned: [top],
+          ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx),
           set: (c) => setMorph(hits, c),
         };
     }
@@ -298,11 +310,12 @@ export function buildFacial(model, vrm = null, opts = {}) {
   // ---------- EXPRESSION ladders (2026-07-03): smile + brows — named morph → face BONES → none ----------
   // Bone drivers TRANSLATE face bones in parent-local space (offsets ride the head like the skin
   // does). Sides come from POSITION relative to the corner midpoint, never from name parsing.
-  const mouthOwned = new Set(mouthDrv?.owned || []);
+  const pairOf = (h) => h.mesh.uuid + ":" + h.idx;
+  const ownedPairs = new Set([...(mouthDrv?.ownedPairs || []), ...(blinkDrv?.ownedPairs || [])]); // mesh+index pairs — a bare index wrongly matched OTHER meshes' morphs (audit 2026-07-04)
   let smileDrv = null,
     browDrv = null;
   {
-    const hits = morphHits(SMILE_RE).filter((h) => !mouthOwned.has(h.idx)); // never double-book the lip-sync morph
+    const hits = morphHits(SMILE_RE).filter((h) => !ownedPairs.has(pairOf(h)) && !SMILE_EXCLUDE_RE.test(h.name)); // never double-book lip-sync/blink morphs; never adopt an EYE morph as the smile
     if (hits.length)
       smileDrv = {
         kind: "morph",
@@ -326,6 +339,11 @@ export function buildFacial(model, vrm = null, opts = {}) {
       if (width > 1e-6) {
         const upW = new THREE.Vector3(0, 1, 0);
         const _pq = new THREE.Quaternion();
+        const _wsv = new THREE.Vector3();
+        // width is WORLD units but bone.position is parent-LOCAL — divide out the parent's world
+        // scale or the offset is wrong by the normalization factor (BASE_H/h0 is never 1):
+        // invisible smile on cm rigs, overshoot on m rigs (audit 2026-07-04).
+        const localK = (b) => 1 / Math.max(1e-6, Math.abs(b.parent.getWorldScale(_wsv).x) || 1);
         const items = corners.map((b, i) => {
           const outW = wp[i].clone().sub(mid);
           outW.addScaledVector(upW, -outW.dot(upW)); // lateral only (toward THIS corner)
@@ -336,6 +354,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
             rest: b.position.clone(),
             upL: upW.clone().applyQuaternion(inv),
             outL: outW.applyQuaternion(inv),
+            k: localK(b),
           };
         });
         const cheeks = [];
@@ -346,6 +365,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
           bone: b,
           rest: b.position.clone(),
           upL: upW.clone().applyQuaternion(b.parent.getWorldQuaternion(_pq).clone().invert()),
+          k: localK(b),
         }));
         smileDrv = {
           kind: "bones",
@@ -355,16 +375,17 @@ export function buildFacial(model, vrm = null, opts = {}) {
             for (const it of items)
               it.bone.position
                 .copy(it.rest)
-                .addScaledVector(it.upL, v * P.smileUp * width)
-                .addScaledVector(it.outL, v * P.smileOut * width);
-            for (const c of cheekItems) c.bone.position.copy(c.rest).addScaledVector(c.upL, v * P.cheekLift * width);
+                .addScaledVector(it.upL, v * P.smileUp * width * it.k)
+                .addScaledVector(it.outL, v * P.smileOut * width * it.k);
+            for (const c of cheekItems)
+              c.bone.position.copy(c.rest).addScaledVector(c.upL, v * P.cheekLift * width * c.k);
           },
         };
       }
     }
   }
   {
-    const hits = morphHits(BROW_UP_RE).filter((h) => !mouthOwned.has(h.idx));
+    const hits = morphHits(BROW_UP_RE).filter((h) => !ownedPairs.has(pairOf(h)) && !BROW_EXCLUDE_RE.test(h.name));
     if (hits.length)
       browDrv = {
         kind: "morph",
@@ -388,17 +409,20 @@ export function buildFacial(model, vrm = null, opts = {}) {
       if (spread > 1e-6) {
         const upW = new THREE.Vector3(0, 1, 0);
         const _pq = new THREE.Quaternion();
+        const _wsv = new THREE.Vector3();
         const items = brows.map((b) => ({
           bone: b,
           rest: b.position.clone(),
           upL: upW.clone().applyQuaternion(b.parent.getWorldQuaternion(_pq).clone().invert()),
+          k: 1 / Math.max(1e-6, Math.abs(b.parent.getWorldScale(_wsv).x) || 1), // world spread -> parent-local units (same fix as the smile tier)
         }));
         browDrv = {
           kind: "bones",
           info: `${brows.length} brow bone(s)`,
           bones: brows.map((b) => b.name),
           set: (v) => {
-            for (const it of items) it.bone.position.copy(it.rest).addScaledVector(it.upL, v * P.browLift * spread);
+            for (const it of items)
+              it.bone.position.copy(it.rest).addScaledVector(it.upL, v * P.browLift * spread * it.k);
           },
         };
       }
@@ -460,9 +484,9 @@ export function buildFacial(model, vrm = null, opts = {}) {
       // accepted targets + which ladder tier answers each channel ("morph"|"bones"|"none").
       const via = {};
       for (const k of ["smile", "brows"]) {
-        const n = +p[k];
-        if (p[k] == null || !isFinite(n)) continue;
-        exprTgt[k] = clamp01(n);
+        const raw = p[k];
+        if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" coerced garbage into a jammed smile (audit 2026-07-04); anything else HOLDS
+        exprTgt[k] = clamp01(raw);
         via[k] = exprDrv[k] ? exprDrv[k].kind : "none";
       }
       return { applied: { ...exprTgt }, via };
