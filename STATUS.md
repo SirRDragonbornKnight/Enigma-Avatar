@@ -1,8 +1,62 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-04 (expr/stretch/poke drive surface, bone see-it checkboxes, the 26-finding audit fix pass)._
+_Last updated 2026-07-04, late (the zero-trust full audit + fix pass: ryuri normalization root cause, spring NaN freeze, strict-wire tightening, leak/race fixes; smoke 7/7)._
 
-## 2026-07-02 (later) -- animation session findings + 4 fixes (UNCOMMITTED)
+## 2026-07-04 (late) -- zero-trust audit round 2: the ryuri crumple + 20 fixes
+
+- **The smoke was failing live (5/6) and the "passing" snap was a photo of NOTHING.** Root cause
+  chain: the new `ryuri.glb` (a lamia -- humanoid torso on a ~112-bone snake tail) authors its
+  mane/tail BIND vertices out to y=-5062 while its skeleton spans 2.28 units. `bodyBox()`
+  normalized on raw bind-geometry boxes, so she scaled to a 0.42-unit speck; the twin-adoption
+  tolerance (3% of the assumed 6-unit height) then exceeded HALF her real body and cross-adopted
+  116 bones -- crumpled mesh, left/right motion cross-wired, and a persisted position at the
+  1.4x-permeable clamp extreme (y=2016) parked her below every display. Three fixes:
+  `bodyBox()` measures SKINNED bounds (what renders, `SkinnedMesh.computeBoundingBox`), the
+  coincidence tolerances for twin-adoption/spring-dedup come from the SKELETON's own span, and
+  boot/rebuild restores clamp to SOLID glass (`clampToUnion {solid:true}` -- the permeable bottom
+  is a live-drag affordance, not a resting place). ryuri: 12/19 roles is HONEST (no legs).
+- **`npm run smoke` gained receipt 4 "VISIBLE"** (sane world height + anchor on glass) -- the exact
+  class every other receipt missed while she was invisible. Smoke is 7 checks now, 7/7 live.
+- **Spring NaN freeze (HIGH):** geo-chain stiffness > 2/3 made `regionFeel` return stiff > 1 ->
+  `pow(negative, fractional)` = NaN -> every geo-sprung chain froze at rest via the per-frame NaN
+  reset. Capped below 1 in `regionFeel` + regression tests; `impulse()` also gained finiteness
+  guards (Infinity vector = NaN tip; Infinity dur = immortal zombie impulse).
+- **Strict wire tightened** (protocol.js + python mirror + tests): required fields reject
+  null/""/whitespace (they used to dispatch and answer reqId callers with silent `undefined`);
+  `recolor` requires index-or-name; a garbage `query.what` is a named error ("actions" and a
+  MISSING what stay valid). Conjure: documented `at`/`to` array forms now work (they silently
+  no-oped -- `.x` off an array), string `to` is an honest "not a feature", unknown dismiss/move
+  ids reply `{error}` not fake success, and a same-id double-spawn can no longer leak an
+  undismissable ghost prop into the click silhouette.
+- **Facial truth:** the VRM tier drives the ACTUAL matched expression name (case bug: probe was
+  case-insensitive, setValue exact -- "MouthOpen" models had no lip-sync while info claimed
+  otherwise); `blinkMode:"vrm"` is only reported when a blink preset EXISTS; `facialTune` accepts
+  the documented `jawAxis`/`lidAxis` strings (numericOnly silently stripped them); composite
+  smile/brow morphs get ONE owner (channels no longer fight).
+- **Leaks + races:** all teardown paths dispose TEXTURES (util/dispose.js -- material.dispose()
+  alone leaked the texture set per model swap / prop despawn / ball throw); one AnalyserNode no
+  longer leaks per utterance; drag-drop `loadFile`/`loadFiles` honor the `_loadSeq` last-caller-wins
+  guard; an attach that finishes after a model swap is dropped instead of writing into the WRONG
+  model's profile.
+- **Compositor clamp gaps:** on no-hinge roles (head/torso) parts-pitch + flex-pitch are clamped
+  COMBINED (was 2x the advertised limit); released abduction eases at the speed limit (was the one
+  hard snap left). Softmesh: displacement amplitude honors the bindMatrix scale, and claims are
+  keyed by the shared position BUFFER (two meshes sharing one geometry can no longer corrupt the
+  pristine restore).
+- **realmodels.test.js repaired:** the EXPECT table pointed at renamed/deleted files, so only
+  makiro exercised the cascade while the suite stayed green (zhu_yuan's Daz lock silently skipped).
+  Re-keyed to the real library (all 5 installed models + 6 external), plus a completeness guard:
+  an installed-but-unlocked model now FAILS the suite.
+- **voice.py service:** TTS no longer held hostage by a missing faster-whisper, and the
+  first-call-fails/second-call-passes gate is gone (load() is idempotent and nulls failed
+  providers -- presence == loaded); socket framing reads exact lengths (short recv crashed the
+  connection) with a 32MB cap. bus.py logs hub-logic errors instead of swallowing them as
+  disconnects; the `app://enigma/@fs/` handler requires an ABSOLUTE path (a UNC-mangled relative
+  path used to resolve against the CWD).
+- Suite: node **315 pass / 0 fail / 6 skipped** (external-library locks), pytest **21/21**,
+  eslint + tsc + prettier clean, smoke **7/7** with ryuri booted, visible, and driving.
+
+## 2026-07-02 (later) -- animation session findings + 4 fixes
 
 - **Rig fix (the "legs bend backwards" bug):** on Source/GMod rigs (fnia pack) the LEG roles
   resolved to `ThighJigR/L` jiggle helpers because (a) the real thigh is named `bip_hip_R` and the
@@ -26,7 +80,7 @@ _Last updated 2026-07-04 (expr/stretch/poke drive surface, bone see-it checkboxe
   dismiss + clear all; only shows while props exist) — an AI-stranded prop is no longer bus-only
   (user hit exactly that: a test chair sat mid-screen untouchable). `api.conjureIds/-Dismiss/-Clear`,
   registry scope=brain (props live in the brain scene).
-- Suite: node 282/0 (11 skip), pytest 21/21, eslint+prettier clean. Changes NOT yet committed.
+- Suite at the time: node 282/0 (11 skip), pytest 21/21, eslint+prettier clean. (Since committed.)
 
 ## 2026-07-02 — the file:// era is over
 
@@ -100,9 +154,9 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `node --test` -> **302 pass / 0 fail / 12 skipped** (2026-07-04, incl. softmesh, expression
-  channels and the audit regressions); pytest **21/21** (origin gate incl. `app://enigma`, reply routing,
-  protocol mirror, bone data, voice service); eslint + prettier + tsc clean.
+- Suite: `node --test` -> **315 pass / 0 fail / 6 skipped** (2026-07-04 late, incl. softmesh, expression
+  channels and both audit passes' regressions); pytest **21/21** (origin gate incl. `app://enigma`, reply routing,
+  protocol mirror, bone data, voice service); eslint + prettier + tsc clean; smoke **7/7**.
 
 ## Motion compositor & AI control (P1-P4)
 
@@ -228,7 +282,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
   no longer stomps the AI pose). The suite asserts INTENT, not current behavior. Current count:
-  **261 pass / 0 fail / 11 skipped** (2026-06-30; +the move-set bus/query tests and the AI-control kill-switch gate test since the 186 mark).
+  **315 pass / 0 fail / 6 skipped** (2026-07-04 late; the skips are the external-library realmodels locks).
 - **`node tools/rig_report.mjs`** -- headless cascade inspector: extracts each model's REAL bone snapshot from
   its glTF JSON (names + world positions + hierarchy, no WebGL / no mesh decode) and runs the SAME tiers the
   engine uses (incl. the tier-3.5 `resolveBetween` step + the current facial regexes + a blink-channel probe),

@@ -13,13 +13,14 @@ meet ONLY at the bus (`ws://127.0.0.1:8765`).
 
 ## Setup / build / test — run these first
 
-- Node tests: `node --test` (Node built-in runner; ~286 tests, some skip without the real model
+- Node tests: `node --test` (Node built-in runner; ~320 tests, a few skip without the external model
   library). `node --check <file>.js` for a quick syntax pass.
 - Python tests: `python -m pytest tests/ -q` (bus origin-gate + reply routing, protocol mirror,
   bone data, voice service).
 - **Live smoke: `npm run smoke`** -- drives the REAL overlay over the bus and asserts numeric
-  receipts (boot / limits / strict wire / elbow bend+release / fresh snap), then cleans up what it
-  started. Run it after any change a unit test can't see (shell, protocol handler, boot, bus).
+  receipts (boot / limits / strict wire / visible-at-sane-size / elbow bend+release / fresh snap),
+  then cleans up what it started. Run it after any change a unit test can't see (shell, protocol
+  handler, boot, bus, model normalization).
   `--keep` leaves her up. Attaches to an already-running overlay instead of double-launching.
   KNOWN BLIND SPOT: it proves state + capturePage, NOT pixels-on-glass -- the DComp present-bug
   class passes the smoke; judging the glass still needs eyes.

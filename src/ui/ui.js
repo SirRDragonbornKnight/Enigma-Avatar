@@ -1527,8 +1527,7 @@ export function createUI(api) {
       const empty = document.createElement("div");
       empty.style.cssText =
         "grid-column:1/-1;text-align:center;opacity:.7;font-size:12px;line-height:1.5;padding:8px 4px;";
-      empty.textContent =
-        "No models yet — drop a .glb / .vrm / .fbx onto the avatar, or use “Add model…”. (The placeholder avatar is showing meanwhile.)";
+      empty.textContent = "No models yet — drop a .glb / .vrm / .fbx onto the overlay, or use “Add model…”."; // no placeholder avatar exists (retired 2026-06-30); the overlay shows the no-model hint
       grid.appendChild(empty);
     }
     for (const m of MODEL_LIST) grid.appendChild(cardFor(m));
