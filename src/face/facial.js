@@ -64,18 +64,25 @@ export function buildFacial(model, vrm = null, opts = {}) {
       return [];
     };
     const names = exprNames();
-    const has = (n) => names.some((x) => x.toLowerCase() === n);
-    const mouthName = has("mouthopen") ? "mouthOpen" : has("jawopen") ? "jawOpen" : "aa"; // best opener, else 'aa'
+    // drive the ACTUAL matched name, not a hardcoded casing: the probe is case-insensitive but
+    // em.setValue is exact — a model exposing "MouthOpen" matched, then every set("mouthOpen")
+    // silently no-oped AND blocked the 'aa' fallback the ladder believed it had beaten
+    const actual = (n) => names.find((x) => x.toLowerCase() === n) || null;
+    const mouthName = actual("mouthopen") || actual("jawopen") || "aa"; // best opener, else 'aa'
     // expression channels via the VRM presets (happy = smile, surprised = brow raise)
-    const smileName = has("happy") ? "happy" : null;
-    const browName = has("surprised") ? "surprised" : null;
+    const smileName = actual("happy");
+    const browName = actual("surprised");
+    // blink is an OPTIONAL preset: reporting blinkMode "vrm" without one was a false 'via'
+    // (set("blink") is a silent no-op on a preset-less model — she'd never blink while the
+    // load reply claimed the vrm tier)
+    const blinkName = actual("blink");
     const exprCur = { smile: 0, brows: 0 },
       exprTgt = { smile: 0, brows: 0 };
     return {
       mode: "vrm",
-      blinkMode: "vrm",
+      blinkMode: blinkName ? "vrm" : "none",
       exprMode: { smile: smileName ? "vrm" : "none", brows: browName ? "vrm" : "none" },
-      info: `VRM expressions (mouth '${mouthName}' / blink${smileName ? ` / smile '${smileName}'` : ""})`,
+      info: `VRM expressions (mouth '${mouthName}'${blinkName ? ` / blink '${blinkName}'` : " / blink none"}${smileName ? ` / smile '${smileName}'` : ""})`,
       ownedMorphs: [], // VRM drives expressions, not raw morph indices
       params: P,
       setParams: (p) => Object.assign(P, p),
@@ -105,20 +112,24 @@ export function buildFacial(model, vrm = null, opts = {}) {
         for (const k of ["smile", "brows"]) exprCur[k] += (exprTgt[k] - exprCur[k]) * Math.min(1, dt * 10);
         if (smileName) set(smileName, exprCur.smile);
         if (browName) set(browName, exprCur.brows);
+        if (!blinkName) {
+          wasOn = blinkOn;
+          return;
+        } // no blink preset on this VRM — honest none, nothing to drive
         if (manualBlink >= 0) {
-          set("blink", manualBlink);
+          set(blinkName, manualBlink);
           wasOn = blinkOn;
           return;
         } // manual hold wins; don't let the edge fight it
         // #22 STRICT: no auto-timer. Lids stay OPEN unless blink() queued a one-shot.
         if (blinkOn && blinking > 0) {
           blinking -= dt;
-          set("blink", clamp01(Math.sin((1 - blinking / BLINK_DUR) * Math.PI)));
+          set(blinkName, clamp01(Math.sin((1 - blinking / BLINK_DUR) * Math.PI)));
         } else if (wasOn && !blinkOn && blinking > 0) {
-          set("blink", 0);
+          set(blinkName, 0);
           blinking = 0;
         } // #32 blinkOn falling edge mid-blink: snap lids OPEN once, drop the queue
-        else set("blink", 0); // default: eyes open, no autonomous blink
+        else set(blinkName, 0); // default: eyes open, no autonomous blink
         wasOn = blinkOn;
       },
     };
@@ -321,6 +332,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         kind: "morph",
         info: `smile morphs [${hits.map((h) => h.name).join(",")}]`,
         owned: [...new Set(hits.map((h) => h.idx))],
+        ownedPairs: hits.map(pairOf), // the brow ladder excludes these — a composite "smile_brow_up" morph must have ONE owner, not two channels fighting it every update
         set: (v) => setMorph(hits, v),
       };
   }
@@ -385,7 +397,8 @@ export function buildFacial(model, vrm = null, opts = {}) {
     }
   }
   {
-    const hits = morphHits(BROW_UP_RE).filter((h) => !ownedPairs.has(pairOf(h)) && !BROW_EXCLUDE_RE.test(h.name));
+    const browBlocked = new Set([...ownedPairs, ...(smileDrv?.ownedPairs || [])]); // mouth+blink+smile-owned
+    const hits = morphHits(BROW_UP_RE).filter((h) => !browBlocked.has(pairOf(h)) && !BROW_EXCLUDE_RE.test(h.name));
     if (hits.length)
       browDrv = {
         kind: "morph",
