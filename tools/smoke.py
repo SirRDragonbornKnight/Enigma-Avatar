@@ -15,10 +15,14 @@ Checks (each a targeted FAIL with a diagnostic -- mutation-tested):
   2. LIMITS          capabilities reports the full bone_limits table (the
                      system that was silently inert for weeks on file://)
   3. STRICT          a garbage action gets a NAMED error reply, never silence
-  4. MOTION bend     a flex layer bends the left elbow >30 deg through the
+  4. VISIBLE         the model measures a sane world height (normalization
+                     didn't shrink her to a speck) AND her anchor sits on the
+                     glass (2026-07-04: ryuri booted 0.42 units tall at
+                     y=2016 -- invisible -- while every other receipt passed)
+  5. MOTION bend     a flex layer bends the left elbow >30 deg through the
                      live compositor + speed clamp
-  5. MOTION release  clearing the layer eases the arm back to its base
-  6. SNAP            a capture written DURING THIS RUN lands on disk with
+  6. MOTION release  clearing the layer eases the arm back to its base
+  7. SNAP            a capture written DURING THIS RUN lands on disk with
                      plausible size/dimensions (mtime-checked)
 
 If an overlay is ALREADY RUNNING, the harness ATTACHES to it instead of
@@ -143,6 +147,23 @@ async def run_checks(results: list, run_start: float) -> None:
                 f"reply: {bad}",
             )
 
+        async def p_visible():
+            st = await rpc(ws, {"action": "query", "what": "state", "reqId": _rid()})
+            st = st if isinstance(st, dict) else {}
+            dims = st.get("dims") or [0, 0]
+            sp = st.get("screenPos") or [-1, -1]
+            scr = st.get("screen") or [0, 0]
+            # the anchor is her feet on the DECK (work-area bottom, global coords) — legitimately a
+            # few px below the window's own height; the bug class this catches is far-off-glass
+            # (2016 on a 1392 window), not deck-standing (1432).
+            on_glass = -50 <= sp[0] <= scr[0] + 50 and -50 <= sp[1] <= scr[1] + 100
+            check(
+                "VISIBLE",
+                dims[1] > 1.0 and on_glass,
+                f"dims {dims[0]:.2f}x{dims[1]:.2f} world, anchor {sp} on screen {scr}"
+                + ("" if on_glass else " -- ANCHOR OFF-GLASS"),
+            )
+
         async def p_motion():
             base = await elbow(ws)
             await rpc(ws, {"action": "pose", "flex": {"left_forearm": [1.5]}, "dur": 10, "id": "smoke"})
@@ -168,6 +189,7 @@ async def run_checks(results: list, run_start: float) -> None:
 
         await phase("LIMITS", p_limits)
         await phase("STRICT", p_strict)
+        await phase("VISIBLE", p_visible)
         await phase("MOTION bend", p_motion)
         await phase("SNAP", p_snap)
 

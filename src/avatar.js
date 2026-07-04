@@ -31,6 +31,7 @@ import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } f
 // (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character. The old
 //  default_avatar.js procedural-placeholder was deleted 2026-06-30 — there is no placeholder model.)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
+import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
 // bootstrap below (no renderer / DOM needed), letting tests assert the REAL ordering, not a fake.
@@ -611,10 +612,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     rig.remove(model);
     if (vrm) VRMUtils.deepDispose?.(vrm.scene);
-    model.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
-    });
+    disposeMeshTree(model); // geometry + materials + TEXTURES (material.dispose alone leaked the texture set every swap)
     _boneMarks.clear(); // the checkbox markers rode this model's bones — just disposed by the traverse above
     model = null;
     vrm = null;
@@ -697,17 +695,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // NORMALIZE ON THE BODY, NOT THE PACKAGING (model-zoo 2026-07-02): some GLBs ship display
     // furniture — aveline's shelf + floating logo made the whole-scene box huge, so the BASE_H
     // scale shrank the actual robot to a speck standing on her own plinth. When the file contains
-    // skinned meshes, their union IS the character (bind-pose boxes are still honest here — this
-    // runs BEFORE any normalization surgery); static extras become background. Files with no
+    // skinned meshes, their union IS the character; static extras become background. Files with no
     // skinned mesh at all (statues, props, furniture) keep the whole-scene box, unchanged.
+    // Measure SKINNED bounds, not raw bind-geometry boxes (ryuri 2026-07-04): exports whose
+    // inverse-bind matrices carry the geometry→skeleton mapping author vertices in a DIFFERENT
+    // space than the nodes (her mane/tail bind verts reached y=-5062 while the skeleton spans
+    // 2.28) — the raw box normalized her to a 0.42-unit crumple. What renders is what we measure.
     const _oneB = new THREE.Box3();
     const bodyBox = () => {
       model.updateWorldMatrix(true, true);
       _box.makeEmpty();
       model.traverse((o) => {
         if (o.isSkinnedMesh && o.geometry) {
-          if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-          _oneB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+          o.computeBoundingBox(); // skinned-vertex bounds in mesh-local space (bone pose applied)
+          _oneB.copy(o.boundingBox).applyMatrix4(o.matrixWorld);
           _box.union(_oneB);
         }
       });
@@ -776,10 +777,26 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // the subtree and skipped.
     _weightMass = null;
     _springNeverExtra = [];
+    let _skelH = 0; // the SKELETON's own world span — coincidence tolerances live in bone space,
+    // and mesh dims lie on mismatched-space exports (ryuri: mesh box 5255 vs skeleton 2.28 —
+    // a mesh-based tolerance half the skeleton tall cross-adopted 116 bones and crumpled her)
     try {
       _weightMass = computeWeightMass(model);
       if (_weightMass.size) {
-        const twins = findRoleTwins(roleBones, _weightMass, modelDims.h || 2);
+        {
+          const v = new THREE.Vector3();
+          let lo = Infinity,
+            hi = -Infinity;
+          for (const [b, m] of _weightMass) {
+            if (m > 0.5) {
+              b.getWorldPosition(v);
+              if (v.y < lo) lo = v.y;
+              if (v.y > hi) hi = v.y;
+            }
+          }
+          if (hi > lo) _skelH = hi - lo;
+        }
+        const twins = findRoleTwins(roleBones, _weightMass, _skelH || modelDims.h || 2);
         let n = 0;
         for (const { bone, twin } of twins) {
           let cyc = false;
@@ -837,7 +854,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
           model.traverse((o) => {
             if (o.isBone && sprungSet0.has(o.name) && !(o.parent && sprungSet0.has(o.parent.name))) roots.push(o);
           });
-          const groups = groupCoincidentRoots(roots, modelDims.h || 2);
+          const groups = groupCoincidentRoots(roots, _skelH || modelDims.h || 2);
           if (groups.length) {
             const never = [];
             for (const g of groups) {
@@ -1291,11 +1308,18 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       rot: _v3(opts.rot, [0, 0, 0]),
       scale: opts.scale != null ? _num(opts.scale, 1) : 1,
     };
+    const forKey = curKey; // the model this attach was aimed at — a swap mid-load must not
+    // attach the prop to the NEW model and durably write it into the WRONG profile
     loadAsset(
       url,
       (asset) => {
         if (!asset.scene) {
           setStatus("attach failed: no mesh");
+          return;
+        }
+        if (curKey !== forKey) {
+          disposeMeshTree(asset.scene);
+          setStatus(`attach dropped: model changed while ${baseName(url)} loaded`);
           return;
         }
         a.obj = asset.scene;
@@ -1333,10 +1357,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return a.id;
   }
   function disposeObj(root) {
-    root?.traverse?.((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
-    });
+    disposeMeshTree(root); // incl. textures — see util/dispose.js
   }
   function detachAttachment(id) {
     const i = attachObjs.findIndex((a) => a.id === id);
@@ -1414,7 +1435,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function facialTune(p) {
     const prof = profileFor(curKey);
-    prof.facial = { ...(prof.facial || {}), ...numericOnly(p) };
+    // jawAxis/lidAxis are the documented STRING knobs ("x"|"y"|"z") — numericOnly stripped them
+    // silently, so a rig whose jaw opens on Y could never be fixed through the API it documents
+    const axes = {};
+    for (const k of ["jawAxis", "lidAxis"]) {
+      if (p && ["x", "y", "z"].includes(p[k])) axes[k] = p[k];
+    }
+    prof.facial = { ...(prof.facial || {}), ...numericOnly(p), ...axes };
     if (facial) facial.setParams(prof.facial);
     saveProfileSoon();
     return facial ? { mode: facial.mode, info: facial.info, params: facial.params } : null;
@@ -1968,8 +1995,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return true;
   }
   const boneMarks = () => [..._boneMarks.keys()]; // which bones are checked — Settings re-reads this on every re-open/re-render
-
-  // --- AUTHORED ANIMATION CLIPS on ANY rig (system work, 2026-06-12) -----------------------------
 
   // --- rotate mode: DRAG the body to rotate it (↔ horizontal = yaw, ↕ vertical = pitch) instead of
   // moving the window. Roll (Z) is set via the numeric field. Settings stays usable while you pose it.
@@ -3195,16 +3220,19 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   function loadFile(file) {
     // single file (self-contained .glb/.vrm/.fbx)
     const url = URL.createObjectURL(file);
+    const seq = ++_loadSeq; // same last-caller-wins guard as loadModel — a slow drop must not clobber a newer gallery pick
     loadAsset(
       url,
       (a) => {
         URL.revokeObjectURL(url);
+        if (seq !== _loadSeq) return; // superseded while parsing
         curKey = file.name;
         onModelLoaded(a);
         clearOnboarding();
       }, // commit curKey only on SUCCESS — a failed load must not misroute saves/queries onto a phantom
       (err) => {
         URL.revokeObjectURL(url);
+        if (seq !== _loadSeq) return;
         setStatus(`load failed: ${err?.message || err}`);
       },
       { kind: kindOf(file.name) }
@@ -3228,16 +3256,19 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // revoke late: FBX kicks off texture loads asynchronously after onLoad, so don't
     // pull the blob URLs out from under them. (Page unload frees them regardless.)
     const cleanup = () => setTimeout(() => urls.forEach(URL.revokeObjectURL), 20000);
+    const seq = ++_loadSeq; // last-caller-wins, same as loadFile
     loadAsset(
       map[main.name],
       (a) => {
         cleanup();
+        if (seq !== _loadSeq) return; // superseded while parsing
         curKey = main.name;
         onModelLoaded(a);
         clearOnboarding();
       }, // commit curKey only on SUCCESS
       (err) => {
         cleanup();
+        if (seq !== _loadSeq) return;
         setStatus(`load failed: ${err?.message || err}`);
       },
       { kind: kindOf(main.name), blobMap: map }

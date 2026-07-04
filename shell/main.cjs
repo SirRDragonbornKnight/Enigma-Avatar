@@ -209,21 +209,26 @@ function windowForGlobalPos() {
 // where a stale position must become a visible one again: restoring the saved spot at launch, and
 // the display-change handler (a monitor she was on/off vanished). A point inside ANY display passes
 // untouched, so the snap never fights a legitimate cross-bezel position.
-function clampToUnion(x, y) {
+function clampToUnion(x, y, opts) {
+  // The 1.4x permeable bottom is a LIVE-DRAG affordance (feet dip below the bezel mid-drag).
+  // Restore/recovery paths pass {solid:true}: a boot/rebuild must land her ON glass — a saved
+  // y at the permeable extreme (1440*1.4=2016) once restored her fully below every display,
+  // an invisible overlay indistinguishable from the present-bug class.
+  const perm = opts && opts.solid ? 1.0 : 1.4;
   const ds = displays();
   for (const d of ds) {
-    // inside ANY display (bottom PERMEABLE at 1.4x) -> valid as-is; never fight a cross-bezel drag
+    // inside ANY display (bottom permeable per above) -> valid as-is; never fight a cross-bezel drag
     const b = d.bounds;
-    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height * 1.4) return { x, y };
+    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height * perm) return { x, y };
   }
   // Outside every display (the void between non-aligned monitors, or past the outer rim): snap to the
-  // nearest point on the nearest display so a runaway drag is always recoverable. 1.4x bottom kept.
+  // nearest point on the nearest display so a runaway drag is always recoverable.
   const d = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
   const b = d.bounds,
     m = 8;
   return {
     x: Math.max(b.x + m, Math.min(b.x + b.width - m, x)),
-    y: Math.max(b.y + m, Math.min(b.y + b.height * 1.4, y)),
+    y: Math.max(b.y + m, Math.min(b.y + b.height * perm - (opts && opts.solid ? m : 0), y)),
   };
 }
 
@@ -478,7 +483,7 @@ function createWindowSet() {
   const pb = primaryDisplay().bounds;
   gPos = { x: pb.x + pb.width / 2, y: pb.y + pb.height * 0.62 };
   const savedPos = loadSavedPos();
-  if (savedPos) gPos = clampToUnion(savedPos.x, savedPos.y);
+  if (savedPos) gPos = clampToUnion(savedPos.x, savedPos.y, { solid: true });
   windows = ds.map((d) => ({
     displayId: d.id,
     win: makeWindow(d, d.id === primId, ds.length - 1),
@@ -514,7 +519,7 @@ function rebuildWindowSet() {
   setTimeout(() => {
     try {
       createWindowSet();
-      const c = clampToUnion(saved.x, saved.y);
+      const c = clampToUnion(saved.x, saved.y, { solid: true });
       gPos = c;
       if (savedModel) currentModelUrl = savedModel; // peers will pick it up via did-finish-load; the brain re-resolves on its own startup
       refreshTrayMenu();
@@ -843,8 +848,13 @@ function init() {
     }
     try {
       if (p.startsWith("/@fs/")) {
-        // absolute local path (Windows: /@fs/C:/Users/... -> C:/Users/...)
-        return await net.fetch(pathToFileURL(p.slice(5)).toString());
+        // absolute local path (Windows: /@fs/C:/Users/... -> C:/Users/...). ABSOLUTE only: a
+        // relative remainder (e.g. a UNC file://server/share URL mis-mapped to /@fs/server/...)
+        // used to resolve against the process CWD — a misleading 404 at best, the wrong file at
+        // worst. Fail honestly instead.
+        const fp = p.slice(5);
+        if (!path.isAbsolute(fp)) return new Response("@fs path must be absolute", { status: 400 });
+        return await net.fetch(pathToFileURL(fp).toString());
       }
       const abs = path.resolve(ROOT, "." + p);
       if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) {
