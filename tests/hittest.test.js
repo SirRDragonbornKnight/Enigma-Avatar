@@ -155,7 +155,7 @@ test("fallbackGrabHandle: width clamped to maxHalfW, cursor at center is over", 
   assert.equal(r.over, true, "cursor at the center is over the handle");
 });
 
-test("fallbackGrabHandle: handle height is capped at 60% of the window", () => {
+test("fallbackGrabHandle: handle height is capped at 60% of the window, keeping the BASE segment", () => {
   const ih = 600;
   // topY far above the base would make a 480px-tall handle; must clamp to 360 (60%)
   const r = fallbackGrabHandle({
@@ -170,7 +170,27 @@ test("fallbackGrabHandle: handle height is capped at 60% of the window", () => {
   });
   const [, mny, , mxy] = r.rect;
   assert.equal(mxy - mny, ih * 0.6, "height capped at exactly 60% of window");
-  assert.equal(mny, 50, "handle anchors to the top (mny), so the cap trims the bottom");
+  assert.equal(mxy, 530, "the cap trims the TOP: the base-side segment (near the on-glass body) survives");
+});
+
+test("fallbackGrabHandle: a GIANT avatar (top far off-screen) still exposes an on-glass handle", () => {
+  // Over-coverage fail-safe drops the mask; the handle is the only grab left. Top-anchored capping
+  // used to put the WHOLE rect above the window -> a too-big avatar was completely unclickable
+  // (user 2026-07-05: "when it is too big it can become unclickable and i have to reset it").
+  const ih = 600;
+  const r = fallbackGrabHandle({
+    cxp: 400,
+    cyp: 550, // base on the deck
+    edgeX: 480,
+    topY: -5000, // head projects far above the window
+    innerWidth: 800,
+    innerHeight: ih,
+    cursorX: 400,
+    cursorY: 400, // cursor over her lower body
+  });
+  const [, mny, , mxy] = r.rect;
+  assert.ok(mxy >= 0 && mny < ih, `handle rect [${mny}..${mxy}] must intersect the window`);
+  assert.equal(r.over, true, "clicking her lower body grabs her at ANY size");
 });
 
 test("fallbackGrabHandle: tiny width probe is floored to minHalfW", () => {

@@ -157,6 +157,44 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });
 
+test("holdNearest pins the GRABBED region for the ride; others keep swinging; release restores swing", () => {
+  // Grab-by-where-you-grab (2026-07-05): dragging a rig whose lower body is SPRUNG (ryuri's
+  // 112-bone tail) made the grabbed region lag the rig and swing out from under the cursor.
+  const findBone = (m, n) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === n) b = o;
+    });
+    return b;
+  };
+  const qdot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  const m = hairRig();
+  const s = buildSpringBones(m);
+  const tail = findBone(m, "Tail"),
+    hair = findBone(m, "Hair_01");
+  const tp = tail.getWorldPosition(new THREE.Vector3());
+  assert.equal(s.holdNearest(tp.x, tp.y, 10), "tail", "the grab point at the tail bone pins the TAIL region");
+  const tq0 = tail.quaternion.clone(),
+    hq0 = hair.quaternion.clone();
+  for (let i = 0; i < 30; i++) {
+    m.position.x += 0.15; // simulate the drag: the rig accelerates under the cursor
+    m.updateMatrixWorld(true);
+    s.update(1 / 60);
+  }
+  assert.ok(qdot(tail.quaternion, tq0) > 0.999999, "held tail rides the rig RIGIDLY (stays in the hand)");
+  assert.ok(qdot(hair.quaternion, hq0) < 0.9999, "un-held hair still swings with the motion");
+  s.releaseHeld();
+  for (let i = 0; i < 30; i++) {
+    m.position.x -= 0.15;
+    m.updateMatrixWorld(true);
+    s.update(1 / 60);
+  }
+  assert.ok(qdot(tail.quaternion, tq0) < 0.9999, "released tail swings again");
+  // guards: garbage inputs never pin
+  assert.equal(s.holdNearest(NaN, 0, 10), null);
+  assert.equal(s.holdNearest(0, 0, 0), null);
+});
+
 test("impulse() boundary guard: ±Infinity vectors/dur are neutralized (no NaN tip, no immortal zombie impulse)", () => {
   const m = hairRig();
   const s = buildSpringBones(m);

@@ -177,8 +177,9 @@ export function buildSpringBones(model, opts = {}) {
       restWDir.copy(it.restDir).applyQuaternion(restRot).normalize(); // rest direction in world
       restTip.copy(restWDir).multiplyScalar(it.len).add(origin); // where the tip rests
       const feel = regionFeel(w, P.stiffness, P.drag, it.geo); // weight → physics knobs (pure; unit-tested)
-      if (feel.pin) {
-        // pinned: this region's jiggle is off
+      if (feel.pin || _heldRegions.has(it.region)) {
+        // pinned: this region's jiggle is off (user weight 0, or the region is IN THE USER'S HAND
+        // mid-drag — it must ride the rig rigidly, not swing away from the cursor)
         it.tip.copy(restTip);
         it.prev.copy(restTip);
         b.quaternion.copy(it.restQuat);
@@ -253,10 +254,40 @@ export function buildSpringBones(model, opts = {}) {
     return v;
   }
 
+  // GRAB-REGION HOLD (user 2026-07-05 "grab it by where I grab it"): while the user drags her by a
+  // SPRUNG region (ryuri's whole lower body is a 112-bone tail), the verlet lag swings that region
+  // away from under the cursor. Pinning the grabbed region makes it ride the rig rigidly — it stays
+  // in your hand — while every other region keeps swinging. TRANSIENT: never touches the user's
+  // persisted per-region weights; cleared on release and gone with this instance on model swap.
+  const _heldRegions = new Set();
+  const _hv = new THREE.Vector3();
+  function holdNearest(wx, wy, maxDist) {
+    if (!items.length || !isFinite(wx) || !isFinite(wy) || !(maxDist > 0)) return null;
+    let best = null,
+      bd = maxDist * maxDist;
+    for (const it of items) {
+      it.bone.getWorldPosition(_hv);
+      const dx = _hv.x - wx,
+        dy = _hv.y - wy; // 2D: the grab is a screen point; depth is not the user's intent
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bd) {
+        bd = d2;
+        best = it.region;
+      }
+    }
+    if (best) _heldRegions.add(best);
+    return best;
+  }
+  function releaseHeld() {
+    _heldRegions.clear();
+  }
+
   return {
     count: items.length,
     names: items.map((i) => i.bone.name),
     update,
+    holdNearest, // pin the sprung region nearest a world point (drag grab) — transient, weight-preserving
+    releaseHeld,
     setParams: (p) => {
       if (!p) return;
       const { regionWeight, ...rest } = p;

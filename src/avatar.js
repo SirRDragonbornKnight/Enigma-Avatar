@@ -592,7 +592,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       anchorClamped,
     };
   }
-  const resizeBy = (m) => applySize(sizeScale * m);
+  const resizeBy = (m) => applySize(sizeScale * m, "hips"); // scroll/+,- grow from her MIDDLE (user 2026-07-05: "larger from the bottom" felt wrong); the bus `size` verb keeps its documented feet default
   // Keep the avatar fitting the screen: a too-large saved size makes the head/feet clip
   // off the top/bottom — and on a SMALLER monitor that reads as "can't see the avatar".
   // Shrinks an over-tall avatar to a margin-safe height; never enlarges (respects smaller sizes).
@@ -2161,6 +2161,24 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (hitMask) {
       // shaped to the avatar — empty space clicks through (pure module: overMask)
       over = overMask(cursor.x, cursor.y, { mask: hitMask, maskW, maskH, innerWidth, innerHeight });
+      // A SPECK-sized avatar (over-shrunk with the size cap off) is honest but unaimable — the
+      // 8px mask tolerance needs pixel-perfect aim. Give her the same BOUNDED handle the no-mask
+      // path gets (min half-width 28px) so she stays grabbable/recoverable at any size.
+      if (!over && hitRect && hitRect[2] - hitRect[0] < 48 && hitRect[3] - hitRect[1] < 48) {
+        const [cxp, cyp] = toScreen(pos.x, pos.y);
+        const edgeX = toScreen(pos.x + (modelDims.w || 1.4) * sizeScale * 0.5, pos.y)[0];
+        const topY = toScreen(pos.x, pos.y + (modelDims.h || 4) * sizeScale * 0.55)[1];
+        over = fallbackGrabHandle({
+          cxp,
+          cyp,
+          edgeX,
+          topY,
+          innerWidth,
+          innerHeight,
+          cursorX: cursor.x,
+          cursorY: cursor.y,
+        }).over;
+      }
     } else {
       // FAIL-SAFE fallback (silhouette unavailable: empty / off-screen / corrupted render). A click-
       // through overlay MUST fail toward passing clicks through, never toward blocking the desktop.
@@ -2709,7 +2727,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (_isBrain && df !== _wasDragFlag) {
       _wasDragFlag = df;
       proc?.setGrip?.("both", df); // carried by the body → she grips with both hands for the ride
-      if (!df) setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
+      if (df) {
+        // GRAB-BY-WHERE-YOU-GRAB: pin the sprung region under the cursor for the ride — a sprung
+        // tail/hair region otherwise lags the rig and swings out from under the grab. The brain's
+        // cursor is live for its own display and ~30Hz-relayed from peers, so this works for a
+        // grab started on any monitor. No region near the grab (rigid body part) = no pin.
+        const gw = toWorld(cursor.x, cursor.y);
+        spring?.holdNearest?.(gw.x, gw.y, (modelDims.h || 2) * sizeScale * 0.25);
+      } else {
+        spring?.releaseHeld?.();
+        setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
+      }
     }
     if (moved && _isBrain) wake(0.6); // keep the brain (→ pose broadcast) lively while she's dragged from another monitor
   });

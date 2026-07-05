@@ -121,7 +121,10 @@ export function fallbackGrabHandle(a) {
   const halfW = Math.min(a.maxHalfW ?? 80, Math.max(a.minHalfW ?? 28, Math.abs(a.edgeX - a.cxp)));
   let mny = Math.min(a.topY, a.cyp),
     mxy = Math.max(a.topY, a.cyp + 30);
-  if (mxy - mny > ih * 0.6) mxy = mny + ih * 0.6; // never taller than 60% of the window
+  // never taller than 60% of the window — and keep the BASE-side segment: a giant avatar's top
+  // projects far above the window, and capping from the top used to leave the whole handle
+  // off-screen (over-coverage fail-safe -> no mask -> handle off-glass = totally unclickable)
+  if (mxy - mny > ih * 0.6) mny = mxy - ih * 0.6;
   const mnx = a.cxp - halfW,
     mxx = a.cxp + halfW;
   const over = a.cursorX >= mnx && a.cursorX <= mxx && a.cursorY >= mny && a.cursorY <= mxy;
