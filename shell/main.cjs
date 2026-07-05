@@ -417,12 +417,21 @@ function makeWindow(display, isBrain, peerCount) {
       if (!win.isVisible()) win.showInactive();
     } catch {} // reveal WITHOUT activating — keeps the user's game/app in the foreground (paired with show:false above)
     try {
+      // The renderer's DIP<->local-px mapping must describe the WINDOW, not the display: Windows
+      // constrains a display-sized window to the WORK AREA (primary: created 1440 tall, real 1392),
+      // and the stale display height gave every conversion a false 1440/1392 "DPI" ratio — the
+      // grab offset came out ~3.5% low in y, so she JUMPED on click (worse the lower the grab).
+      const wr = win.getBounds();
       win.webContents.send("avatar:init", {
         isBrain,
         displayId: display.id,
         winId: win.webContents.id,
-        origin: { x: b.x, y: b.y },
-        bounds: { width: b.width, height: b.height },
+        origin: { x: wr.x, y: wr.y },
+        bounds: { width: wr.width, height: wr.height },
+        // Shared camera reference (DIP): every window frames its world so px-per-world-unit
+        // matches the PRIMARY's — she keeps the SAME on-screen size hopping between monitors
+        // of different resolutions (she used to render as a constant fraction of each screen).
+        refH: primaryDisplay().workArea.height,
         peerCount: peerCount || 0,
         aiControl: _aiControlOn, // main's persisted kill-switch state — the mirror seeds from init, race-free
       });

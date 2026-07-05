@@ -88,12 +88,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
 
   let worldW = 10,
     worldH = 10;
+  let _refH = 0; // primary work-area height (DIP, via avatar:init) — the shared px-per-world-unit reference
   const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, -100, 100);
   camera.position.set(0, 0, 10);
   function frameCamera() {
     const aspect = innerWidth / innerHeight;
-    worldH = VIEW_H;
-    worldW = VIEW_H * aspect;
+    // Constant PX-PER-WORLD-UNIT across every window (user 2026-07-05: she must keep her size
+    // hopping between different-resolution monitors): the world span scales with THIS window's
+    // height relative to the primary's, so 6 world units render as the same pixel height
+    // everywhere. Before, worldH was a constant -> she was a constant FRACTION of each screen.
+    worldH = VIEW_H * (_refH > 0 ? innerHeight / _refH : 1);
+    worldW = worldH * aspect;
     camera.left = -worldW / 2;
     camera.right = worldW / 2;
     camera.top = worldH / 2;
@@ -2673,6 +2678,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _isBrain = !!info.isBrain;
     if (info.origin) myOrigin = info.origin;
     if (info.bounds) myBounds = info.bounds;
+    if (isFinite(info.refH) && info.refH > 0) _refH = info.refH; // shared px-per-world-unit reference (see frameCamera)
     _peerCount = info.peerCount || 0;
     _myWinId = info.winId ?? null; // to skip our own uiCmd echo (we already applied it)
     if (typeof info.aiControl === "boolean") aiControlOn = info.aiControl; // seed the kill-switch mirror from main's persisted authority (silent — no boot flash)
