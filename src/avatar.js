@@ -2855,6 +2855,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         cursorWorld: () => (cursor.seen ? toWorld(cursor.x, cursor.y) : null),
         dragX: () => gPos.x,
         now: () => performance.now(),
+        // grab-time applied offset: a re-grab mid ease-back is NOT at rest — without this the
+        // sign discovery locked backwards and the wrong-way whip launched her (2026-07-05)
+        abd0: aimRole ? proc.appliedFlex?.(aimRole)?.abd : 0,
       }),
     });
   }

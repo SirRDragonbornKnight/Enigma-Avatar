@@ -90,6 +90,45 @@ test("near-base grabs hold the last aim instead of jittering (mouse-lock makes t
   assert.ok(!out.flex, "inside the deadband the aim is HELD (no flex update), not recomputed from noise");
 });
 
+test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges onto the cursor — no wrong-sign lock, no wrong-way whip", () => {
+  // The launch bug (user 2026-07-05 "move her, re-grab a part -> spaz + launched"): after a release
+  // the compositor eases the old applied offset back over ~1s. A re-grab in that window used to
+  // capture restDir mid-displacement and command sign*th FROM TRUE REST — so the rig's first motion
+  // (easing DOWN toward the smaller absolute command) opposed the command, the one-shot sign
+  // discovery voted "reversed rig" 3 frames running, locked the wrong sign, and drove the limb to
+  // the ±2.2 cap — the mouse-lock then dragged the whole body after the runaway part. The layer now
+  // takes abd0 (the compositor's live applied offset at grab time) and commands abd0 + sign*th.
+  for (const trueSign of [1, -1]) {
+    const clock = { t: 0 };
+    const limb = makeLimb(trueSign);
+    limb.state.applied = 1.0; // residual from the previous grab, mid ease-back (abd=0 until the servo speaks)
+    const fn = createGrabFollowFn({
+      aimRole: "left_arm",
+      aimState: limb.aimState,
+      // target BEYOND the residual: desired applied = 1.5, further in the same direction
+      cursorWorld: () => ({ x: Math.cos(-Math.PI / 2 + trueSign * 1.5), y: Math.sin(-Math.PI / 2 + trueSign * 1.5) }),
+      dragX: () => 0,
+      now: () => clock.t,
+      abd0: 1.0, // the compositor's applied offset at grab time (procedural _vstate[role].abd)
+    });
+    let minApplied = limb.state.applied;
+    run(fn, limb, 240, clock, () => {
+      minApplied = Math.min(minApplied, limb.state.applied);
+    });
+    const st = limb.aimState();
+    const ta = -Math.PI / 2 + trueSign * 1.5;
+    const err = Math.atan2(Math.cos(ta) * st.dy - Math.sin(ta) * st.dx, Math.cos(ta) * st.dx + Math.sin(ta) * st.dy); // signed angle target->limb
+    assert.ok(
+      Math.abs(err) < 0.06,
+      `trueSign=${trueSign}: re-grabbed limb converges onto the cursor (residual ${err.toFixed(3)} rad)`
+    );
+    assert.ok(
+      minApplied > 0.5,
+      `trueSign=${trueSign}: no wrong-way whip through rest toward the cap (min applied ${minApplied.toFixed(3)})`
+    );
+  }
+});
+
 test("pendulum: the torso trails the drag velocity, stays bounded, and settles when the drag stops", () => {
   const clock = { t: 0 };
   let x = 0,

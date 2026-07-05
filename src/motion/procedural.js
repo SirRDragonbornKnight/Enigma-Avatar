@@ -900,6 +900,14 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     clearLayer: (id) => layers.delete(String(id)),
     clearLayers: () => layers.clear(),
     layerIds: () => Array.from(layers.keys()),
+    // The APPLIED (eased) flex offsets currently on a role — what the rig is actually doing right
+    // now, regardless of what any layer commands. The ragdoll grab reads abd at grab time (abd0):
+    // a re-grab mid ease-back starts displaced, and a servo that assumed at-rest locked the wrong
+    // sign and launched her (2026-07-05).
+    appliedFlex: (role) => {
+      const v = _vstate.get(role);
+      return v ? { ang: v.ang, abd: v.abd } : { ang: 0, abd: 0 };
+    },
     capabilities: () => ({
       // what the brain can drive on THIS resolved model
       roles: Object.keys(bones),

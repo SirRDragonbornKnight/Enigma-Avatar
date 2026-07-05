@@ -18,8 +18,17 @@
 //   cursorWorld() => {x,y}|null           the cursor in world coords (screen plane)
 //   dragX      () => number               her global x — the pendulum reads drag velocity off it
 //   now        () => ms                   clock (injectable for tests)
+//   abd0       number                     the compositor's APPLIED abd offset on aimRole at grab
+//                                         time (procedural appliedFlex). A re-grab mid ease-back
+//                                         starts displaced, NOT at rest — commanding sign*th from
+//                                         true rest made the rig's first motion oppose the command,
+//                                         the sign discovery locked the wrong sign, and the limb
+//                                         whipped to the cap (the "re-grab launch", 2026-07-05).
+//                                         Commands are abd0 + sign*th so the eased response always
+//                                         starts toward the command.
 export function createGrabFollowFn(deps) {
   const { aimRole, aimState, cursorWorld, dragX, now } = deps;
+  const abd0 = Number.isFinite(+deps.abd0) ? +deps.abd0 : 0;
   let px = null,
     pt = null,
     vx = 0,
@@ -86,7 +95,7 @@ export function createGrabFollowFn(deps) {
           }
           prevM = m;
         }
-        out.flex = { [aimRole]: [0, Math.max(-CAP, Math.min(CAP, sign * th))] };
+        out.flex = { [aimRole]: [0, Math.max(-CAP, Math.min(CAP, abd0 + sign * th))] };
       }
     }
     return out;
