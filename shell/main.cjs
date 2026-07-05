@@ -939,6 +939,17 @@ function init() {
   ipcMain.on("avatar:dragStart", (e, p) => {
     if (p && isFinite(p.grabX) && isFinite(p.grabY)) startDrag(e.sender.id, p.grabX, p.grabY, !!p.spin);
   });
+  // Live grab-offset retarget from the BRAIN: the grabbed body part moves within the rig
+  // (springs / ragdoll aim / pendulum), and the follow must pin THAT PART under the cursor, not
+  // the frozen click offset (the mouse slid off what it grabbed). Brain-only, finite, bounded.
+  ipcMain.on("avatar:dragAdjust", (e, p) => {
+    if (!_drag || _drag.spin) return;
+    const bw = brainWin();
+    if (!bw || bw.isDestroyed() || e.sender.id !== bw.webContents.id) return;
+    if (!p || !isFinite(p.gx) || !isFinite(p.gy)) return;
+    _drag.grabX = Math.max(-4000, Math.min(4000, p.gx));
+    _drag.grabY = Math.max(-4000, Math.min(4000, p.gy));
+  });
   // Heartbeat from the GRAB window's pointermove stream — proof its capture is still alive. Feeds
   // the dead-man watchdog in the follow timer (see startDrag).
   ipcMain.on("avatar:dragBeat", (e) => {

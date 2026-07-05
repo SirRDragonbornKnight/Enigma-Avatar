@@ -2309,6 +2309,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     rig.position.set(_bp.x, _bp.y + _motionY, 0); // global-derived base + the local jump hop; bones/springs do the rest
     updateShadow(); // ground-contact patch under the feet (stays grounded through jumps)
     stepProcVrm(dt); // proc pose → springs → vrm.update, in the ONE order that survives the VRM humanoid copy-back (#1)
+    stepGrabLock(); // after the skeleton settles: pin the GRABBED PART back under the cursor (live offset retarget)
     // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
     // as a collision capsule (props bounce off her), step the world.
     if (physics.count() > 0 && _gReady) {
@@ -2722,8 +2723,56 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     { pick: ["left_foot", "left_shin", "left_leg"], aim: "left_leg" },
     { pick: ["right_foot", "right_shin", "right_leg"], aim: "right_leg" },
   ];
+  // MOUSE-LOCK on the grabbed part (user 2026-07-05 "my mouse does not lock the part I grab"):
+  // main follows cursor-minus-offset, but the grabbed part MOVES within the rig (springs, the
+  // ragdoll aim, the pendulum) — a frozen click offset lets the mouse slide off it. The brain
+  // captures the grabbed point bone-locally at grab time, then every frame measures where that
+  // point ACTUALLY is and retargets main's grab offset so the part stays pinned under the
+  // pointer — she hangs from what you're holding, the body solves around it.
+  let _grabLock = null; // { bone, local: Vector3, sent: {x,y} } while a drag is live
+  const _glV = new THREE.Vector3();
+  function stepGrabLock() {
+    if (!_dragActive || !_grabLock || !model) return;
+    const b = _grabLock.bone;
+    if (!b || !b.isObject3D) return;
+    b.updateWorldMatrix(true, false);
+    const p = b.localToWorld(_glV.copy(_grabLock.local));
+    const [lx, ly] = toScreen(p.x, p.y);
+    const g = localPxToGlobal(lx, ly);
+    const rel = { x: g.x - gPos.x, y: g.y - gPos.y }; // the part's live offset from her anchor (DIP)
+    if (!isFinite(rel.x) || !isFinite(rel.y)) return;
+    const s = _grabLock.sent || (_grabLock.sent = { x: rel.x, y: rel.y });
+    s.x += (rel.x - s.x) * 0.5; // soft correction: springs re-excite under the shift — half-step per frame stays stable
+    s.y += (rel.y - s.y) * 0.5;
+    window.avatarIPC?.dragAdjust?.(s.x, s.y);
+  }
   function startGrabFollow(wx, wy) {
     if (!proc?.setLayer) return;
+    // lock target: the nearest BONE to the click (any bone — sprung tail link, hand, torso), with
+    // the click point captured in ITS local frame so the exact grabbed spot is what tracks the mouse
+    _grabLock = null;
+    {
+      const bv = new THREE.Vector3();
+      const lockR = (modelDims.h || 2) * sizeScale * 0.5; // generous: the click was on her silhouette
+      let bb = null,
+        bdd = lockR * lockR;
+      model?.traverse((o) => {
+        if (!o.isBone) return;
+        o.getWorldPosition(bv);
+        const dx = bv.x - wx,
+          dy = bv.y - wy,
+          d2 = dx * dx + dy * dy;
+        if (d2 < bdd) {
+          bdd = d2;
+          bb = o;
+        }
+      });
+      if (bb) {
+        bb.updateWorldMatrix(true, false);
+        const local = bb.worldToLocal(new THREE.Vector3(wx, wy, bb.getWorldPosition(bv).z)); // click at the bone's depth
+        _grabLock = { bone: bb, local, sent: null };
+      }
+    }
     const roles = proc.roles();
     const flexable = new Set(proc.capabilities().flexRoles || []);
     const v = new THREE.Vector3();
@@ -2797,6 +2846,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         startGrabFollow(gw.x, gw.y);
       } else {
         proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
+        _grabLock = null; // the mouse-lock dies with the drag (main's offset is only read while dragging)
         setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
       }
     }

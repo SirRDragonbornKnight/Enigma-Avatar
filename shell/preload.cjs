@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   // spin=true registers an Alt+drag ROTATE hold: same arbiter freeze + watchdog (the spin window
   // must keep its capture across bezels too), but main does NOT follow the cursor (no position move).
   dragStart: (grabX, grabY, spin) => ipcRenderer.send("avatar:dragStart", { grabX, grabY, spin: !!spin }),
+  // dragAdjust (BRAIN only): live-retarget the grab offset so the GRABBED BODY PART — which moves
+  // within the rig (springs / ragdoll aim / pendulum) — stays pinned under the cursor, not a fixed
+  // click offset the mouse slides off of.
+  dragAdjust: (gx, gy) => ipcRenderer.send("avatar:dragAdjust", { gx, gy }),
   dragBeat: () => ipcRenderer.send("avatar:dragBeat"),
   dragEnd: (why) => ipcRenderer.send("avatar:dragEnd", { why: why === "cancel" ? "cancel" : "up" }),
   // Brain → main → peers: the live skeleton pose (one Float32Array buffer per frame). Transferred.
