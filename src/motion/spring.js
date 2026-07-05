@@ -185,10 +185,7 @@ export function buildSpringBones(model, opts = {}) {
         b.updateWorldMatrix(false, false);
         continue;
       }
-      // The GRABBED region is heavily DAMPED, not frozen (user 2026-07-05: a hard pin "locks
-      // what I grab in place"): it tracks the hand closely instead of swinging away, but keeps
-      // a live little give and settles smoothly on release (no snap on either edge).
-      const damp = _heldRegions.has(it.region) ? Math.max(feel.damp, 0.85) : feel.damp;
+      const damp = feel.damp;
       // Gravity acts ONLY when the bone's ORIGIN actually moved this frame (reactive sag/sway). A
       // motionless body settles ZERO gravity → no self-generated sag below bind pose (esp. on geo chains).
       const moved = origin.distanceToSquared(it.originPrev) > 1e-12;
@@ -257,40 +254,15 @@ export function buildSpringBones(model, opts = {}) {
     return v;
   }
 
-  // GRAB-REGION HOLD (user 2026-07-05 "grab it by where I grab it"): while the user drags her by a
-  // SPRUNG region (ryuri's whole lower body is a 112-bone tail), the verlet lag swings that region
-  // away from under the cursor. Pinning the grabbed region makes it ride the rig rigidly — it stays
-  // in your hand — while every other region keeps swinging. TRANSIENT: never touches the user's
-  // persisted per-region weights; cleared on release and gone with this instance on model swap.
-  const _heldRegions = new Set();
-  const _hv = new THREE.Vector3();
-  function holdNearest(wx, wy, maxDist) {
-    if (!items.length || !isFinite(wx) || !isFinite(wy) || !(maxDist > 0)) return null;
-    let best = null,
-      bd = maxDist * maxDist;
-    for (const it of items) {
-      it.bone.getWorldPosition(_hv);
-      const dx = _hv.x - wx,
-        dy = _hv.y - wy; // 2D: the grab is a screen point; depth is not the user's intent
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bd) {
-        bd = d2;
-        best = it.region;
-      }
-    }
-    if (best) _heldRegions.add(best);
-    return best;
-  }
-  function releaseHeld() {
-    _heldRegions.clear();
-  }
+  // (The grab-region hold — pin, then damp, of the sprung region under a drag — was built and
+  // REMOVED 2026-07-05: on ryuri the whole lower body is ONE tail region, so any nearby grab
+  // "froze the bottom". Sprung regions swing free during drags; the ragdoll layer
+  // (grabfollow.js) carries the grab feel instead. Don't re-add.)
 
   return {
     count: items.length,
     names: items.map((i) => i.bone.name),
     update,
-    holdNearest, // pin the sprung region nearest a world point (drag grab) — transient, weight-preserving
-    releaseHeld,
     setParams: (p) => {
       if (!p) return;
       const { regionWeight, ...rest } = p;

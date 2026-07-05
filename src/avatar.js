@@ -2787,15 +2787,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       _wasDragFlag = df;
       proc?.setGrip?.("both", df); // carried by the body → she grips with both hands for the ride
       if (df) {
-        // GRAB-BY-WHERE-YOU-GRAB: (1) damp the sprung region under the cursor so it rides near the
-        // hand instead of swinging away; (2) RAGDOLL FOLLOW — the grabbed limb aims at the cursor
-        // and the torso pendulums after the drag (grabfollow.js). The brain's cursor is live for
-        // its own display and ~30Hz-relayed from peers, so a grab on any monitor works.
+        // RAGDOLL FOLLOW — the grabbed limb aims at the cursor and the torso pendulums after the
+        // drag (grabfollow.js); sprung regions (tail/hair) swing free under their own physics —
+        // that lag IS the alive feel. (A hold that pinned/damped the grabbed sprung region was
+        // tried twice and rejected: on ryuri the whole lower body is ONE tail region, so any
+        // nearby grab "froze the bottom" — user 2026-07-05, removed for good.) The brain's cursor
+        // is live for its own display and ~30Hz-relayed from peers, so a grab on any monitor works.
         const gw = toWorld(cursor.x, cursor.y);
-        spring?.holdNearest?.(gw.x, gw.y, (modelDims.h || 2) * sizeScale * 0.25);
         startGrabFollow(gw.x, gw.y);
       } else {
-        spring?.releaseHeld?.();
         proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
         setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
       }

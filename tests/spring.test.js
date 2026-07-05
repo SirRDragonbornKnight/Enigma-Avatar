@@ -157,55 +157,10 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });
 
-test("holdNearest DAMPS the grabbed region (stays near the hand, alive not frozen); release restores full swing", () => {
-  // Grab-by-where-you-grab (2026-07-05): dragging a rig whose lower body is SPRUNG (ryuri's
-  // 112-bone tail) made the grabbed region lag the rig and swing out from under the cursor.
-  // v1 hard-PINNED the region — user: it "locks what I grab in place". The intent is heavy
-  // damping: the held region tracks the rig closely but is NOT rigid.
-  const findBone = (m, n) => {
-    let b = null;
-    m.traverse((o) => {
-      if (o.isBone && o.name === n) b = o;
-    });
-    return b;
-  };
-  const qdot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
-  const ang = (a, b) => 2 * Math.acos(Math.min(1, qdot(a, b))); // rad between orientations
-  const m = hairRig();
-  const s = buildSpringBones(m);
-  const tail = findBone(m, "Tail"),
-    hair = findBone(m, "Hair_01");
-  const tp = tail.getWorldPosition(new THREE.Vector3());
-  assert.equal(s.holdNearest(tp.x, tp.y, 10), "tail", "the grab point at the tail bone holds the TAIL region");
-  const tq0 = tail.quaternion.clone(),
-    hq0 = hair.quaternion.clone();
-  let tailMoved = false;
-  for (let i = 0; i < 30; i++) {
-    m.position.x += 0.15; // simulate the drag: the rig accelerates under the cursor
-    m.updateMatrixWorld(true);
-    s.update(1 / 60);
-    if (ang(tail.quaternion, tq0) > 1e-5) tailMoved = true;
-  }
-  const tailDef = ang(tail.quaternion, tq0),
-    hairDef = ang(hair.quaternion, hq0);
-  assert.ok(tailMoved, "held tail is ALIVE — it deflects a little (not frozen: the 'locks in place' complaint)");
-  assert.ok(
-    tailDef < hairDef * 0.35,
-    `held tail stays near the hand: its deflection (${tailDef.toFixed(4)}) stays well under un-held hair's (${hairDef.toFixed(4)})`
-  );
-  s.releaseHeld();
-  let freeDef = 0;
-  for (let i = 0; i < 30; i++) {
-    m.position.x -= 0.15;
-    m.updateMatrixWorld(true);
-    s.update(1 / 60);
-    freeDef = Math.max(freeDef, ang(tail.quaternion, tq0));
-  }
-  assert.ok(freeDef > tailDef * 1.5, "released tail swings freely again (full amplitude returns)");
-  // guards: garbage inputs never hold
-  assert.equal(s.holdNearest(NaN, 0, 10), null);
-  assert.equal(s.holdNearest(0, 0, 0), null);
-});
+// (The grab-region hold test lived here — the mechanism was tried as a pin, softened to a damp,
+// and REMOVED 2026-07-05: on ryuri the whole lower body is one tail region, so any nearby grab
+// "froze the bottom". Sprung regions swing free during drags; grabfollow.test.js covers the
+// ragdoll layer that carries the grab feel instead.)
 
 test("impulse() boundary guard: ±Infinity vectors/dur are neutralized (no NaN tip, no immortal zombie impulse)", () => {
   const m = hairRig();
