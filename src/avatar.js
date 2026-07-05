@@ -636,6 +636,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (vrm) VRMUtils.deepDispose?.(vrm.scene);
     disposeMeshTree(model); // geometry + materials + TEXTURES (material.dispose alone leaked the texture set every swap)
     _grabLock = null; // a mouse-lock must not keep steering the drag from a DISPOSED model's bone (swap mid-drag)
+    _grabAimRefresh = null; // nor the aim snapshot keep reading disposed bones
     _boneMarks.clear(); // the checkbox markers rode this model's bones — just disposed by the traverse above
     model = null;
     vrm = null;
@@ -2331,6 +2332,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     updateShadow(); // ground-contact patch under the feet (stays grounded through jumps)
     stepProcVrm(dt); // proc pose → springs → vrm.update, in the ONE order that survives the VRM humanoid copy-back (#1)
     stepGrabLock(); // after the skeleton settles: pin the GRABBED PART back under the cursor (live offset retarget)
+    _grabAimRefresh?.(); // post-update aim snapshot — next frame's ragdoll fn measures THIS reality (PASS 1 sees only base pose)
     // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
     // as a collision capsule (props bounce off her), step the world.
     if (physics.count() > 0 && _gReady) {
@@ -2754,6 +2756,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // point ACTUALLY is and retargets main's grab offset so the part stays pinned under the
   // pointer — she hangs from what you're holding, the body solves around it.
   let _grabLock = null; // { bone, local: Vector3, sent: {x,y} } while a drag is live
+  let _grabAimRefresh = null; // post-update aim-snapshot refresher (set per grab in startGrabFollow; the PASS-1 fn is blind to live bones)
   const _glV = new THREE.Vector3();
   function stepGrabLock() {
     if (!_dragActive || !_grabLock || !model) return;
@@ -2775,7 +2778,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const g = localPxToGlobal(lx, ly);
     const rel = { x: g.x - gPos.x, y: g.y - gPos.y }; // the part's live offset from her anchor (DIP)
     if (!isFinite(rel.x) || !isFinite(rel.y)) return;
-    const s = _grabLock.sent || (_grabLock.sent = { x: rel.x, y: rel.y });
+    let s = _grabLock.sent;
+    if (!s) {
+      // BASELINE = main's LIVE offset (cursor − anchor; main is following cursor−grabX right now),
+      // not the part's offset: seeding with rel replaced main's pointerdown grabX in ONE uncapped
+      // step, landing everything that drifted since pointerdown (stale peer cursor, mid-ease limb)
+      // as an instant jump (audit 2026-07-05 round 2, finding 3). From here the capped correction
+      // below walks the baseline onto the part smoothly.
+      const gc = cursor.seen ? localPxToGlobal(cursor.x, cursor.y) : null;
+      s = _grabLock.sent =
+        gc && isFinite(gc.x) && isFinite(gc.y) ? { x: gc.x - gPos.x, y: gc.y - gPos.y } : { x: rel.x, y: rel.y };
+    }
     // Soft correction with a RATE CAP: the lock through a freely-swinging SPRUNG bone is a servo
     // through an underdamped plant — the blend alone bounds gain, the per-frame step cap bounds
     // any residual oscillation's amplitude (60 DIP/frame ≈ 3600 DIP/s, far above any honest need).
@@ -2783,7 +2796,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const by = Math.max(-60, Math.min(60, (rel.y - s.y) * 0.35));
     s.x += bx;
     s.y += by;
-    window.avatarIPC?.dragAdjust?.(s.x, s.y);
+    window.avatarIPC?.dragAdjust?.(s.x, s.y, _dragSeqSeen); // seq-stamped: a stale lock's adjust must not steer a REPLACED drag (main drops mismatches)
   }
   function startGrabFollow(wx, wy) {
     if (!proc?.setLayer) return;
@@ -2835,29 +2848,67 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     const S = new THREE.Vector3(),
       C = new THREE.Vector3();
+    const PQ = new THREE.Quaternion(),
+      PAX = new THREE.Vector3(),
+      PAY = new THREE.Vector3();
     const boneChild = (b) => {
       for (const k of b.children) if (k.isBone) return k;
       return null;
     };
+    // The layer fn runs inside applyLayers PASS 1, where every bone has just been RESET to the
+    // static base pose and this frame's offsets are not applied yet — reading bones from inside
+    // the fn shows a FROZEN base pose, so the measuring servo was blind in vivo (its sign
+    // discovery never voted; audit 2026-07-05 round 2, proven by probe). aimState therefore reads
+    // a SNAPSHOT taken post-update — at grab time (the IPC handler runs between frames, bones
+    // carry the real applied pose) and once per rendered frame via _grabAimRefresh. Real,
+    // one frame stale: exactly what a measuring servo wants.
+    const aimSnap = { sx: 0, sy: 0, dx: 0, dy: 0, pa: 0, ok: false };
+    const refreshAim = aimRole
+      ? () => {
+          const b = roles[aimRole],
+            c = b && boneChild(b);
+          if (!b || !c) {
+            aimSnap.ok = false;
+            return;
+          }
+          b.getWorldPosition(S);
+          c.getWorldPosition(C);
+          // pa: the PARENT's screen-plane angle — the servo measures in the parent frame so
+          // ancestor motion (the pendulum's spine/chest roll easing back) can't poison the
+          // sign votes or the aim reference (audit 2026-07-05 round 2, findings 1+2). Robust
+          // continuous extraction: polar angle of the world-rotation's screen-plane 2x2 block.
+          let pa = 0;
+          const par = b.parent;
+          if (par?.getWorldQuaternion) {
+            par.getWorldQuaternion(PQ);
+            PAX.set(1, 0, 0).applyQuaternion(PQ);
+            PAY.set(0, 1, 0).applyQuaternion(PQ);
+            pa = Math.atan2(PAX.y - PAY.x, PAX.x + PAY.y);
+          }
+          aimSnap.sx = S.x;
+          aimSnap.sy = S.y;
+          aimSnap.dx = C.x - S.x;
+          aimSnap.dy = C.y - S.y;
+          aimSnap.pa = pa;
+          aimSnap.ok = true;
+        }
+      : null;
+    if (refreshAim) refreshAim(); // grab-time truth
+    _grabAimRefresh = refreshAim;
     proc.setLayer("grab_follow", {
       fn: createGrabFollowFn({
         aimRole,
-        aimState: aimRole
-          ? () => {
-              const b = roles[aimRole],
-                c = b && boneChild(b);
-              if (!b || !c) return null;
-              b.getWorldPosition(S);
-              c.getWorldPosition(C);
-              return { sx: S.x, sy: S.y, dx: C.x - S.x, dy: C.y - S.y };
-            }
-          : null,
+        aimState: refreshAim ? () => (aimSnap.ok ? aimSnap : null) : null,
         cursorWorld: () => (cursor.seen ? toWorld(cursor.x, cursor.y) : null),
         dragX: () => gPos.x,
         now: () => performance.now(),
-        // grab-time applied offset: a re-grab mid ease-back is NOT at rest — without this the
-        // sign discovery locked backwards and the wrong-way whip launched her (2026-07-05)
-        abd0: aimRole ? proc.appliedFlex?.(aimRole)?.abd : 0,
+        // grab-time ORPHAN residual: applied offset minus what live layers still command there.
+        // A re-grab mid ease-back is NOT at rest — without the residual the sign discovery locked
+        // backwards and the wrong-way whip launched her; folding in the FULL applied value
+        // double-counted a coexisting AI pose layer's hold (audit 2026-07-05 rounds 1+2).
+        abd0: aimRole
+          ? (proc.appliedFlex?.(aimRole)?.abd ?? 0) - (proc.flexCommand?.(aimRole, "grab_follow")?.abd ?? 0)
+          : 0,
       }),
     });
   }
@@ -2899,6 +2950,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       } else {
         proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
         _grabLock = null; // the mouse-lock dies with the drag (main's offset is only read while dragging)
+        _grabAimRefresh = null; // ...and so does the aim snapshot
         setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
       }
     }
@@ -3337,7 +3389,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     ui.hideMenu(); // the right-click menu always dismisses on an outside click
     if (cursor.over) {
       ui.hideGallery();
-      if (!locked) {
+      if (!locked && e.button === 0) {
+        // primary button only: a right-click used to START A GRAB alongside the context menu —
+        // every right-click became a full grab/release cycle (audit 2026-07-05 round 2)
         if (e.altKey || rotateMode) {
           // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.
           spinning = true;

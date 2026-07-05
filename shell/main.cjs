@@ -956,6 +956,10 @@ function init() {
     const bw = brainWin();
     if (!bw || bw.isDestroyed() || e.sender.id !== bw.webContents.id) return;
     if (!p || !isFinite(p.gx) || !isFinite(p.gy)) return;
+    // seq echo: on a latest-grab-wins replacement, 1-2 adjusts computed for the OLD grab are still
+    // in flight before the brain sees the new dragSeq — applying them snapped her so the OLD grab
+    // point sat under the cursor, then back (a double-flick spaz; audit 2026-07-05 round 2).
+    if (p.seq != null && p.seq !== _drag.seq) return;
     _drag.grabX = Math.max(-4000, Math.min(4000, p.gx));
     _drag.grabY = Math.max(-4000, Math.min(4000, p.gy));
   });

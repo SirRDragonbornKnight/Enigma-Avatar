@@ -11,18 +11,30 @@ import { createGrabFollowFn } from "../src/motion/grabfollow.js";
 // the command at the compositor's real speed limit (90 deg/s — bone_limits.json), because a
 // re-voting sign detector passed the teleporting harness and limit-cycled on the REAL, slow rig
 // (audit 2026-07-05: mismatch frames accrue for the whole eased traverse, not just while wrong).
-function makeLimb(trueSign) {
-  const state = { abd: 0, applied: 0 };
+// And it models the real RELEASE path: a frame with no flex command eases applied back toward
+// the other layers' sum, NOT a hold (the old holding harness masked the deadband sag — audit
+// 2026-07-05 round 2, finding 3).
+// opts:
+//   other    a coexisting live layer's constant abd command on the same role (compositor SUMS)
+//   pa       () => rad — the parent frame's screen angle (ancestor roll contamination); the
+//            world limb angle includes it, and aimState reports it (unless reportPa: false,
+//            which simulates the old world-blind measurement)
+function makeLimb(trueSign, opts = {}) {
+  const other = opts.other || 0;
+  const paF = opts.pa || (() => 0);
+  const state = { abd: 0, applied: 0, has: false };
   const MAX_STEP = (90 * Math.PI) / 180 / 60; // 90 deg/s at 60fps — the live per-frame clamp
   return {
     state,
     step() {
-      const d = state.abd - state.applied;
+      const target = other + (state.has ? state.abd : 0);
+      const d = target - state.applied;
       state.applied += Math.max(-MAX_STEP, Math.min(MAX_STEP, d));
     },
     aimState: () => {
-      const a = -Math.PI / 2 + trueSign * state.applied; // rest = straight down (-90deg)
-      return { sx: 0, sy: 0, dx: Math.cos(a), dy: Math.sin(a) };
+      const pa = paF();
+      const a = pa + -Math.PI / 2 + trueSign * state.applied; // rest = straight down (-90deg), riding the parent
+      return { sx: 0, sy: 0, dx: Math.cos(a), dy: Math.sin(a), pa: opts.reportPa === false ? 0 : pa };
     },
   };
 }
@@ -32,11 +44,20 @@ function run(fn, limb, frames, clock, onFrame) {
   for (let i = 0; i < frames; i++) {
     clock.t += 16.7;
     out = fn();
-    if (out.flex) limb.state.abd = Object.values(out.flex)[0][1];
+    if (out.flex) {
+      limb.state.abd = Object.values(out.flex)[0][1];
+      limb.state.has = true;
+    } else limb.state.has = false; // release: the compositor eases the role home, no hold
     limb.step(); // speed-limited application, like the live compositor
     if (onFrame) onFrame(out);
   }
   return out;
+}
+
+// signed world-plane angle from the target direction (world angle ta) to the limb's direction
+function worldErr(limb, ta) {
+  const st = limb.aimState();
+  return Math.atan2(Math.cos(ta) * st.dy - Math.sin(ta) * st.dx, Math.cos(ta) * st.dx + Math.sin(ta) * st.dy);
 }
 
 test("the grabbed limb servos onto the cursor through the SPEED-LIMITED rig — even with a REVERSED axis, no flip limit-cycle", () => {
@@ -60,8 +81,7 @@ test("the grabbed limb servos onto the cursor through the SPEED-LIMITED rig — 
       if (s && lastCmdSign && s !== lastCmdSign) flips++;
       if (s) lastCmdSign = s;
     }); // 4 simulated seconds — a 90deg traverse needs ~1s at the speed limit
-    const st = limb.aimState();
-    const err = Math.atan2(-st.dy, st.dx); // signed angle limb->target (target = +x)
+    const err = worldErr(limb, 0); // target = +x
     assert.ok(
       Math.abs(err) < 0.06,
       `trueSign=${trueSign}: limb converges onto the cursor (residual ${err.toFixed(3)} rad)`
@@ -73,7 +93,7 @@ test("the grabbed limb servos onto the cursor through the SPEED-LIMITED rig — 
   }
 });
 
-test("near-base grabs hold the last aim instead of jittering (mouse-lock makes the target self-referential)", () => {
+test("near-base grabs HOLD the last aim by re-commanding it (an absent flex is a compositor RELEASE — the limb would sag out of the hand)", () => {
   const clock = { t: 0 };
   const limb = makeLimb(1);
   let cursor = { x: 1, y: 0 };
@@ -85,9 +105,14 @@ test("near-base grabs hold the last aim instead of jittering (mouse-lock makes t
     now: () => clock.t,
   });
   run(fn, limb, 120, clock); // converge onto the side target
+  const heldApplied = limb.state.applied;
   cursor = { x: 0.05, y: 0.05 }; // cursor lands ~at the limb BASE (inside the 0.25*limb-length deadband)
   const out = run(fn, limb, 60, clock);
-  assert.ok(!out.flex, "inside the deadband the aim is HELD (no flex update), not recomputed from noise");
+  assert.ok(out.flex, "inside the deadband the last command KEEPS FLOWING (missing flex = release, not hold)");
+  assert.ok(
+    Math.abs(limb.state.applied - heldApplied) < 1e-9,
+    `the limb stays where it was held (applied ${limb.state.applied.toFixed(3)} vs ${heldApplied.toFixed(3)})`
+  );
 });
 
 test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges onto the cursor — no wrong-sign lock, no wrong-way whip", () => {
@@ -97,7 +122,7 @@ test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges
   // (easing DOWN toward the smaller absolute command) opposed the command, the one-shot sign
   // discovery voted "reversed rig" 3 frames running, locked the wrong sign, and drove the limb to
   // the ±2.2 cap — the mouse-lock then dragged the whole body after the runaway part. The layer now
-  // takes abd0 (the compositor's live applied offset at grab time) and commands abd0 + sign*th.
+  // takes abd0 (the ORPHAN residual at grab time) and commands abd0 + sign*th.
   for (const trueSign of [1, -1]) {
     const clock = { t: 0 };
     const limb = makeLimb(trueSign);
@@ -109,15 +134,13 @@ test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges
       cursorWorld: () => ({ x: Math.cos(-Math.PI / 2 + trueSign * 1.5), y: Math.sin(-Math.PI / 2 + trueSign * 1.5) }),
       dragX: () => 0,
       now: () => clock.t,
-      abd0: 1.0, // the compositor's applied offset at grab time (procedural _vstate[role].abd)
+      abd0: 1.0, // orphan residual: applied 1.0, no other layer commands the role
     });
     let minApplied = limb.state.applied;
     run(fn, limb, 240, clock, () => {
       minApplied = Math.min(minApplied, limb.state.applied);
     });
-    const st = limb.aimState();
-    const ta = -Math.PI / 2 + trueSign * 1.5;
-    const err = Math.atan2(Math.cos(ta) * st.dy - Math.sin(ta) * st.dx, Math.cos(ta) * st.dx + Math.sin(ta) * st.dy); // signed angle target->limb
+    const err = worldErr(limb, -Math.PI / 2 + trueSign * 1.5);
     assert.ok(
       Math.abs(err) < 0.06,
       `trueSign=${trueSign}: re-grabbed limb converges onto the cursor (residual ${err.toFixed(3)} rad)`
@@ -127,6 +150,85 @@ test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges
       `trueSign=${trueSign}: no wrong-way whip through rest toward the cap (min applied ${minApplied.toFixed(3)})`
     );
   }
+});
+
+test("re-grab during the PENDULUM's roll ease-back: ancestor motion can't poison the sign or the aim (parent-frame measurement)", () => {
+  // Audit 2026-07-05 round 2, findings 1+2: the spine+chest roll residual eases back at up to
+  // 0.052 rad/frame — twice the limb servo's own 0.026 — so a world-measured dm voted the wrong
+  // sign and restDir was captured in a frame that then rotated away (~20deg permanent miss).
+  // aimState now reports pa (the parent's screen angle) and the servo measures in that frame.
+  for (const trueSign of [1, -1]) {
+    const clock = { t: 0 };
+    let baseRoll = 0.35 * trueSign; // spine 0.22 + chest 0.13, both still unwinding
+    const decay = () => {
+      baseRoll = Math.sign(baseRoll) * Math.max(0, Math.abs(baseRoll) - 0.052);
+    };
+    const limb = makeLimb(trueSign, { pa: () => baseRoll });
+    const ta = -Math.PI / 2 + trueSign * 0.9;
+    const fn = createGrabFollowFn({
+      aimRole: "left_arm",
+      aimState: limb.aimState,
+      cursorWorld: () => ({ x: Math.cos(ta), y: Math.sin(ta) }),
+      dragX: () => 0,
+      now: () => clock.t,
+      abd0: 0,
+    });
+    run(fn, limb, 300, clock, decay);
+    const err = worldErr(limb, ta);
+    assert.ok(
+      Math.abs(err) < 0.06,
+      `trueSign=${trueSign}: converges despite the ancestor roll ease-back (residual ${err.toFixed(3)} rad)`
+    );
+  }
+});
+
+test("#guard: the SAME pendulum scenario with a world-blind aimState (pa unreported) DOES mislock — proves the parent-frame test bites", () => {
+  const clock = { t: 0 };
+  let baseRoll = 0.35;
+  const limb = makeLimb(1, { pa: () => baseRoll, reportPa: false }); // contamination present, invisible to the layer
+  const ta = -Math.PI / 2 + 0.9;
+  const fn = createGrabFollowFn({
+    aimRole: "left_arm",
+    aimState: limb.aimState,
+    cursorWorld: () => ({ x: Math.cos(ta), y: Math.sin(ta) }),
+    dragX: () => 0,
+    now: () => clock.t,
+    abd0: 0,
+  });
+  run(fn, limb, 300, clock, () => {
+    baseRoll = Math.max(0, baseRoll - 0.052);
+  });
+  assert.ok(
+    Math.abs(worldErr(limb, ta)) > 0.5,
+    "world-blind measurement locks the wrong sign under ancestor contamination (the failure the fix removes)"
+  );
+});
+
+test("a coexisting live layer's hold is NOT double-counted: abd0 carries only the ORPHAN residual", () => {
+  // Audit 2026-07-05 round 2, finding 4: appliedFlex is the eased SUM of all layers. Folding the
+  // full applied value into the grab command while an AI pose layer still holds the arm at A made
+  // the compositor sum 2A + sign*th — moving the limb OPPOSITE the command for near-side targets
+  // (wrong-sign lock, launch phenotype) and overshooting by A otherwise. The wiring passes
+  // applied - flexCommand(role, "grab_follow") instead; here that orphan residual is 0.
+  const clock = { t: 0 };
+  const A = 0.6; // a persistent AI pose layer holding the arm out
+  const limb = makeLimb(1, { other: A });
+  limb.state.applied = A; // settled on the hold
+  const ta = -Math.PI / 2 + 0.35; // target on the NEAR side of the hold (|th| < A, opposite direction)
+  const fn = createGrabFollowFn({
+    aimRole: "left_arm",
+    aimState: limb.aimState,
+    cursorWorld: () => ({ x: Math.cos(ta), y: Math.sin(ta) }),
+    dragX: () => 0,
+    now: () => clock.t,
+    abd0: 0, // orphan residual: applied (0.6) - the live layer's command (0.6)
+  });
+  run(fn, limb, 300, clock);
+  const err = worldErr(limb, ta);
+  assert.ok(
+    Math.abs(err) < 0.06,
+    `converges onto the near-side target without double-counting the hold (residual ${err.toFixed(3)} rad)`
+  );
 });
 
 test("pendulum: the torso trails the drag velocity, stays bounded, and settles when the drag stops", () => {
@@ -174,7 +276,7 @@ test("guards: no aim state / no cursor / NaN dragX -> pendulum-only output, alwa
   for (let i = 0; i < 30; i++) {
     clock.t += 16.7;
     const out = fn();
-    assert.ok(!out.flex, "no aim without a limb reading");
+    assert.ok(!out.flex, "no aim without a limb reading (and nothing to hold yet)");
     assert.ok(Number.isFinite(out.parts.spine[2]), "NaN dragX never poisons the tilt");
   }
 });

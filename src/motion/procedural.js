@@ -625,6 +625,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     _le = new THREE.Euler();
   const _acc = new Map(); // role -> { p, y, r, ang, abd, hasParts, hasFlex } scratch (cleared each frame)
   const _vstate = new Map(); // role -> { p, y, r, ang, abd } last-APPLIED channels (#28 velocity clamp)
+  const _lastFlexCmd = new Map(); // role -> Map(layerId -> {ang, abd}) — last frame's PASS-1 flex contributions, per layer (feeds flexCommand: the grab's orphan-residual math needs "what do the OTHER layers still command here")
   // velocity-continuous clamp: limit a channel's per-frame DELTA to speed_limit*dt so motion is never
   // janky. delta 0 -> no clamp (a still pose never deadlocks); a big target is approached over frames.
   const _vclamp = (prev, target, maxStep) => {
@@ -639,6 +640,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // a role still holds a nonzero offset, DON'T early-out: fall through so the release loop below
     // eases each role's velocity history to 0 at its speed_limit (velocity-continuous on release,
     // #28) instead of snapping to base in one frame. Each role self-deletes from _vstate at 0.
+    _lastFlexCmd.clear(); // re-recorded below; cleared FIRST so "no layers" honestly reads as "no commands"
     if (!layers.size && !_vstate.size) return;
     _acc.clear();
     const acc = (role) => {
@@ -695,6 +697,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
           e.ang += (o[0] || 0) * w;
           e.abd += (o[1] || 0) * w;
           e.hasFlex = true;
+          let lm = _lastFlexCmd.get(role);
+          if (!lm) _lastFlexCmd.set(role, (lm = new Map()));
+          lm.set(id, { ang: (o[0] || 0) * w, abd: (o[1] || 0) * w });
         }
     }
     // PASS 2 — clamp the SUMMED value once, velocity-clamp the delta, apply one quaternion per channel.
@@ -907,6 +912,24 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     appliedFlex: (role) => {
       const v = _vstate.get(role);
       return v ? { ang: v.ang, abd: v.abd } : { ang: 0, abd: 0 };
+    },
+    // What live layers COMMANDED on a role last frame (weight-scaled PASS-1 sum), optionally
+    // excluding one layer id. appliedFlex - flexCommand(role, "grab_follow") = the ORPHAN residual
+    // nobody owns — the only part the ragdoll grab may fold into its own command; folding the full
+    // applied value double-counted a coexisting layer's hold (audit 2026-07-05 round 2, finding 4).
+    flexCommand: (role, excludeId) => {
+      const lm = _lastFlexCmd.get(role);
+      let ang = 0,
+        abd = 0;
+      if (lm) {
+        const ex = excludeId == null ? null : String(excludeId);
+        for (const [id, c] of lm) {
+          if (ex != null && id === ex) continue;
+          ang += c.ang;
+          abd += c.abd;
+        }
+      }
+      return { ang, abd };
     },
     capabilities: () => ({
       // what the brain can drive on THIS resolved model

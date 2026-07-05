@@ -62,8 +62,10 @@ contextBridge.exposeInMainWorld("avatarIPC", {
   dragStart: (grabX, grabY, spin) => ipcRenderer.send("avatar:dragStart", { grabX, grabY, spin: !!spin }),
   // dragAdjust (BRAIN only): live-retarget the grab offset so the GRABBED BODY PART — which moves
   // within the rig (springs / ragdoll aim / pendulum) — stays pinned under the cursor, not a fixed
-  // click offset the mouse slides off of.
-  dragAdjust: (gx, gy) => ipcRenderer.send("avatar:dragAdjust", { gx, gy }),
+  // click offset the mouse slides off of. seq = the dragSeq this adjust was computed FOR: main
+  // drops mismatches so a stale lock's adjust crossing a latest-grab-wins replacement can't
+  // teleport her to the OLD grab point (audit 2026-07-05 round 2).
+  dragAdjust: (gx, gy, seq) => ipcRenderer.send("avatar:dragAdjust", { gx, gy, seq }),
   dragBeat: () => ipcRenderer.send("avatar:dragBeat"),
   dragEnd: (why) => ipcRenderer.send("avatar:dragEnd", { why: why === "cancel" ? "cancel" : "up" }),
   // Brain → main → peers: the live skeleton pose (one Float32Array buffer per frame). Transferred.
