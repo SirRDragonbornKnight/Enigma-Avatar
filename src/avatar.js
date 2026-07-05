@@ -32,6 +32,7 @@ import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } f
 //  default_avatar.js procedural-placeholder was deleted 2026-06-30 — there is no placeholder model.)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
+import { createGrabFollowFn } from "./motion/grabfollow.js"; // ragdoll grab: the grabbed limb leads, the body follows (pure factory, unit-tested)
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
 // bootstrap below (no renderer / DOM needed), letting tests assert the REAL ordering, not a fake.
@@ -2711,6 +2712,64 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   window.avatarIPC?.onAiControlChanged?.((on) => applyAiControl(on));
   let _wasDragFlag = false,
     _dragActive = false; // _dragActive: a main-owned drag is in flight (broadcast to EVERY window via p.drag) — so ANY window's pointerup can release it, even one that didn't start the grab
+  // RAGDOLL GRAB (grabfollow.js): pick the limb chain nearest the grab point and set the ONE
+  // transient fn() layer that aims it at the cursor + pendulums the torso. Chains are canonical
+  // roles only (generic); a rig with no such limb (ryuri has no legs) simply skips the aim and
+  // keeps the pendulum. Cleared on the release edge.
+  const GRAB_CHAINS = [
+    { pick: ["left_hand", "left_forearm", "left_arm"], aim: "left_arm" },
+    { pick: ["right_hand", "right_forearm", "right_arm"], aim: "right_arm" },
+    { pick: ["left_foot", "left_shin", "left_leg"], aim: "left_leg" },
+    { pick: ["right_foot", "right_shin", "right_leg"], aim: "right_leg" },
+  ];
+  function startGrabFollow(wx, wy) {
+    if (!proc?.setLayer) return;
+    const roles = proc.roles();
+    const flexable = new Set(proc.capabilities().flexRoles || []);
+    const v = new THREE.Vector3();
+    const maxD = (modelDims.h || 2) * sizeScale * 0.22; // grab must be ON the limb, body-scaled
+    let aimRole = null,
+      bd = maxD * maxD;
+    for (const ch of GRAB_CHAINS) {
+      if (!flexable.has(ch.aim) || !roles[ch.aim]) continue; // no abduction axis on this rig -> can't aim it
+      for (const rn of ch.pick) {
+        const b = roles[rn];
+        if (!b) continue;
+        b.getWorldPosition(v);
+        const dx = v.x - wx,
+          dy = v.y - wy,
+          d2 = dx * dx + dy * dy;
+        if (d2 < bd) {
+          bd = d2;
+          aimRole = ch.aim;
+        }
+      }
+    }
+    const S = new THREE.Vector3(),
+      C = new THREE.Vector3();
+    const boneChild = (b) => {
+      for (const k of b.children) if (k.isBone) return k;
+      return null;
+    };
+    proc.setLayer("grab_follow", {
+      fn: createGrabFollowFn({
+        aimRole,
+        aimState: aimRole
+          ? () => {
+              const b = roles[aimRole],
+                c = b && boneChild(b);
+              if (!b || !c) return null;
+              b.getWorldPosition(S);
+              c.getWorldPosition(C);
+              return { sx: S.x, sy: S.y, dx: C.x - S.x, dy: C.y - S.y };
+            }
+          : null,
+        cursorWorld: () => (cursor.seen ? toWorld(cursor.x, cursor.y) : null),
+        dragX: () => gPos.x,
+        now: () => performance.now(),
+      }),
+    });
+  }
   window.avatarIPC?.onGlobalPos?.((p) => {
     if (!p || !isFinite(p.gx) || !isFinite(p.gy)) return;
     const moved = Math.abs(p.gx - gPos.x) + Math.abs(p.gy - gPos.y) > 0.5;
@@ -2728,14 +2787,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       _wasDragFlag = df;
       proc?.setGrip?.("both", df); // carried by the body → she grips with both hands for the ride
       if (df) {
-        // GRAB-BY-WHERE-YOU-GRAB: pin the sprung region under the cursor for the ride — a sprung
-        // tail/hair region otherwise lags the rig and swings out from under the grab. The brain's
-        // cursor is live for its own display and ~30Hz-relayed from peers, so this works for a
-        // grab started on any monitor. No region near the grab (rigid body part) = no pin.
+        // GRAB-BY-WHERE-YOU-GRAB: (1) damp the sprung region under the cursor so it rides near the
+        // hand instead of swinging away; (2) RAGDOLL FOLLOW — the grabbed limb aims at the cursor
+        // and the torso pendulums after the drag (grabfollow.js). The brain's cursor is live for
+        // its own display and ~30Hz-relayed from peers, so a grab on any monitor works.
         const gw = toWorld(cursor.x, cursor.y);
         spring?.holdNearest?.(gw.x, gw.y, (modelDims.h || 2) * sizeScale * 0.25);
+        startGrabFollow(gw.x, gw.y);
       } else {
         spring?.releaseHeld?.();
+        proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
         setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
       }
     }
