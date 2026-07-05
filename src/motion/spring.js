@@ -177,15 +177,18 @@ export function buildSpringBones(model, opts = {}) {
       restWDir.copy(it.restDir).applyQuaternion(restRot).normalize(); // rest direction in world
       restTip.copy(restWDir).multiplyScalar(it.len).add(origin); // where the tip rests
       const feel = regionFeel(w, P.stiffness, P.drag, it.geo); // weight → physics knobs (pure; unit-tested)
-      if (feel.pin || _heldRegions.has(it.region)) {
-        // pinned: this region's jiggle is off (user weight 0, or the region is IN THE USER'S HAND
-        // mid-drag — it must ride the rig rigidly, not swing away from the cursor)
+      if (feel.pin) {
+        // pinned: this region's jiggle is off
         it.tip.copy(restTip);
         it.prev.copy(restTip);
         b.quaternion.copy(it.restQuat);
         b.updateWorldMatrix(false, false);
         continue;
       }
+      // The GRABBED region is heavily DAMPED, not frozen (user 2026-07-05: a hard pin "locks
+      // what I grab in place"): it tracks the hand closely instead of swinging away, but keeps
+      // a live little give and settles smoothly on release (no snap on either edge).
+      const damp = _heldRegions.has(it.region) ? Math.max(feel.damp, 0.85) : feel.damp;
       // Gravity acts ONLY when the bone's ORIGIN actually moved this frame (reactive sag/sway). A
       // motionless body settles ZERO gravity → no self-generated sag below bind pose (esp. on geo chains).
       const moved = origin.distanceToSquared(it.originPrev) > 1e-12;
@@ -216,9 +219,9 @@ export function buildSpringBones(model, opts = {}) {
       d.copy(it.tip).sub(origin);
       if (d.lengthSq() < 1e-9) d.copy(restWDir).multiplyScalar(it.len);
       it.tip.copy(d.setLength(it.len)).add(origin);
-      // w<1 → damp amplitude toward rest (less jiggle) and re-pin to bone length
-      if (feel.damp > 0) {
-        it.tip.lerp(restTip, 1 - Math.pow(1 - feel.damp, kFrame)); // dt-normalized amplitude damp (identity at REF_FPS)
+      // w<1 (or the region is in the user's hand) → damp amplitude toward rest and re-pin to bone length
+      if (damp > 0) {
+        it.tip.lerp(restTip, 1 - Math.pow(1 - damp, kFrame)); // dt-normalized amplitude damp (identity at REF_FPS)
         it.tip.copy(d.copy(it.tip).sub(origin).setLength(it.len)).add(origin);
       }
       // orient the bone so it points origin -> tip
