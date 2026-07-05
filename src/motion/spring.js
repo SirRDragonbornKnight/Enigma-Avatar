@@ -185,7 +185,6 @@ export function buildSpringBones(model, opts = {}) {
         b.updateWorldMatrix(false, false);
         continue;
       }
-      const damp = feel.damp;
       // Gravity acts ONLY when the bone's ORIGIN actually moved this frame (reactive sag/sway). A
       // motionless body settles ZERO gravity → no self-generated sag below bind pose (esp. on geo chains).
       const moved = origin.distanceToSquared(it.originPrev) > 1e-12;
@@ -216,9 +215,9 @@ export function buildSpringBones(model, opts = {}) {
       d.copy(it.tip).sub(origin);
       if (d.lengthSq() < 1e-9) d.copy(restWDir).multiplyScalar(it.len);
       it.tip.copy(d.setLength(it.len)).add(origin);
-      // w<1 (or the region is in the user's hand) → damp amplitude toward rest and re-pin to bone length
-      if (damp > 0) {
-        it.tip.lerp(restTip, 1 - Math.pow(1 - damp, kFrame)); // dt-normalized amplitude damp (identity at REF_FPS)
+      // w<1 → damp amplitude toward rest (less jiggle) and re-pin to bone length
+      if (feel.damp > 0) {
+        it.tip.lerp(restTip, 1 - Math.pow(1 - feel.damp, kFrame)); // dt-normalized amplitude damp (identity at REF_FPS)
         it.tip.copy(d.copy(it.tip).sub(origin).setLength(it.len)).add(origin);
       }
       // orient the bone so it points origin -> tip

@@ -90,6 +90,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let worldW = 10,
     worldH = 10;
   let _refH = 0; // primary work-area height (DIP, via avatar:init) — the shared px-per-world-unit reference
+  let _refW = 0; // primary work-area width (DIP) — the shared reference for the load-time width cap
   const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, -100, 100);
   camera.position.set(0, 0, 10);
   function frameCamera() {
@@ -296,7 +297,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // are "peers" that mirror the brain's broadcast pose and only support grab. See main.js / preload.js.
   const pos = new THREE.Vector2(0, -1.5); // DERIVED world-space base = gToWorld(gPos)
   let _isBrain = false;
-  let myOrigin = { x: 0, y: 0 }; // this window's display origin (DIP)
+  let myOrigin = { x: 0, y: 0 }; // this window's real origin (DIP; the WINDOW's, work-area-constrained)
+  let _myDisplayId = null; // the display this window covers (avatar:init) — identity for onMyDisplay()
   let myBounds = { width: 1, height: 1 }; // this window's display size (DIP) — matches main's init payload {width,height}
   let gPos = { x: 0, y: 0 }; // avatar global position (DIP) — authoritative cache from main
   let curDisp = { x: 0, y: 0, width: 1, height: 1 }; // the display she's currently on (DIP) — from main
@@ -328,9 +330,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // Is she standing on THIS window's display? Captures/thumbnails route to HER window in main —
   // a crop rect computed in a DIFFERENT window's pixel space would cut garbage out of that capture.
   function onMyDisplay() {
-    return (
-      _gReady && Math.round(curDisp.x) === Math.round(myOrigin.x) && Math.round(curDisp.y) === Math.round(myOrigin.y)
-    );
+    // Compare display IDENTITY when main ships it: myOrigin is now the WINDOW's real origin
+    // (work-area-constrained), which diverges from the display origin under a top/left-docked
+    // taskbar — origin equality would go permanently false there and silently disable every
+    // region snapshot/crop on that monitor (audit 2026-07-05). Origin compare stays as the
+    // fallback for an older main without disp.id.
+    if (!_gReady) return false;
+    if (curDisp.id != null && _myDisplayId != null) return curDisp.id === _myDisplayId;
+    return Math.round(curDisp.x) === Math.round(myOrigin.x) && Math.round(curDisp.y) === Math.round(myOrigin.y);
   }
   function _clampToDisp(p) {
     // glide/nudge stay on her current screen (only a DRAG crosses bezels).
@@ -576,10 +583,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // the fourth-wall "walk up to the screen" loom keeps her face in frame while she grows past it.
     let anchorClamped = false; // truth for the reply: did the display clamp swallow the compensation?
     if ((anchor === "hips" || anchor === "head") && isFinite(worldH) && innerHeight > 0) {
-      const frac = anchor === "head" ? 0.92 : 0.5; // the pinned point's height as a fraction of her height
-      const dW = (modelDims.h || BASE_H) * (sizeScale - prev) * frac; // how far that point rose, world units
-      const r = setGlide(gPos.x, gPos.y + (dW * innerHeight) / worldH); // drop the feet to compensate (display-clamped, published)
-      anchorClamped = !!(r && r.clamped); // clamped = the pinned point will NOT hold (it drifts off-screen)
+      if (held || _dragActive) {
+        anchorClamped = true; // a DRAG owns the position — the compensation glide would be discarded by main, so the pinned point will NOT hold; say so instead of lying
+      } else {
+        const frac = anchor === "head" ? 0.92 : 0.5; // the pinned point's height as a fraction of her height
+        const dW = (modelDims.h || BASE_H) * (sizeScale - prev) * frac; // how far that point rose, world units
+        const r = setGlide(gPos.x, gPos.y + (dW * innerHeight) / worldH); // drop the feet to compensate (display-clamped, published)
+        anchorClamped = !!(r && r.clamped); // clamped = the pinned point will NOT hold (it drifts off-screen)
+      }
     }
     sizeByModel[curKey] = sizeScale;
     if (!window.avatarIPC || _isBrain)
@@ -598,6 +609,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // off the top/bottom — and on a SMALLER monitor that reads as "can't see the avatar".
   // Shrinks an over-tall avatar to a margin-safe height; never enlarges (respects smaller sizes).
   function fitToScreen() {
+    // BRAIN-only under IPC: a peer's worldH differs under the constant-px camera, and a peer
+    // shrinking its LOCAL sizeScale diverged from the brain's decision until the next pose
+    // frame overwrote it (size pop + a polluted in-memory sizeByModel). The no-IPC context
+    // (plain browser / tests) keeps the old behavior — it IS the only window.
+    if (window.avatarIPC && !_isBrain) return;
     const h = (modelDims.h || BASE_H) * sizeScale; // current world-space height
     const maxH = worldH * 0.6; // leave head + feet margin (head clears camTop at pos.y -1.5)
     if (h > maxH && isFinite(maxH) && h > 0) applySize(sizeScale * (maxH / h));
@@ -619,6 +635,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     rig.remove(model);
     if (vrm) VRMUtils.deepDispose?.(vrm.scene);
     disposeMeshTree(model); // geometry + materials + TEXTURES (material.dispose alone leaked the texture set every swap)
+    _grabLock = null; // a mouse-lock must not keep steering the drag from a DISPOSED model's bone (swap mid-drag)
     _boneMarks.clear(); // the checkbox markers rode this model's bones — just disposed by the traverse above
     model = null;
     vrm = null;
@@ -725,7 +742,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const w0 = _box.max.x - _box.min.x,
       h0 = _box.max.y - _box.min.y;
     let s = BASE_H / (h0 || 1);
-    if (w0 * s > worldW * 0.85) s = (worldW * 0.85) / w0; // cap width so wide models (GLaDOS) fit
+    // Width cap against the SHARED (primary) world width — worldW is per-window under the
+    // constant-px camera, and a per-window cap gave a wide model (GLaDOS) a DIFFERENT base
+    // scale in every window: she changed size hopping monitors, the exact bug refH kills.
+    const worldWRef = _refH > 0 && _refW > 0 ? VIEW_H * (_refW / _refH) : worldW;
+    if (w0 * s > worldWRef * 0.85) s = (worldWRef * 0.85) / w0; // cap width so wide models (GLaDOS) fit
     model.scale.setScalar(s);
     bodyBox();
     const c = _box.getCenter(new THREE.Vector3());
@@ -2698,7 +2719,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _isBrain = !!info.isBrain;
     if (info.origin) myOrigin = info.origin;
     if (info.bounds) myBounds = info.bounds;
+    if (info.displayId != null) _myDisplayId = info.displayId;
     if (isFinite(info.refH) && info.refH > 0) _refH = info.refH; // shared px-per-world-unit reference (see frameCamera)
+    if (isFinite(info.refW) && info.refW > 0) _refW = info.refW; // shared width-cap reference (see the load normalization)
     _peerCount = info.peerCount || 0;
     _myWinId = info.winId ?? null; // to skip our own uiCmd echo (we already applied it)
     if (typeof info.aiControl === "boolean") aiControlOn = info.aiControl; // seed the kill-switch mirror from main's persisted authority (silent — no boot flash)
@@ -2712,7 +2735,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // through the authority) land on EVERY window's mirror.
   window.avatarIPC?.onAiControlChanged?.((on) => applyAiControl(on));
   let _wasDragFlag = false,
-    _dragActive = false; // _dragActive: a main-owned drag is in flight (broadcast to EVERY window via p.drag) — so ANY window's pointerup can release it, even one that didn't start the grab
+    _dragActive = false, // _dragActive: a main-owned drag is in flight (broadcast to EVERY window via p.drag) — so ANY window's pointerup can release it, even one that didn't start the grab
+    _dragSeqSeen = 0; // last dragSeq applied — detects a latest-grab-wins replacement (no edge)
   // RAGDOLL GRAB (grabfollow.js): pick the limb chain nearest the grab point and set the ONE
   // transient fn() layer that aims it at the cursor + pendulums the torso. Chains are canonical
   // roles only (generic); a rig with no such limb (ryuri has no legs) simply skips the aim and
@@ -2735,6 +2759,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (!_dragActive || !_grabLock || !model) return;
     const b = _grabLock.bone;
     if (!b || !b.isObject3D) return;
+    // LIVENESS: the locked bone must still hang under the live rig. A model swap clears the
+    // lock in disposeModel, but a DETACHED subtree (attachment removed mid-drag, adoption
+    // surgery) leaves an orphan whose world position is garbage — steering the drag to the
+    // ±4000 clamp. Orphan -> drop the lock, the drag continues as a plain offset-follow.
+    let p0 = b;
+    while (p0.parent) p0 = p0.parent;
+    if (p0 !== scene) {
+      _grabLock = null; // every live bone roots at the scene (rig -> model -> bones); anything else is detached
+      return;
+    }
     b.updateWorldMatrix(true, false);
     const p = b.localToWorld(_glV.copy(_grabLock.local));
     const [lx, ly] = toScreen(p.x, p.y);
@@ -2742,8 +2776,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const rel = { x: g.x - gPos.x, y: g.y - gPos.y }; // the part's live offset from her anchor (DIP)
     if (!isFinite(rel.x) || !isFinite(rel.y)) return;
     const s = _grabLock.sent || (_grabLock.sent = { x: rel.x, y: rel.y });
-    s.x += (rel.x - s.x) * 0.5; // soft correction: springs re-excite under the shift — half-step per frame stays stable
-    s.y += (rel.y - s.y) * 0.5;
+    // Soft correction with a RATE CAP: the lock through a freely-swinging SPRUNG bone is a servo
+    // through an underdamped plant — the blend alone bounds gain, the per-frame step cap bounds
+    // any residual oscillation's amplitude (60 DIP/frame ≈ 3600 DIP/s, far above any honest need).
+    const bx = Math.max(-60, Math.min(60, (rel.x - s.x) * 0.35));
+    const by = Math.max(-60, Math.min(60, (rel.y - s.y) * 0.35));
+    s.x += bx;
+    s.y += by;
     window.avatarIPC?.dragAdjust?.(s.x, s.y);
   }
   function startGrabFollow(wx, wy) {
@@ -2832,7 +2871,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     } // a main-owned drag (from ANY window) outranks an AI glide — without this the two write gPos in turn and she rubber-bands
     const df = !!p.drag;
     _dragActive = df;
-    if (_isBrain && df !== _wasDragFlag) {
+    // A NEW grab while one is live OVERWRITES it in main (latest grab wins — no drag:false
+    // edge). The seq detects that replacement: without it the stale mouse-lock kept steering
+    // the NEW drag back to the OLD grab point (audit 2026-07-05).
+    const seqChanged = df && p.dragSeq != null && p.dragSeq !== _dragSeqSeen;
+    if (df && p.dragSeq != null) _dragSeqSeen = p.dragSeq;
+    if (_isBrain && (df !== _wasDragFlag || seqChanged)) {
       _wasDragFlag = df;
       proc?.setGrip?.("both", df); // carried by the body → she grips with both hands for the ride
       if (df) {
@@ -2842,8 +2886,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         // tried twice and rejected: on ryuri the whole lower body is ONE tail region, so any
         // nearby grab "froze the bottom" — user 2026-07-05, removed for good.) The brain's cursor
         // is live for its own display and ~30Hz-relayed from peers, so a grab on any monitor works.
-        const gw = toWorld(cursor.x, cursor.y);
-        startGrabFollow(gw.x, gw.y);
+        proc?.clearLayer?.("grab_follow"); // a replacement grab starts a FRESH capture
+        _grabLock = null;
+        if (cursor.seen) {
+          // an unseen cursor (reload mid-drag, relay not landed) must not lock a bogus bone at (-1,-1)
+          const gw = toWorld(cursor.x, cursor.y);
+          startGrabFollow(gw.x, gw.y);
+        }
       } else {
         proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
         _grabLock = null; // the mouse-lock dies with the drag (main's offset is only read while dragging)

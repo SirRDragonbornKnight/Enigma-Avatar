@@ -7,33 +7,39 @@ import assert from "node:assert/strict";
 import { createGrabFollowFn } from "../src/motion/grabfollow.js";
 
 // A fake limb: hangs straight down at rest; the servo's flex[1] (abd) rotates it in the screen
-// plane by trueSign * abd. Lets the test present a rig whose axis sign disagrees with the
-// servo's initial guess.
+// plane by trueSign * applied. CRITICALLY it does NOT teleport: the applied offset EASES toward
+// the command at the compositor's real speed limit (90 deg/s — bone_limits.json), because a
+// re-voting sign detector passed the teleporting harness and limit-cycled on the REAL, slow rig
+// (audit 2026-07-05: mismatch frames accrue for the whole eased traverse, not just while wrong).
 function makeLimb(trueSign) {
-  const state = { abd: 0 };
+  const state = { abd: 0, applied: 0 };
+  const MAX_STEP = (90 * Math.PI) / 180 / 60; // 90 deg/s at 60fps — the live per-frame clamp
   return {
     state,
+    step() {
+      const d = state.abd - state.applied;
+      state.applied += Math.max(-MAX_STEP, Math.min(MAX_STEP, d));
+    },
     aimState: () => {
-      const a = -Math.PI / 2 + trueSign * state.abd; // rest = straight down (-90deg)
+      const a = -Math.PI / 2 + trueSign * state.applied; // rest = straight down (-90deg)
       return { sx: 0, sy: 0, dx: Math.cos(a), dy: Math.sin(a) };
     },
   };
 }
 
-function run(fn, limb, cursor, frames, clock) {
+function run(fn, limb, frames, clock, onFrame) {
   let out = null;
   for (let i = 0; i < frames; i++) {
     clock.t += 16.7;
     out = fn();
-    if (out.flex) {
-      const abd = Object.values(out.flex)[0][1];
-      limb.state.abd = abd;
-    }
+    if (out.flex) limb.state.abd = Object.values(out.flex)[0][1];
+    limb.step(); // speed-limited application, like the live compositor
+    if (onFrame) onFrame(out);
   }
   return out;
 }
 
-test("the grabbed limb servos onto the cursor — even when the rig's axis sign is REVERSED", () => {
+test("the grabbed limb servos onto the cursor through the SPEED-LIMITED rig — even with a REVERSED axis, no flip limit-cycle", () => {
   for (const trueSign of [1, -1]) {
     const clock = { t: 0 };
     const limb = makeLimb(trueSign);
@@ -44,14 +50,44 @@ test("the grabbed limb servos onto the cursor — even when the rig's axis sign 
       dragX: () => 0,
       now: () => clock.t,
     });
-    run(fn, limb, null, 120, clock); // 2 simulated seconds
+    // track commanded-sign changes: the sign must be decided ONCE, never oscillate
+    let lastCmdSign = 0,
+      flips = 0;
+    run(fn, limb, 240, clock, (out) => {
+      if (!out.flex) return;
+      const cmd = Object.values(out.flex)[0][1];
+      const s = Math.sign(cmd);
+      if (s && lastCmdSign && s !== lastCmdSign) flips++;
+      if (s) lastCmdSign = s;
+    }); // 4 simulated seconds — a 90deg traverse needs ~1s at the speed limit
     const st = limb.aimState();
-    const err = Math.atan2(st.dx * 0 - st.dy * 1, st.dx * 1 + st.dy * 0); // signed angle limb->target
+    const err = Math.atan2(-st.dy, st.dx); // signed angle limb->target (target = +x)
     assert.ok(
       Math.abs(err) < 0.06,
-      `trueSign=${trueSign}: limb converges onto the cursor (residual ${err.toFixed(3)} rad) — the servo must discover a reversed axis`
+      `trueSign=${trueSign}: limb converges onto the cursor (residual ${err.toFixed(3)} rad)`
+    );
+    assert.ok(
+      flips <= 1,
+      `trueSign=${trueSign}: at most ONE sign decision (saw ${flips} command-sign flips) — no limit cycle`
     );
   }
+});
+
+test("near-base grabs hold the last aim instead of jittering (mouse-lock makes the target self-referential)", () => {
+  const clock = { t: 0 };
+  const limb = makeLimb(1);
+  let cursor = { x: 1, y: 0 };
+  const fn = createGrabFollowFn({
+    aimRole: "left_arm",
+    aimState: limb.aimState,
+    cursorWorld: () => cursor,
+    dragX: () => 0,
+    now: () => clock.t,
+  });
+  run(fn, limb, 120, clock); // converge onto the side target
+  cursor = { x: 0.05, y: 0.05 }; // cursor lands ~at the limb BASE (inside the 0.25*limb-length deadband)
+  const out = run(fn, limb, 60, clock);
+  assert.ok(!out.flex, "inside the deadband the aim is HELD (no flex update), not recomputed from noise");
 });
 
 test("pendulum: the torso trails the drag velocity, stays bounded, and settles when the drag stops", () => {

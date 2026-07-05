@@ -29,7 +29,9 @@ export function createGrabFollowFn(deps) {
   // frozen error blinded the "error grows -> flip" detector, and the limb locked wrong-way.
   let restDir = null,
     sign = 1,
-    bad = 0;
+    signLocked = false,
+    dmAgree = 0,
+    prevM = null;
   const CAP = 2.2; // command bound (the compositor's clampAbd still applies after)
   const ROLL_MAX = 0.22; // pendulum tilt bound (rad)
   const ROLL_K = 0.0005; // drag velocity (DIP/s) -> tilt
@@ -55,23 +57,34 @@ export function createGrabFollowFn(deps) {
         tx = cw.x - st.sx,
         ty = cw.y - st.sy, // toward the cursor
         tl = Math.hypot(tx, ty);
-      if (rl > 1e-6 && tl > 1e-6) {
+      // near-base deadband: with the mouse-lock pinning the grabbed part under the cursor, a grab
+      // near the limb BASE makes the target direction self-referential noise — hold the last aim
+      // instead of jittering (out.flex simply isn't updated this frame; the compositor holds).
+      if (rl > 1e-6 && tl > rl * 0.25) {
         const cx = st.dx / rl,
           cy = st.dy / rl; // current limb direction (unit)
         if (!restDir) restDir = { x: cx, y: cy }; // the grab-time reference — she was at (or near) rest
         const th = angle(restDir.x, restDir.y, tx / tl, ty / tl); // desired swing from rest, ABSOLUTE
         const m = angle(restDir.x, restDir.y, cx, cy); // the swing the rig actually performed
-        // sign discovery, measured not guessed ("trust no axes"): once both the command and the
-        // response are visible, a response swinging OPPOSITE the desired direction means the
-        // rig's abduction sign is reversed — flip after 3 consistent frames (noise-proof, and
-        // self-correcting if a later measurement proves the flip wrong).
-        if (Math.abs(m) > 0.08 && Math.abs(th) > 0.08) {
-          if (Math.sign(m) !== Math.sign(th)) {
-            if (++bad >= 3) {
-              sign = -sign;
-              bad = 0;
+        // Sign discovery, measured not guessed ("trust no axes") — decided ONCE per grab, then
+        // LOCKED. The live compositor eases at the role's speed limit (~90 deg/s), so a re-voting
+        // detector limit-cycled on reversed rigs: mismatch frames accrue for the WHOLE slow
+        // traverse, not just while wrong (audit 2026-07-05). Here: watch the response's initial
+        // DIRECTION (dm) over consecutive frames; once it clearly moves and agrees/disagrees with
+        // the command 3 frames running, set the sign and never revisit it this grab.
+        if (!signLocked && Math.abs(th) > 0.08) {
+          if (prevM != null) {
+            const dm = m - prevM;
+            if (Math.abs(dm) > 0.004) {
+              // ~a quarter of one speed-limited frame — above numeric noise
+              dmAgree += Math.sign(dm) === Math.sign(sign * th) ? 1 : -1;
+              if (dmAgree <= -3) {
+                sign = -sign;
+                signLocked = true;
+              } else if (dmAgree >= 3) signLocked = true;
             }
-          } else bad = 0;
+          }
+          prevM = m;
         }
         out.flex = { [aimRole]: [0, Math.max(-CAP, Math.min(CAP, sign * th))] };
       }

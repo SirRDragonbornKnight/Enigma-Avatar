@@ -151,16 +151,18 @@ async def run_checks(results: list, run_start: float) -> None:
             st = await rpc(ws, {"action": "query", "what": "state", "reqId": _rid()})
             st = st if isinstance(st, dict) else {}
             dims = st.get("dims") or [0, 0]
+            size = st.get("size") or 0  # dims are SCALE-NORMALIZED -- a 0.02-size speck reports dims ~6
             sp = st.get("screenPos") or [-1, -1]
             scr = st.get("screen") or [0, 0]
+            body_h = dims[1] * size  # her REAL on-screen world height (audit 2026-07-05: dims alone lied)
             # the anchor is her feet on the DECK (work-area bottom, global coords) — legitimately a
             # few px below the window's own height; the bug class this catches is far-off-glass
             # (2016 on a 1392 window), not deck-standing (1432).
             on_glass = -50 <= sp[0] <= scr[0] + 50 and -50 <= sp[1] <= scr[1] + 100
             check(
                 "VISIBLE",
-                dims[1] > 1.0 and on_glass,
-                f"dims {dims[0]:.2f}x{dims[1]:.2f} world, anchor {sp} on screen {scr}"
+                body_h > 0.8 and on_glass,
+                f"body {body_h:.2f} world units tall (dims {dims[1]:.2f} x size {size:.2f}), anchor {sp} on screen {scr}"
                 + ("" if on_glass else " -- ANCHOR OFF-GLASS"),
             )
 

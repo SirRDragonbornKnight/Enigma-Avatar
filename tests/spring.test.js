@@ -162,6 +162,43 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
 // "froze the bottom". Sprung regions swing free during drags; grabfollow.test.js covers the
 // ragdoll layer that carries the grab feel instead.)
 
+test("a 0<w<1 region weight DAMPS amplitude under motion (the damp branch, behaviorally)", () => {
+  // The hold churn rewrote the damp-application lines; regionFeel's mapping is unit-tested in
+  // mathutil.test.js but NO spring test drove the `feel.damp > 0` branch itself (audit 2026-07-05).
+  const findBone = (m, n) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === n) b = o;
+    });
+    return b;
+  };
+  const qdot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  const ang = (a, b) => 2 * Math.acos(Math.min(1, qdot(a, b)));
+  const defl = (weight) => {
+    const m = hairRig();
+    const s = buildSpringBones(m);
+    s.setRegionWeight("tail", weight);
+    const tail = findBone(m, "Tail");
+    const q0 = tail.quaternion.clone();
+    let peak = 0;
+    for (let i = 0; i < 30; i++) {
+      m.position.x += 0.15;
+      m.updateMatrixWorld(true);
+      s.update(1 / 60);
+      peak = Math.max(peak, ang(tail.quaternion, q0));
+    }
+    return peak;
+  };
+  const full = defl(1),
+    damped = defl(0.3);
+  assert.ok(full > 0.01, `weight 1 swings under motion (${full.toFixed(4)})`);
+  assert.ok(damped > 1e-6, "weight 0.3 still moves (damped, not pinned)");
+  assert.ok(
+    damped < full * 0.6,
+    `weight 0.3 deflects well under weight 1 (${damped.toFixed(4)} vs ${full.toFixed(4)})`
+  );
+});
+
 test("impulse() boundary guard: ±Infinity vectors/dur are neutralized (no NaN tip, no immortal zombie impulse)", () => {
   const m = hairRig();
   const s = buildSpringBones(m);

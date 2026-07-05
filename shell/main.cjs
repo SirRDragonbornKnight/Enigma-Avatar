@@ -98,7 +98,8 @@ let gPos = { x: 0, y: 0 };
 // pointerup from ANY window ends the drag (definitive: the button is up), and a dead-man watchdog
 // drops her if the cursor keeps moving while the grab window has gone silent (capture lost to
 // Win+L/UAC with the pointercancel swallowed) — so "glued to the cursor forever" can't happen.
-let _drag = null; // { winId, grabX, grabY, beatAt, beatCur } | null  (grab offset in DIP)
+let _drag = null; // { winId, grabX, grabY, beatAt, beatCur, seq } | null  (grab offset in DIP)
+let _dragSeq = 0; // increments per startDrag — lets the brain detect a latest-grab-wins REPLACEMENT (no drag:false edge)
 let _dragTimer = null;
 let _overByWin = new Map(); // winId -> bool (this window's silhouette hit-test result)
 let _lastReportByWin = new Map(); // winId -> ms timestamp of its last hit-test report (liveness)
@@ -271,7 +272,12 @@ function publishPos() {
     gx: gPos.x,
     gy: gPos.y,
     drag: !!(_drag && !_drag.spin),
-    disp: { x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
+    // dragSeq: a NEW grab while one is live OVERWRITES it with no drag:false edge (latest grab
+    // wins, deliberate). The brain's grab-lock/ragdoll capture is edge-triggered — the seq lets
+    // it detect the replacement and re-capture at the NEW grab point instead of steering the new
+    // drag back to the OLD part (audit 2026-07-05).
+    dragSeq: _drag ? _drag.seq : 0,
+    disp: { id: d.id, x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
   }); // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
 // NO positional limits (user 2026-07-02): the base can sit anywhere — hanging off the outer rim,
@@ -325,7 +331,7 @@ function startDrag(winId, grabX, grabY, spin) {
   // spin = an Alt+drag ROTATE hold: same single-owner freeze + watchdog (its capture must survive
   // bezels exactly like a move-drag — it used to stall mid-spin when the arbiter flipped it), but
   // main does NOT follow the cursor (rotation is renderer-local; her position stays put).
-  _drag = { winId, grabX, grabY, spin: !!spin, beatAt: Date.now(), beatCur: cur };
+  _drag = { winId, grabX, grabY, spin: !!spin, beatAt: Date.now(), beatCur: cur, seq: ++_dragSeq };
   applyInteractive();
   if (_dragTimer) clearInterval(_dragTimer);
   _dragTimer = setInterval(() => {
@@ -431,7 +437,10 @@ function makeWindow(display, isBrain, peerCount) {
         // Shared camera reference (DIP): every window frames its world so px-per-world-unit
         // matches the PRIMARY's — she keeps the SAME on-screen size hopping between monitors
         // of different resolutions (she used to render as a constant fraction of each screen).
+        // refW rides along for the load-time WIDTH cap: normalized per-window it gave a wide
+        // model (GLaDOS class) a DIFFERENT base scale in every window (audit 2026-07-05).
         refH: primaryDisplay().workArea.height,
+        refW: primaryDisplay().workArea.width,
         peerCount: peerCount || 0,
         aiControl: _aiControlOn, // main's persisted kill-switch state — the mirror seeds from init, race-free
       });

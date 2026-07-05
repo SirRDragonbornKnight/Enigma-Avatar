@@ -1,6 +1,51 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-04, late (the zero-trust full audit + fix pass: ryuri normalization root cause, spring NaN freeze, strict-wire tightening, leak/race fixes; smoke 7/7)._
+_Last updated 2026-07-05 (the grab-feel build-out + its own audit round; smoke 7/7)._
+
+## 2026-07-05 -- the grab feel: honest bounds, constant size, ragdoll grab, mouse-lock
+
+- **The grab jump was a LYING WINDOW SIZE:** Windows constrains a display-sized overlay window
+  to the work area (created 1440 tall, real 1392 -- and nondeterministically per boot), while
+  `avatar:init` reported display.bounds; every DIP<->local conversion carried a false 1440/1392
+  ratio and the grab offset came out ~3.5% low. init now ships `win.getBounds()` truth. Receipt:
+  `move {to:"cursor"}` lands her anchor bit-exact on the true OS cursor.
+- **Constant px-per-world-unit across monitors** (`refH`/`refW` in init): every window frames
+  `worldH = VIEW_H * innerHeight/refH`, so she keeps her on-screen size hopping between a 1440p
+  and a 1080p display (was a constant FRACTION of each screen). The load-time WIDTH cap and
+  `fitToScreen` are referenced/gated to the primary so wide models scale identically everywhere
+  and peers can't diverge from the brain's size decision.
+- **RAGDOLL GRAB (`src/motion/grabfollow.js`)** -- "grab the arm, it moves, then the body": one
+  transient compositor fn() layer aims the grabbed limb chain at the cursor (ABSOLUTE servo,
+  no windup; the rig's abduction SIGN is measured from its own response and locked once per
+  grab -- a re-voting detector limit-cycled under the 90 deg/s speed clamp) and pendulums the
+  torso from drag velocity (0.22 rad cap, settles). Near-base grabs hold the last aim
+  (mouse-lock makes the target self-referential there). Joint table + speed clamps shape all
+  of it; clearLayer on release eases out. Unit tests drive a SPEED-LIMITED simulated limb,
+  including a reversed-axis rig.
+- **MOUSE-LOCK on the grabbed part:** the brain captures the click point in the nearest bone's
+  local frame, then per-frame measures where that part really is and `dragAdjust`s main's grab
+  offset (brain-only IPC, finite, +-4000 DIP, 0.35 blend + 60 DIP/frame rate cap) -- the part
+  stays pinned under the pointer and the body hangs around it. Drag REPLACEMENTS (latest grab
+  wins, no edge) re-capture via a `dragSeq`; a detached/disposed lock bone is dropped by a
+  liveness check; an unseen cursor (reload mid-drag) never locks a bogus bone.
+- **Resize grows from her MIDDLE** (scroll/+,-: `applySize(.., "hips")`; the bus `size` verb
+  keeps its documented feet default). A mid-drag resize honestly reports `anchorClamped: true`
+  (the compensation glide would be discarded while a drag owns the position).
+- **Grabbable at ANY size (the cap stays off):** the fallback grab handle keeps its BASE-side
+  segment under the 60% cap (a giant avatar's handle used to sit entirely above the window =
+  unclickable) and never tests over when fully off-window; a sub-48px-mask speck gets the same
+  bounded handle. Fail-open preserved: capture stays small and near her body.
+- **Sprung regions swing FREE during drags** -- the grabbed-region hold (pin -> damp) was
+  removed for good: on ryuri the whole lower body is ONE tail region, so any nearby grab
+  "froze the bottom". The ragdoll layer carries the grab feel.
+- **smoke VISIBLE hardened:** asserts her REAL on-screen body height (`dims * size` -- dims are
+  scale-normalized, so a 0.02-size speck used to pass) + anchor on glass.
+- `onMyDisplay()` compares display IDENTITY (id via `avatar:pos.disp`), not origins -- the
+  window origin is work-area-constrained and diverges from the display origin under a
+  top/left-docked taskbar (region snapshots/crops would have silently died there).
+- Suite: node **321 pass / 0 fail / 6 skipped** (327 total), pytest **21/21**, eslint + tsc +
+  prettier clean, smoke **7/7**. (Engine side, same day: SFT v2 trained on the Phase-1 mix --
+  val loss 0.7997, fluent chat; identity upweighting is the known next step.)
 
 ## 2026-07-04 (late) -- zero-trust audit round 2: the ryuri crumple + 20 fixes
 
