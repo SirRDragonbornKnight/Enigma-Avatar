@@ -49,10 +49,16 @@ schema-first protocol generation. Staged order, each stage COMPLETE + gated + sm
      scaffold is LIVE (shell/simhost.mjs) -- imports the ESM sim stack (three r184 + snapshotBones
      + createSimTick) in-process, ticks paced with stub subsystems, main owns spawn/ping/restart
      (capped 3)/shutdown. Receipt in the overlay log: "[simhost] ready -- probe bones 3". No window
-     consumes it yet (zero behavior change). NEXT: S2-b-ii -- the host drives a REAL skeleton
-     (compositor + springs on the loaded model's bone snapshot) and emits the flat pose buffer to
-     main (windows still ignore it); THEN S2-b-iii, the switchover day (brain window demotes to a
-     view; live launches + user click-through spot-checks).
+     consumes it yet (zero behavior change). S2-b-ii DONE 2026-07-06 (Option A: the host parses
+     the model's own bytes): engine/skeleton.js builds a live THREE bone tree from glTF/GLB JSON
+     (no WebGL/mesh decode; GLB sniffed by magic; rig_report's parser moved INTO the engine and
+     the tool re-imports it); the host runs the REAL rig cascade on it, riding the existing
+     avatar:modelLoaded announcement (main -> host, dedup + restart-resend; unsupported formats
+     log honestly). LIVE PARITY RECEIPT: "[simhost] skeleton ryuri.glb: 907 bones, 12/19 roles"
+     == rig_report's ground truth, bit-identical. 5 intent tests incl. real-model parity.
+     NEXT: S2-b-iii -- compositor + springs drive the host skeleton, pose buffer flows to main
+     (windows still ignore it); THEN the switchover day (brain demotes to a view; live launches
+     + user click-through spot-checks).
   S3: one state store in main (localStorage + browser fallbacks removed).
   S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
   S5: IK + ragdoll on the clean core.

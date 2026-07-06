@@ -10,9 +10,11 @@
 //   3. main owns its lifecycle: spawn -> ping/pong -> shutdown/crash-restart.
 // No window consumes anything from this process yet; the brain window keeps ticking its own sim
 // (zero behavior change) until the pose-buffer switchover sub-step.
+import fs from "node:fs";
 import * as THREE from "three";
-import { snapshotBones } from "../src/rig/rig.js";
+import { snapshotBones, resolveRig } from "../src/rig/rig.js";
 import { createSimTick } from "../src/engine/sim.js";
+import { gltfJsonFromBuffer, buildSkeleton } from "../src/engine/skeleton.js";
 
 const t0 = Date.now();
 let ticks = 0;
@@ -58,9 +60,34 @@ function loop() {
 }
 loop();
 
+// S2-b-ii: the REAL skeleton, built from the model's own bytes (no WebGL, no mesh decode) and
+// run through the SAME rig cascade the renderer uses. Held for the next sub-step, where the
+// compositor + springs drive it and the pose buffer flows out.
+let _skel = null; // { root, bones, roles }
+
 process.parentPort.on("message", (e) => {
   const m = e.data || {};
-  if (m.type === "ping") {
+  if (m.type === "model") {
+    try {
+      const { root, bones } = buildSkeleton(gltfJsonFromBuffer(fs.readFileSync(m.path)));
+      const resolved = resolveRig(root, null);
+      const roles = Object.values(resolved.roles || {}).filter(Boolean).length;
+      _skel = { root, bones, roles: resolved.roles };
+      process.parentPort.postMessage({
+        type: "skeleton",
+        file: String(m.path).split(/[\\/]/).pop(),
+        bones: bones.length,
+        roles,
+      });
+    } catch (err) {
+      _skel = null;
+      process.parentPort.postMessage({
+        type: "skeleton-error",
+        file: String(m.path).split(/[\\/]/).pop(),
+        error: String((err && err.message) || err),
+      });
+    }
+  } else if (m.type === "ping") {
     process.parentPort.postMessage({
       type: "pong",
       ticks,

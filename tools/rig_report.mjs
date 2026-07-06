@@ -17,27 +17,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveNames, resolveGeometry, resolveBetween, ROLES } from "../src/rig/rig.js";
+import { gltfJsonFromBuffer } from "../src/engine/skeleton.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const MOD = path.resolve(HERE, ".."); // enigma-avatar
 export const MODELS = path.join(MOD, "models");
 
-// ── glTF / GLB → JSON (the JSON chunk holds every node transform we need) ──────
+// ── glTF / GLB → JSON: the parser lives in the engine now (src/engine/skeleton.js — the sim
+// host builds its headless skeleton from the same bytes); this tool wraps it with file IO. ──────
 export function readGltfJson(file) {
-  const buf = fs.readFileSync(file);
-  if (file.toLowerCase().endsWith(".glb")) {
-    if (buf.readUInt32LE(0) !== 0x46546c67) throw new Error("not a GLB (bad magic)"); // 'glTF'
-    let off = 12; // skip 12-byte header
-    while (off + 8 <= buf.length) {
-      const clen = buf.readUInt32LE(off),
-        ctype = buf.readUInt32LE(off + 4);
-      off += 8;
-      if (ctype === 0x4e4f534a) return JSON.parse(buf.subarray(off, off + clen).toString("utf8")); // 'JSON'
-      off += clen + (clen % 4 ? 4 - (clen % 4) : 0); // chunks are 4-byte aligned
-    }
-    throw new Error("no JSON chunk in GLB");
-  }
-  return JSON.parse(buf.toString("utf8"));
+  return gltfJsonFromBuffer(fs.readFileSync(file));
 }
 
 // ── column-major mat4 (three.js convention) so world positions match the engine ──

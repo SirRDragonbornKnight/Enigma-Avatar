@@ -1017,6 +1017,7 @@ function init() {
       endDrag();
       console.error("[main] brain loaded " + url + " -> relaying to " + (liveWindows().length - 1) + " peer(s)");
       toPeers("avatar:model", url);
+      sendModelToSimHost(); // S2-b-ii: the sim host builds this same skeleton headless
     }
   }); // endDrag: a model switch must never leave her glued to the cursor (a switch mid-grab left _drag chasing the OS cursor forever)
   // Peer cursor → brain (throttled at the sender): the brain runs cursor-look but only its own
@@ -1280,6 +1281,36 @@ app.on("before-quit", () => {
 let _simHost = null,
   _simHostRestarts = 0,
   _simHostDown = false; // true once WE asked it to die (quit path) — an expected exit never restarts
+let _lastSimHostModel = null; // dedup: reloads re-announce the same url; the host builds once
+// Renderer model URL -> disk path. Mirrors the app:// protocol handler's shapes: bundle-relative
+// ("./models/..."), app://enigma/<bundle path>, app://enigma/@fs/<absolute>, or a bare absolute.
+function modelUrlToPath(u) {
+  if (u.startsWith("app://enigma/@fs/")) return decodeURIComponent(u.slice("app://enigma/@fs/".length));
+  if (u.startsWith("app://enigma/")) return path.join(ROOT, decodeURIComponent(u.slice("app://enigma/".length)));
+  if (u.startsWith("./")) return path.join(ROOT, u.slice(2));
+  if (/^[a-zA-Z]:[\\/]/.test(u)) return u;
+  return path.join(ROOT, u);
+}
+// S2-b-ii: rides the EXISTING avatar:modelLoaded announcement (the brain -> peers mirror path);
+// the host builds the SAME skeleton headless from the file's own bytes. glTF/GLB only — an
+// unsupported format logs honestly and the brain stays authoritative. Also called on host
+// restart (spawn) so a fresh host rebuilds the current skeleton.
+function sendModelToSimHost(force = false) {
+  const url = currentModelUrl;
+  if (!_simHost || !url || url === "__default__") return;
+  if (!force && url === _lastSimHostModel) return;
+  _lastSimHostModel = url;
+  const p = modelUrlToPath(url);
+  if (!/\.(glb|gltf)$/i.test(p)) {
+    console.log(`[simhost] skeleton: unsupported format (${path.extname(p) || "?"}) -- brain stays authoritative`);
+    return;
+  }
+  try {
+    _simHost.postMessage({ type: "model", path: p });
+  } catch (e) {
+    console.error("[simhost] model send failed:", String(e));
+  }
+}
 function startSimHost() {
   try {
     _simHost = utilityProcess.fork(path.join(__dirname, "simhost.mjs"), [], { serviceName: "enigma-sim-host" });
@@ -1287,12 +1318,18 @@ function startSimHost() {
     console.error("[simhost] fork failed:", String(e));
     return;
   }
-  _simHost.on("spawn", () => _simHost.postMessage({ type: "ping" }));
+  _simHost.on("spawn", () => {
+    _simHost.postMessage({ type: "ping" });
+    sendModelToSimHost(true); // after a restart the host must rebuild the current skeleton
+  });
   _simHost.on("message", (m) => {
-    if (m && m.type === "pong")
+    if (!m) return;
+    if (m.type === "pong")
       console.log(
         `[simhost] ready -- ${m.ticks} ticks in ${m.uptimeMs}ms, probe bones ${m.probeBones}, three r${m.threeRev}`
       );
+    else if (m.type === "skeleton") console.log(`[simhost] skeleton ${m.file}: ${m.bones} bones, ${m.roles}/19 roles`);
+    else if (m.type === "skeleton-error") console.error(`[simhost] skeleton FAILED ${m.file}: ${m.error}`);
   });
   _simHost.on("exit", (code) => {
     _simHost = null;
