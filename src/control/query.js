@@ -3,8 +3,7 @@
 // answerQuery(what) returns LIVE ground truth about the avatar for the bus `query` action: the
 // recolor/mesh/region/bone/morph handles, live rotation, facial mode, model, position, the
 // driver's capabilities, and a set of DIAGNOSTIC probes (pose proprioception, joints, stance,
-// IK residual, grip, skin-weight truth, per-mesh bounds, eye gaze). Read-ONLY — it never mutates
-// engine state.
+// grip, skin-weight truth, per-mesh bounds). Read-ONLY — it never mutates engine state.
 //
 // WIRING: avatar.js calls createQueryReporter(engine, services) after the control surface exists.
 // `engine` is the live state container (built inline in avatar.js); state that changes over the avatar's life

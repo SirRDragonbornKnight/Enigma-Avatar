@@ -4,9 +4,9 @@
 //
 // THERE IS NO IDLE ANIMATION. The whole idle system (breath, postural sway, weight
 // shifts, arm poses, glances, ambient micro-motion, fidgets, the per-model tuning
-// surface) is deliberately absent. She stands bit-still
-// until something REAL drives her: cursor-look (reactive), commanded gestures /
-// emotes / speech, springs reacting to actual movement, finger grip while carried.
+// surface) is deliberately absent. She stands bit-still until something REAL drives
+// her: commanded pose/flex layers, speech co-motion, springs reacting to actual
+// movement, finger grip while carried.
 // Do not re-add self-generated motion here — not even as a "sensible default".
 
 import * as THREE from "three";

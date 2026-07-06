@@ -143,9 +143,7 @@ export function createBusRegistry(engine, services) {
       return uiRecolor(c.index != null ? c.index : c.name, c.color || c.hex); // tint by INDEX (authority) or name — relayed
     },
     resetColors: () => uiResetColors(), // restore every part to its loaded color
-    hue: (c) => {
-      if (c.name) uiHueShift(c.name, c.deg ?? c.value ?? 0); // rotate a material's hue — relayed
-    },
+    hue: (c) => (c.name ? uiHueShift(c.name, c.deg ?? c.value ?? 0) : 0), // rotate a material's hue — relayed; replies the hit count (0 = no such material / garbage angle)
     mesh: (c) => uiSetMeshVisible(c.index ?? c.idx ?? 0, c.on ?? c.value ?? false), // show/hide a mesh by index (was setMesh)
     morph: (c) => {
       // drive a morph by index. Default drives + SAVES (relayed to every monitor); {save:false} is a

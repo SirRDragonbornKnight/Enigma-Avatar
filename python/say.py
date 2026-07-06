@@ -1,6 +1,6 @@
 """say.py - fire one command at the avatar bus (enigma-avatar/bus.py).
 
-    python enigma-avatar/say.py model mal0          # switch model (roxanne / toothless / glados / mal0 / spyro / ...)
+    python enigma-avatar/say.py model zhu_yuan      # switch model (any models/ folder name; a unique prefix works: `model zhu`)
     python enigma-avatar/say.py default             # show the zero-asset procedural placeholder (works with no model installed)
     python enigma-avatar/say.py size 0.8            # resize
     python enigma-avatar/say.py move 300 400        # move to screen x,y (pixels)
@@ -24,58 +24,43 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import websockets
 
 URI = "ws://127.0.0.1:8765"
 HERE = Path(__file__).resolve().parent
 
-# The 3 built-in models (committed in code; NOT in models.json), with their aliases.
-BUILTINS = {
-    "roxanne": "./models/roxanne_wolf/scene.gltf",
-    "rox": "./models/roxanne_wolf/scene.gltf",
-    "1": "./models/roxanne_wolf/scene.gltf",
-    "toothless": "./models/toothless/scene.gltf",
-    "nightfury": "./models/toothless/scene.gltf",
-    "fury": "./models/toothless/scene.gltf",
-    "2": "./models/toothless/scene.gltf",
-    "glados": "./models/glados/scene.gltf",
-    "3": "./models/glados/scene.gltf",
-}
-# Friendly short name -> models.json id. The model PATHS now live ONLY in models.json
-# (the user-added manifest) - a single source of truth, so paths can't drift between here
-# and the overlay. Models added via the UI are reachable here by their id automatically.
-ALIASES = {
-    "mal0": "mal0_scp-1471",
-    "spyro": "spyro",
-    "grace": "grace_howard",
-    "fexa": "fexa_-_fnaf__cryptiacurves",
-    "lolbit": "fnaf_help_wanted__lolbit",
-    "chica": "love-taste-toy-chica",
-    "mangle": "glamrock_mangleupdated",
-    "51dc": "51dc47334dee42b9bb8e53ee07aa8006",
-}
+# The models/ FOLDER is the library (same rule as src/model/library.cjs) - no name table to
+# drift: scan it live, first mesh file per folder, percent-encoded url segments.
+MESH_EXT = (".glb", ".gltf", ".vrm", ".fbx")
 
 
-def _models_json() -> dict:
-    """{id: url} from the mod's models.json (user-added models)."""
+def _library() -> dict:
+    """{folder-name-lowercase: './models/<folder>/<mesh>' } scanned from the live models/ folder."""
+    out: dict[str, str] = {}
+    root = HERE.parent / "models"
     try:
-        data = json.loads((HERE.parent / "models.json").read_text(encoding="utf-8"))
-        return {m["id"]: m["url"] for m in data.get("models", []) if m.get("id") and m.get("url")}
-    except Exception:
-        return {}
+        for d in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_")):
+            meshes = sorted(f.name for f in d.iterdir() if f.suffix.lower() in MESH_EXT)
+            if meshes:
+                out[d.name.lower()] = "./models/" + quote(d.name, safe="") + "/" + quote(meshes[0], safe="")
+    except OSError:
+        pass
+    return out
 
 
 def _resolve_model(key: str) -> str:
-    """Built-ins -> short alias -> models.json id -> raw path/url passthrough."""
+    """models/ folder name (exact, then unique prefix, then unique substring) -> raw path/url passthrough."""
     k = key.lower().replace(" ", "")
-    if k in BUILTINS:
-        return BUILTINS[k]
-    mj = _models_json()
-    if k in ALIASES and ALIASES[k] in mj:
-        return mj[ALIASES[k]]
-    if k in mj:
-        return mj[k]
+    lib = _library()
+    if k in lib:
+        return lib[k]
+    hits = sorted(n for n in lib if n.startswith(k)) or sorted(n for n in lib if k in n)
+    if len(hits) == 1:
+        return lib[hits[0]]
+    if len(hits) > 1:
+        print(f"'{key}' matches several models: {', '.join(hits)} - sending as-is", file=sys.stderr)
     return key
 
 

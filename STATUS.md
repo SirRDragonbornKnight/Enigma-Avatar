@@ -1,6 +1,36 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smoke 7/7)._
+_Last updated 2026-07-06 (review + tidy round; suite 370/0/6, smoke 7/7)._
+
+## 2026-07-06 -- review + tidy round (later the same day)
+
+- **`query "pose"` = AI proprioception**: every role bone's live position in monitor px (the
+  `where`/`glideTo` convention). The drive loop is now pose -> query pose -> compare numbers ->
+  adjust; snap is for final visual confirmation only. Live-proven: raising the left arm moved
+  left_hand [1694,546]->[1710,521]; release settled back to exactly baseline.
+- **Review round (8 finder angles, adversarially verified) landed 10 fixes**: the sim host can
+  no longer tick a non-current model (every load announces; peers catch up via `peerModelUrl`,
+  the last url a peer can resolve; a skeleton-error clears the send dedup so a fixed file
+  retries; model paths percent-decode; the host owns the can-I-sim policy and answers
+  `skeleton-unsupported`); ONE sprung-bone truth per model (VRM springbone joints now reach the
+  finger-grip drop, not just the grab-lock exclusion); `bonePoints`/`whereAmI` answer null
+  before the first global-pos broadcast (no wrong-frame px); `poseTag` lives once in
+  mathutil.js for the renderer AND the sim host; shared projection seams
+  (`worldToGlobalPx`/`globalToMonitorPx`).
+- **Tidy round**: `hue` guards its entry AND profile read-back (a garbage angle can no longer
+  persist as a NaN shader uniform); `facial.setParams` validates profile read-back (finite
+  numbers + the two axis strings, mirroring facialTune); `connect()` keeps ONE bus link (a
+  second call no longer spawns parallel reconnect loops that double-dispatch every command);
+  say.py resolves models by scanning `models/` live (the folder IS the library; the dead
+  BUILTINS/ALIASES tables are gone); stale comments truth'd (references to the removed
+  cursor-look/gesture/eyegaze systems).
+- Receipts: node --test **370/0/6**, pytest **21/21**, live smoke **7/7**, `query pose`
+  bit-identical before/after the projection refactor.
+- Still open (decisions, not bugs): softmesh/stretch shipped while the spec parks "squish"
+  (spec REV or unsanctioned -- the user's call); the external MCP `avatar_command` forwarder
+  still lists 4 dead verbs (fix lives outside this repo). The audit backlog (set-not-read gaps:
+  speech state, display identity, attachment transforms, conjured-prop positions) stays
+  catalogued for triage.
 
 ## 2026-07-06 -- fresh-out-of-the-box cleanup
 

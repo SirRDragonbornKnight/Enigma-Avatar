@@ -78,6 +78,12 @@ export function createControlSurface(engine, services) {
     return b;
   };
 
+  // The ONE live bus socket + its pending reconnect timer. connect() is a public verb (devtools
+  // drive it too) — without this state a second call would open a parallel socket whose own
+  // reconnect loop never dies, and every broadcast command would dispatch N times.
+  let _busWs = null,
+    _busRetry = null;
+
   const EnigmaAvatar = {
     // (deliberately NO clip-playback API — actions / play / loopClip / playAnim / stopAnim; motion is AI-authored)
     moveTo(px, py, dur) {
@@ -408,8 +414,14 @@ export function createControlSurface(engine, services) {
     rotateMode: (on) => setRotateMode(on),
     getRotateMode: () => engine.rotateMode, // drag-to-spin mode on/off
     connect(url = "ws://127.0.0.1:8765") {
+      if (_busWs && (_busWs.readyState === WebSocket.CONNECTING || _busWs.readyState === WebSocket.OPEN)) return; // one bus link — a live socket stays the only dispatcher
+      if (_busRetry) {
+        clearTimeout(_busRetry);
+        _busRetry = null;
+      }
       try {
         const ws = new WebSocket(url);
+        _busWs = ws;
         ws.onopen = () => setStatus("AI bus connected");
         ws.onmessage = async (e) => {
           let c;
@@ -469,7 +481,10 @@ export function createControlSurface(engine, services) {
             } catch {}
           }
         };
-        ws.onclose = () => setTimeout(() => EnigmaAvatar.connect(url), 4000);
+        ws.onclose = () => {
+          if (_busWs === ws) _busWs = null; // a stale socket's close must not clear a newer link
+          _busRetry = setTimeout(() => EnigmaAvatar.connect(url), 4000); // a retry that finds a live link no-ops at the guard
+        };
         ws.onerror = () => ws.close();
       } catch (err) {
         console.error(err);

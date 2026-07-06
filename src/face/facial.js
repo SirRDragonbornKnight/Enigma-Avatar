@@ -11,6 +11,20 @@ import * as THREE from "three";
 import { detectMouthMorph } from "../rig/mouth-geometry.js";
 import { analyzeMorphGeometry } from "../rig/face-geometry.js"; // head-anchored eye/mouth band classifier
 
+// Read-back guard shared by every ladder's setParams: a saved profiles.json blob arrives RAW
+// (hand-edited and legacy files included), and P feeds per-frame face math — mirror the writer
+// (facialTune): finite NUMBERS only, plus the two documented string axes.
+function mergeParams(P, p) {
+  for (const k in p || {}) {
+    if (k === "jawAxis" || k === "lidAxis") {
+      if (p[k] === "x" || p[k] === "y" || p[k] === "z") P[k] = p[k];
+    } else {
+      const n = +p[k];
+      if (isFinite(n)) P[k] = n;
+    }
+  }
+}
+
 // Widened name dictionaries (ARKit camelCase, Unified Expressions, VRoid
 // Fcl_*, CC V_*, MMD Japanese). No bare \bopen\b — it grabs eye_open etc.
 const OPEN_RE =
@@ -84,7 +98,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
       info: `VRM expressions (mouth '${mouthName}'${blinkName ? ` / blink '${blinkName}'` : " / blink none"}${smileName ? ` / smile '${smileName}'` : ""})`,
       ownedMorphs: [], // VRM drives expressions, not raw morph indices
       params: P,
-      setParams: (p) => Object.assign(P, p),
+      setParams: (p) => mergeParams(P, p),
       setMouth: (a) => {
         const n = +a;
         if (isFinite(n)) mouthTgt = clamp01(n);

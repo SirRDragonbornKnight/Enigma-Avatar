@@ -262,7 +262,7 @@ export function buildSpringBones(model, opts = {}) {
     }));
   }
   function setRegionWeight(region, w) {
-    const v = clamp(+w || 0, 0, 2); // 0..2 matches the Settings slider range (0=rigid, 1=default, 2=bouncy)
+    const v = clamp(+w || 0, 0, 2); // 0..2 matches the Settings numeric range (0=rigid, 1=default, 2=bouncy)
     P.regionWeight[region] = v;
     return v;
   }

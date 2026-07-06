@@ -55,7 +55,7 @@ import { createGrabFollowFn, pickLockBone } from "./motion/grabfollow.js"; // ra
 // raw bones — wiping the pose proc just wrote — UNLESS autoUpdateHumanBones was disabled at load (#1).
 // Pure w.r.t. its args (no module globals).
 export function stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm, soft } = {}) {
-  if (proc) proc.update(dt, false); // base pose + cursor-look + the AI's motion layers + grip (no idle, no clips, no canned gestures)
+  if (proc) proc.update(dt, false); // base pose + the AI's motion layers + grip (no idle, no clips, no canned gestures)
   if (facial && facialOn) facial.update(dt); // blink + lip-sync (jaw / morphs / VRM weights)
   if (spring && springOn) {
     rig?.updateWorldMatrix?.(false, true);
@@ -1120,7 +1120,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       }
     proc?.bindExtras?.({ sprungNames: _sprungNames });
     // (There is NO per-model idle profile — the whole idle system is deliberately absent; do not
-    // re-add. Reactive channels — cursor-look, blink, springs, gestures, grip — stay.)
+    // re-add. Reactive channels — blink, springs, grip — stay.)
     // flush relayed mutations that were queued while THIS window's copy lagged the model switch
     if (_staleCmds.length) {
       const q = _staleCmds.filter((x) => x.key === curKey);
@@ -1855,16 +1855,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return n;
   }
   function hueShift(name, deg) {
-    const n = _setHue(name, deg);
+    const d = +deg;
+    if (!isFinite(d)) return 0; // a garbage angle must not reach the shader OR the profile (a saved NaN re-applies every load)
+    const n = _setHue(name, d);
+    if (!n) return 0; // no material by that name — nothing tinted, nothing persisted
     const p = profileFor(curKey);
     p.hue = p.hue || {};
-    p.hue[name] = deg;
+    p.hue[name] = d;
     saveProfileSoon();
     return n;
   }
   function applyHue() {
+    // read-back guard: a legacy/hand-edited profile value must not reach the shader as NaN
     const h = profileFor(curKey).hue;
-    if (h) for (const k in h) _setHue(k, h[k]);
+    if (h) for (const k in h) if (isFinite(+h[k])) _setHue(k, +h[k]);
   }
 
   // --- hit-test via the on-screen PIXEL SILHOUETTE (what actually renders) -------
