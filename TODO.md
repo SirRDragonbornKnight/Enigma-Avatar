@@ -142,8 +142,9 @@ are genuinely open.
       `props/` is gitignored (provisioned-locally convention), so this is a per-box stage, not a commit --
       re-stage on a fresh clone. (NB: the file is ~64 MB -- heavy for a thrown prop; consider a lighter ball.)
 - [x] **Orphan `profiles.json` keys -- PRUNED 2026-07-06.** 7 keys whose targets no longer exist
-      (the trashed zhu_yuan__nsfw__zzz x3 + 4 unresolvable bare-name keys); the pruned entries are
-      archived at `models/_trash/profiles_pruned-2026-07-06.json` in case a model comes back.
+      (the trashed zhu_yuan__nsfw__zzz x3 + 4 unresolvable bare-name keys). The archive of the
+      pruned entries went to the Recycle Bin with `models/_trash` (emptied same day at the user's
+      direction; the trashed models are gone for good, so their tuning is moot).
 - [x] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree` -- DONE.** `extract_tree` now
       contains every write under `realpath(out_dir)`: it strips a leading `/` and Windows drive letter, then
       skips+warns on any entry whose `realpath` isn't under the out-root (`commonpath` check).

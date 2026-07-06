@@ -9,9 +9,11 @@ _Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smok
 - Swept the last stale-word drift: package.json description no longer says "emotes" (purged
   2026-06-25); dead `rl/` .gitignore entry removed; doc test-counts synced below.
 - Pruned 7 dead `profiles.json` keys (targets no longer exist: the trashed zhu_yuan__nsfw__zzz x3
-  plus 4 unresolvable bare-name keys); pruned entries archived at
-  `models/_trash/profiles_pruned-2026-07-06.json` in case a model comes back. Cleared regenerable
-  runtime litter (`outputs/` wavs/logs/one-off probes, `__pycache__/`).
+  plus 4 unresolvable bare-name keys). Cleared regenerable runtime litter (`outputs/` wavs/logs/
+  one-off probes, `__pycache__/` -- NB these regenerate on every python run / TTS use; that is
+  their job, not drift). Later the same day, `models/_trash` (41 MB, incl. the pruned-profiles
+  archive) was emptied to the Windows Recycle Bin at the user's direction -- the trashed models
+  are gone for good, so their tuning is moot. `removeModel` recreates `_trash` on demand.
 - CI added: `.github/workflows/ci.yml` runs the full headless gate (lint + typecheck +
   format:check + node --test + pytest) on every push/PR -- the remote-side twin of the
   pre-commit hook (realmodels skips cleanly without the model library).
