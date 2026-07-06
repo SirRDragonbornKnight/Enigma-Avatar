@@ -56,9 +56,16 @@ schema-first protocol generation. Staged order, each stage COMPLETE + gated + sm
      avatar:modelLoaded announcement (main -> host, dedup + restart-resend; unsupported formats
      log honestly). LIVE PARITY RECEIPT: "[simhost] skeleton ryuri.glb: 907 bones, 12/19 roles"
      == rig_report's ground truth, bit-identical. 5 intent tests incl. real-model parity.
-     NEXT: S2-b-iii -- compositor + springs drive the host skeleton, pose buffer flows to main
-     (windows still ignore it); THEN the switchover day (brain demotes to a view; live launches
-     + user click-through spot-checks).
+     S2-b-iii DONE 2026-07-06: the compositor + springs drive the host skeleton through the REAL
+     per-frame seam (stepProcVrmFrame imported headless -- the vrm_order.test precedent), and the
+     flat pose buffer ([tag, motionY, root quat+scale, bone quats]) flows to main at ~30Hz
+     (drift-corrected pacing; the naive after-work setTimeout measured 16/s on 907 bones). LIVE
+     RECEIPTS: "skeleton ryuri.glb: 907 bones, 12/19 roles, drive check 57.3 deg" (a forearm flex
+     driven under the real speed clamps, eased back before buffers ship) + "pose buffer flowing
+     (3635 floats)" (= 2+5+907x4 exact) + "pose rate ~30/s". Honest gaps to the switchover: no
+     facial/morph buffer section, no per-avatar spring regionWeight (S3 state), FBX/VRM stay
+     brain-hosted. NEXT: the SWITCHOVER (brain demotes to a view consuming this buffer; grab
+     servo + rapier + conjure move in) -- live launches + user click-through spot-checks REQUIRED.
   S3: one state store in main (localStorage + browser fallbacks removed).
   S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
   S5: IK + ragdoll on the clean core.

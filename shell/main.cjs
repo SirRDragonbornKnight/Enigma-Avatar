@@ -1282,6 +1282,8 @@ let _simHost = null,
   _simHostRestarts = 0,
   _simHostDown = false; // true once WE asked it to die (quit path) — an expected exit never restarts
 let _lastSimHostModel = null; // dedup: reloads re-announce the same url; the host builds once
+let _posesSeen = 0,
+  _poseT0 = 0; // S2-b-iii receipt counters (first arrival + measured rate, logged once each)
 // Renderer model URL -> disk path. Mirrors the app:// protocol handler's shapes: bundle-relative
 // ("./models/..."), app://enigma/<bundle path>, app://enigma/@fs/<absolute>, or a bare absolute.
 function modelUrlToPath(u) {
@@ -1328,8 +1330,20 @@ function startSimHost() {
       console.log(
         `[simhost] ready -- ${m.ticks} ticks in ${m.uptimeMs}ms, probe bones ${m.probeBones}, three r${m.threeRev}`
       );
-    else if (m.type === "skeleton") console.log(`[simhost] skeleton ${m.file}: ${m.bones} bones, ${m.roles}/19 roles`);
+    else if (m.type === "skeleton")
+      console.log(`[simhost] skeleton ${m.file}: ${m.bones} bones, ${m.roles}/19 roles, drive check ${m.driveDeg} deg`);
     else if (m.type === "skeleton-error") console.error(`[simhost] skeleton FAILED ${m.file}: ${m.error}`);
+    else if (m.type === "pose") {
+      // S2-b-iii: the host's pose buffer arrives ~30Hz. Nothing consumes it yet — count it, log
+      // the first arrival and the measured rate once, then stay quiet (no log spam at 30Hz).
+      _posesSeen++;
+      if (_posesSeen === 1) {
+        _poseT0 = Date.now();
+        console.log(`[simhost] pose buffer flowing (${m.buf?.length ?? 0} floats)`);
+      } else if (_posesSeen === 91) {
+        console.log(`[simhost] pose rate ~${Math.round(90000 / Math.max(1, Date.now() - _poseT0))}/s`);
+      }
+    }
   });
   _simHost.on("exit", (code) => {
     _simHost = null;
