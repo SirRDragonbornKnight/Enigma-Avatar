@@ -1296,16 +1296,26 @@ function modelUrlToPath(u) {
 // restart (spawn) so a fresh host rebuilds the current skeleton.
 function sendModelToSimHost(force = false) {
   const url = currentModelUrl;
-  if (!_simHost || !url || url === "__default__") return;
-  if (!force && url === _lastSimHostModel) return;
-  _lastSimHostModel = url;
-  const p = modelUrlToPath(url);
-  if (!/\.(glb|gltf)$/i.test(p)) {
-    console.log(`[simhost] skeleton: unsupported format (${path.extname(p) || "?"}) -- brain stays authoritative`);
-    return;
+  if (!_simHost) return;
+  let p = null;
+  if (url && url !== "__default__") {
+    try {
+      p = modelUrlToPath(url); // decodeURIComponent throws on a malformed % — a bad url must not take the main process down
+    } catch (e) {
+      console.error(`[simhost] model url unmappable (${url}): ${String(e)}`);
+    }
+    if (p && !/\.(glb|gltf)$/i.test(p)) {
+      console.log(`[simhost] skeleton: unsupported format (${path.extname(p) || "?"}) -- brain stays authoritative`);
+      p = null;
+    }
   }
+  // p === null -> the host gets a model DROP: without it a switch to an unsupported/default model
+  // left the host ticking the PREVIOUS skeleton and shipping its stale poses forever.
+  const key = p ? url : null;
+  if (!force && key === _lastSimHostModel) return;
   try {
-    _simHost.postMessage({ type: "model", path: p });
+    _simHost.postMessage(p ? { type: "model", path: p, url } : { type: "model", path: null });
+    _lastSimHostModel = key; // recorded only after a successful send — a failed send stays resendable
   } catch (e) {
     console.error("[simhost] model send failed:", String(e));
   }

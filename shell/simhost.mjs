@@ -69,10 +69,18 @@ function stepLive(dt) {
 
 // Flat pose buffer (renderer serializePose layout, minus the morph section for now):
 // [tag, motionY, rootQuat x4, rootScale, boneQuat x4 per bone...]
+// tag = the renderer's curKey hash (same rolling hash as avatar.js _poseTag) so a different
+// model can never apply onto this layout — bone COUNT alone can coincide across models.
+function poseTag(key) {
+  let h = 0;
+  const s = String(key);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 8) / 8388608;
+}
 function fillPoseBuf() {
   const { root, bones, buf } = _live;
   let k = 0;
-  buf[k++] = bones.length; // tag: a different skeleton must never apply onto this layout
+  buf[k++] = _live.tag; // a different skeleton must never apply onto this layout
   buf[k++] = 0; // motionY (root-motion stays 0 — the AI authors motion via layers)
   buf[k++] = root.quaternion.x;
   buf[k++] = root.quaternion.y;
@@ -130,13 +138,16 @@ loop();
 // then a DRIVE CHECK through the real seam (bend a forearm under the real speed clamps, measure
 // the world moved, ease back) so the receipt proves the compositor DRIVES this skeleton — not
 // just that it exists.
-function buildLive(modelPath) {
+function buildLive(modelPath, url) {
   const { root, bones } = buildSkeleton(gltfJsonFromBuffer(fs.readFileSync(modelPath)));
   const resolved = resolveRig(root, null);
   const roleCount = Object.values(resolved.roles || {}).filter(Boolean).length;
   const proc = buildProceduralRig(root, BONE_LIMITS, resolved);
   const spring = buildSpringBones(root, { exclude: resolved.springExclude }); // regionWeight arrives with profile state (S3)
-  _live = { root, bones, proc, spring, buf: new Float32Array(2 + 5 + bones.length * 4) };
+  // tag: the renderer hashes its curKey (the model URL); an older main that sends no url gets the
+  // bone count — still a tag, just the weaker one
+  const tag = url != null ? poseTag(url) : bones.length;
+  _live = { root, bones, proc, spring, tag, buf: new Float32Array(2 + 5 + bones.length * 4) };
   let driveDeg = 0;
   const fbRole = resolved.roles?.left_forearm ? "left_forearm" : resolved.roles?.right_forearm ? "right_forearm" : null;
   if (fbRole) {
@@ -154,8 +165,14 @@ function buildLive(modelPath) {
 process.parentPort.on("message", (e) => {
   const m = e.data || {};
   if (m.type === "model") {
+    if (!m.path) {
+      // model DROP: the current model is one this host can't sim (unsupported format / none
+      // loaded) — a stale skeleton must not keep shipping the previous model's poses
+      _live = null;
+      return;
+    }
     try {
-      const r = buildLive(m.path);
+      const r = buildLive(m.path, m.url);
       process.parentPort.postMessage({ type: "skeleton", file: String(m.path).split(/[\\/]/).pop(), ...r });
     } catch (err) {
       _live = null;
