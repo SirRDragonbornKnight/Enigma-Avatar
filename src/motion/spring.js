@@ -53,6 +53,20 @@ export function buildSpringBones(model, opts = {}) {
   const seen = new Set();
   model.updateWorldMatrix(true, true);
 
+  // LOAD-BEARING guard: a bone whose SUBTREE contains a role-claimed bone CARRIES the body —
+  // springing it swings everything above it like a tail. Springs are for TERMINAL dangly chains
+  // only. (zhu_yuan 2026-07-06: Daz names its spine "abdomenLower/abdomenUpper"; abdomenUpper
+  // missed the spine role, classified as the "belly" jiggle region, and put her ENTIRE top half
+  // -- chest, arms, head -- on a spring: every grab read as a spasm. True belly/chest jiggle
+  // leaves have no role bones beneath them and keep their regions.)
+  const carriesRole = new Set();
+  if (exclude.size) {
+    for (const rb of exclude) {
+      if (!rb || !rb.isObject3D) continue;
+      for (let p = rb.parent; p; p = p.parent) if (p.isBone) carriesRole.add(p);
+    }
+  }
+
   const boneKids = (o) => o.children.filter((c) => c.isBone);
   function addItem(o, geo, region) {
     if (seen.has(o)) return;
@@ -76,9 +90,10 @@ export function buildSpringBones(model, opts = {}) {
   }
 
   // 1) name-based — the reliable path. Skip any bone a humanoid role already claimed
-  //    (exclude) or the twin-dedup opted out (neverExtra).
+  //    (exclude), any bone that CARRIES a role bone (load-bearing — the guard above),
+  //    or the twin-dedup opted out (neverExtra).
   model.traverse((o) => {
-    if (!o.isBone || exclude.has(o) || springNever.has(o.name)) return;
+    if (!o.isBone || exclude.has(o) || carriesRole.has(o) || springNever.has(o.name)) return;
     const region = classifyBone(o.name);
     if (region) addItem(o, false, region);
   });

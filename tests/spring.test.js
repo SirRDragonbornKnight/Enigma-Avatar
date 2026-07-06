@@ -254,3 +254,34 @@ test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 v
     `deflection must agree across frame-rates (60fps ${a.toFixed(4)} vs 120fps ${b.toFixed(4)} rad, rel diff ${(rel * 100).toFixed(1)}%)`
   );
 });
+
+// --- the LOAD-BEARING guard (zhu_yuan 2026-07-06): a jiggle-region NAME on a bone that
+// CARRIES role bones must never spring — Daz's "abdomenUpper" (spine chain, classified
+// "belly") put her whole top half on a spring and every grab read as a spasm. A true
+// terminal belly leaf (no role beneath it) keeps its jiggle.
+test("a region-named bone CARRYING role bones is load-bearing -- never sprung", () => {
+  const bone = (n, x = 0, y = 0.3) => {
+    const b = new THREE.Bone();
+    b.name = n;
+    b.position.set(x, y, 0);
+    return b;
+  };
+  const root = new THREE.Group();
+  const hips = bone("hips", 0, 1);
+  const abdomenUpper = bone("abdomenUpper"); // classifies as the "belly" region
+  const chest = bone("chest");
+  const head = bone("head");
+  const bellyLeaf = bone("bellyFat", 0.2, -0.2); // terminal jiggle leaf under hips
+  const bellyTip = bone("bellyFatTip", 0, -0.15); // (a spring item needs a child for length)
+  root.add(hips);
+  hips.add(abdomenUpper);
+  abdomenUpper.add(chest);
+  chest.add(head);
+  hips.add(bellyLeaf);
+  bellyLeaf.add(bellyTip);
+  root.updateWorldMatrix(true, true);
+  const exclude = new Set([hips, chest, head]); // the role-claimed bones (spine slot missed abdomenUpper)
+  const names = new Set(buildSpringBones(root, { exclude }).names);
+  assert.ok(!names.has("abdomenUpper"), "abdomenUpper carries chest/head -- springing it swings the whole top half");
+  assert.ok(names.has("bellyFat"), "a terminal belly leaf keeps its jiggle");
+});
