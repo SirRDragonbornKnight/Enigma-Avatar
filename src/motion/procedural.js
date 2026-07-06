@@ -806,8 +806,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // ===== THE FRAME LOOP. She stands bit-still at REST; the ONLY things that move her are the AI's
   // own additive motion LAYERS (pose/flex over the bus, P1) + the reactive
   // finger grip while carried. No idle, no canned gestures/expressions, no clip playback — every
-  // deliberate move is AI-authored through the compositor (the gesture catalog / root-motion / clip
-  // playback / body expressions were PURGED 2026-06-25, user order "purge means purge"). =====
+  // deliberate move is AI-authored through the compositor. There is deliberately NO gesture catalog /
+  // root-motion / clip playback / body-expression set (user ruling 2026-06-25 "purge means purge" —
+  // do not re-add). =====
   function update(dt, _walk = false, opts = {}) {
     _additive = !!opts.additive;
 
