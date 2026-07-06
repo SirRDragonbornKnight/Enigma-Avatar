@@ -21,6 +21,7 @@ import { createSimTick } from "../src/engine/sim.js";
 import { gltfJsonFromBuffer, buildSkeleton } from "../src/engine/skeleton.js";
 import { buildProceduralRig } from "../src/motion/procedural.js";
 import { buildSpringBones } from "../src/motion/spring.js";
+import { poseTag } from "../src/util/mathutil.js"; // the ONE tag hash, shared with the renderer's _poseTag
 import { stepProcVrmFrame } from "../src/avatar.js"; // the module-top seam — imports WITHOUT the browser bootstrap (proven by tests/vrm_order.test.js)
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -69,14 +70,8 @@ function stepLive(dt) {
 
 // Flat pose buffer (renderer serializePose layout, minus the morph section for now):
 // [tag, motionY, rootQuat x4, rootScale, boneQuat x4 per bone...]
-// tag = the renderer's curKey hash (same rolling hash as avatar.js _poseTag) so a different
-// model can never apply onto this layout — bone COUNT alone can coincide across models.
-function poseTag(key) {
-  let h = 0;
-  const s = String(key);
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return (h >>> 8) / 8388608;
-}
+// tag = mathutil.poseTag of the model url — the renderer stamps the SAME hash of the SAME
+// string, so a different model can never apply onto this layout (bone COUNT alone can coincide).
 function fillPoseBuf() {
   const { root, bones, buf } = _live;
   let k = 0;
@@ -139,14 +134,16 @@ loop();
 // the world moved, ease back) so the receipt proves the compositor DRIVES this skeleton — not
 // just that it exists.
 function buildLive(modelPath, url) {
+  // The tag must be the hash of the renderer's curKey — main relays exactly that string. A model
+  // message without a url is malformed: fail LOUDLY (skeleton-error) instead of stamping a
+  // guaranteed-mismatching tag the renderer would silently reject frame after frame.
+  if (url == null) throw new Error("model message missing url (the pose tag is the renderer's curKey hash)");
   const { root, bones } = buildSkeleton(gltfJsonFromBuffer(fs.readFileSync(modelPath)));
   const resolved = resolveRig(root, null);
   const roleCount = Object.values(resolved.roles || {}).filter(Boolean).length;
   const proc = buildProceduralRig(root, BONE_LIMITS, resolved);
   const spring = buildSpringBones(root, { exclude: resolved.springExclude }); // regionWeight arrives with profile state (S3)
-  // tag: the renderer hashes its curKey (the model URL); an older main that sends no url gets the
-  // bone count — still a tag, just the weaker one
-  const tag = url != null ? poseTag(url) : bones.length;
+  const tag = poseTag(url);
   _live = { root, bones, proc, spring, tag, buf: new Float32Array(2 + 5 + bones.length * 4) };
   let driveDeg = 0;
   const fbRole = resolved.roles?.left_forearm ? "left_forearm" : resolved.roles?.right_forearm ? "right_forearm" : null;
@@ -166,9 +163,17 @@ process.parentPort.on("message", (e) => {
   const m = e.data || {};
   if (m.type === "model") {
     if (!m.path) {
-      // model DROP: the current model is one this host can't sim (unsupported format / none
-      // loaded) — a stale skeleton must not keep shipping the previous model's poses
+      // model DROP: nothing on disk backs the current model (transient blob load / none loaded)
+      // — a stale skeleton must not keep shipping the previous model's poses
       _live = null;
+      return;
+    }
+    if (!/\.(glb|gltf)$/i.test(m.path)) {
+      // THIS host owns "what can I sim": glTF/GLB only. The policy must be an explicit check,
+      // not a parse failure — a .vrm is a valid GLB container the skeleton builder would happily
+      // parse with WRONG semantics (no VRM handling here). FBX/VRM stay brain-hosted.
+      _live = null;
+      process.parentPort.postMessage({ type: "skeleton-unsupported", file: String(m.path).split(/[\\/]/).pop() });
       return;
     }
     try {

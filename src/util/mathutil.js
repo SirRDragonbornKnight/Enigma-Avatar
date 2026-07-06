@@ -26,6 +26,18 @@ export function rotFromProfile(p) {
   return { x: 0, y: norm360(p && p.yaw), z: 0 };
 }
 
+// Model-identity tag for the flat pose buffer: a rolling hash of the model URL, quantized to a
+// float32-exact value in [0, 2) ((h>>>8)/2^23 — a 24-bit numerator over 2^23). The renderer stamps
+// its curKey and the sim host stamps the SAME url main relayed, so a buffer from a different
+// skeleton can never apply onto this layout. ONE implementation on purpose: applyPose drops a
+// mismatched tag silently, so two drifting copies would freeze the avatar with zero diagnostics.
+export function poseTag(key) {
+  let h = 0;
+  const s = String(key);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 8) / 8388608;
+}
+
 // What to persist for a rotation: the normalized {x,y,z}, or null if it's all-zero (→ caller deletes
 // the key so an untouched model doesn't bloat profiles.json). Caller also drops the legacy `yaw`.
 export function rotToSave(r) {

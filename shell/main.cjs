@@ -1006,14 +1006,21 @@ function init() {
     const b = brainEntry();
     if (b && b.win.webContents.id === e.sender.id) toPeers("avatar:props", buf);
   });
-  // Brain → peers: mirror the model the brain just loaded/switched to.
+  // Brain → main: EVERY load is announced (main owns currentModelUrl; the sim host must never
+  // keep ticking a previous model's skeleton). Main routes per consumer below.
   ipcMain.on("avatar:modelLoaded", (e, url) => {
     const b = brainEntry();
     if (b && b.win.webContents.id === e.sender.id && url) {
       currentModelUrl = url;
       endDrag();
-      console.error("[main] brain loaded " + url + " -> relaying to " + (liveWindows().length - 1) + " peer(s)");
-      toPeers("avatar:model", url);
+      // Peers mirror only urls THEY can resolve (bundle-relative / app:// / absolute / the
+      // no-model marker). A drag-drop's bare filename backs a blob URL local to the brain —
+      // peers keep the previous model instead of bricking on a phantom; the sim host still
+      // hears about it (build or honest DROP), so it can never ship a stale skeleton.
+      if (url === "__default__" || /^(\.\/|app:\/\/|[a-zA-Z]:[\\/]|\/)/.test(url)) {
+        console.error("[main] brain loaded " + url + " -> relaying to " + (liveWindows().length - 1) + " peer(s)");
+        toPeers("avatar:model", url);
+      } else console.error("[main] brain loaded " + url + " (transient blob load -- peers keep the previous model)");
       sendModelToSimHost(); // S2-b-ii: the sim host builds this same skeleton headless
     }
   }); // endDrag: a model switch must never leave her glued to the cursor (a switch mid-grab left _drag chasing the OS cursor forever)
@@ -1281,18 +1288,22 @@ let _simHost = null,
 let _lastSimHostModel = null; // dedup: reloads re-announce the same url; the host builds once
 let _posesSeen = 0,
   _poseT0 = 0; // S2-b-iii receipt counters (first arrival + measured rate, logged once each)
-// Renderer model URL -> disk path. Mirrors the app:// protocol handler's shapes: bundle-relative
-// ("./models/..."), app://enigma/<bundle path>, app://enigma/@fs/<absolute>, or a bare absolute.
+// Renderer model URL -> disk path, or null when nothing on disk backs it. Mirrors the app://
+// protocol handler's shapes: bundle-relative ("./models/..."), app://enigma/<bundle path>,
+// app://enigma/@fs/<absolute>, or a bare absolute. EVERY branch decodes: library URLs are
+// percent-encoded (library.cjs modelUrl), and the app:// handler decodes when serving — a mesh
+// named "my model.glb" renders fine, so this mapping must not hand the host "my%20model.glb".
 function modelUrlToPath(u) {
   if (u.startsWith("app://enigma/@fs/")) return decodeURIComponent(u.slice("app://enigma/@fs/".length));
   if (u.startsWith("app://enigma/")) return path.join(ROOT, decodeURIComponent(u.slice("app://enigma/".length)));
-  if (u.startsWith("./")) return path.join(ROOT, u.slice(2));
+  if (u.startsWith("./")) return path.join(ROOT, decodeURIComponent(u.slice(2)));
   if (/^[a-zA-Z]:[\\/]/.test(u)) return u;
+  if (!u.includes("/") && !u.includes("\\")) return null; // a drag-drop's bare filename backs a blob URL — nothing on disk to read
   return path.join(ROOT, u);
 }
-// S2-b-ii: rides the EXISTING avatar:modelLoaded announcement (the brain -> peers mirror path);
-// the host builds the SAME skeleton headless from the file's own bytes. glTF/GLB only — an
-// unsupported format logs honestly and the brain stays authoritative. Also called on host
+// S2-b-ii: rides the avatar:modelLoaded announcement; the host builds the SAME skeleton headless
+// from the file's own bytes. The HOST owns the can-I-sim policy (it answers skeleton-unsupported
+// for formats it must not parse) — main only maps the url to a disk path. Also called on host
 // restart (spawn) so a fresh host rebuilds the current skeleton.
 function sendModelToSimHost(force = false) {
   const url = currentModelUrl;
@@ -1300,22 +1311,18 @@ function sendModelToSimHost(force = false) {
   let p = null;
   if (url && url !== "__default__") {
     try {
-      p = modelUrlToPath(url); // decodeURIComponent throws on a malformed % — a bad url must not take the main process down
+      p = modelUrlToPath(url); // null = nothing on disk (transient blob load) -> DROP below; decode throws on a malformed % — a bad url must not take the main process down
     } catch (e) {
       console.error(`[simhost] model url unmappable (${url}): ${String(e)}`);
     }
-    if (p && !/\.(glb|gltf)$/i.test(p)) {
-      console.log(`[simhost] skeleton: unsupported format (${path.extname(p) || "?"}) -- brain stays authoritative`);
-      p = null;
-    }
   }
-  // p === null -> the host gets a model DROP: without it a switch to an unsupported/default model
+  // p === null -> the host gets a model DROP: without it a switch to an unsimmable/default model
   // left the host ticking the PREVIOUS skeleton and shipping its stale poses forever.
   const key = p ? url : null;
   if (!force && key === _lastSimHostModel) return;
   try {
-    _simHost.postMessage(p ? { type: "model", path: p, url } : { type: "model", path: null });
-    _lastSimHostModel = key; // recorded only after a successful send — a failed send stays resendable
+    _simHost.postMessage({ type: "model", path: p, url }); // ONE message shape; path null = DROP
+    _lastSimHostModel = key; // recorded on send; a host-side BUILD failure clears it (see skeleton-error) so a fixed file retries
   } catch (e) {
     console.error("[simhost] model send failed:", String(e));
   }
@@ -1339,7 +1346,11 @@ function startSimHost() {
       );
     else if (m.type === "skeleton")
       console.log(`[simhost] skeleton ${m.file}: ${m.bones} bones, ${m.roles}/19 roles, drive check ${m.driveDeg} deg`);
-    else if (m.type === "skeleton-error") console.error(`[simhost] skeleton FAILED ${m.file}: ${m.error}`);
+    else if (m.type === "skeleton-error") {
+      console.error(`[simhost] skeleton FAILED ${m.file}: ${m.error}`);
+      _lastSimHostModel = null; // the file may be fixed/replaced under the same url — the next announce must RETRY, not dedup-skip
+    } else if (m.type === "skeleton-unsupported")
+      console.log(`[simhost] skeleton: unsupported format (${m.file}) -- brain stays authoritative`); // benign & final for this url: keep the dedup key (a retry can't change the verdict)
     else if (m.type === "pose") {
       // S2-b-iii: the host's pose buffer arrives ~30Hz. Nothing consumes it yet — count it, log
       // the first arrival and the measured rate once, then stay quiet (no log spam at 30Hz).

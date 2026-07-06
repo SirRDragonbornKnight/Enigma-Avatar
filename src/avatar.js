@@ -34,7 +34,16 @@ import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } f
 // There is deliberately NO clip retargeting: the AI authors motion via the compositor, not authored clips (do not re-add).
 // (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character — by design
 //  there is no placeholder model; do not self-author one.)
-import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
+import {
+  norm360,
+  signed180,
+  rotFromProfile,
+  rotToSave,
+  pickFps,
+  dipToLocalPx,
+  localPxToDip,
+  poseTag,
+} from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
 import { createGrabFollowFn, pickLockBone } from "./motion/grabfollow.js"; // ragdoll grab + the rigid-only mouse-lock bone picker (pure, unit-tested)
 
@@ -119,6 +128,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _p.set(wx, wy, 0).project(camera);
     return [(_p.x * 0.5 + 0.5) * innerWidth, (-_p.y * 0.5 + 0.5) * innerHeight];
   };
+  // world point → global DIP px: the ONE projection seam every screen-space consumer shares
+  // (bonePoints, the grab-lock servo) so their numbers can never disagree about the same bone.
+  const worldToGlobalPx = (wx, wy) => {
+    const [lx, ly] = toScreen(wx, wy);
+    return localPxToGlobal(lx, ly);
+  };
 
   // --- model / animation ------------------------------------------------------
   // Multi-format asset loading (glTF/GLB · VRM · FBX, spec-gloss compat, FBX material
@@ -199,6 +214,13 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     BONE_LIMITS = {};
   let _weightMass = null,
     _springNeverExtra = []; // skin-weight pass state (per loaded model): bone→mass + the sprung twin chains excluded by dedup
+  // ONE sprung-bone truth per loaded model, GLB and VRM alike (spring is null on VRM — vrm.update
+  // drives its springbones). Every consumer reads these instead of re-deriving its own set:
+  // _sprungNames = the sprung bones themselves (the finger-grip drop); _lockExclude = their whole
+  // OWNED subtrees (a chain LEAF is never an item but swings with its ancestors — the grab-lock
+  // servo must not lock ANY of it). Built once at load-finish, after every spring rebuild.
+  let _sprungNames = [],
+    _lockExclude = new Set();
   // --- RIGID-BODY physics (rapier, lazy WASM) — real dynamics for free props (throw the ball!).
   // Soft jiggle stays on spring.js; this layer is the §E foundation for sit/throw/cloth.
   const physics = createPhysics({ scene, loadAsset });
@@ -439,8 +461,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return { x: gGlide.x, y: gGlide.y, clamped };
   }
   // --- AI movement: where is she + named anchors, resolved against her CURRENT display ---------
+  function globalToMonitorPx(gx, gy) {
+    return [Math.round(gx - curDisp.x), Math.round(gy - curDisp.y)];
+  } // global DIP → px within her current monitor: THE px convention every report/verb shares
   function posScreen() {
-    return [Math.round(gPos.x - curDisp.x), Math.round(gPos.y - curDisp.y)];
+    return globalToMonitorPx(gPos.x, gPos.y);
   } // px within her current monitor
   function anchorGlobal(a) {
     // 12% edge margin; anchors sit a bit low (feet on the deck) — math in placement.js (unit-tested)
@@ -450,7 +475,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // px,py = px within her current display; dur (s) = timed glide (paces walks + lets a frame-blind
     // driver watch the motion). Returns the accepted-target truth {px,py,clamped}.
     const r = setGlide(curDisp.x + px, curDisp.y + py, dur);
-    return r ? { px: Math.round(r.x - curDisp.x), py: Math.round(r.y - curDisp.y), clamped: r.clamped } : null;
+    if (!r) return null;
+    const [ax, ay] = globalToMonitorPx(r.x, r.y);
+    return { px: ax, py: ay, clamped: r.clamped };
   }
   function goTo(target, dur) {
     // a named anchor (string) OR {px,py within current display}
@@ -464,9 +491,12 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const r = setGlide(g[0], g[1], dur);
     wake(1.2);
     setStatus("-> " + (typeof target === "string" ? target : Math.round(target.px) + "," + Math.round(target.py)));
-    return r ? { px: Math.round(r.x - curDisp.x), py: Math.round(r.y - curDisp.y), clamped: r.clamped } : null;
+    if (!r) return null;
+    const [ax, ay] = globalToMonitorPx(r.x, r.y);
+    return { px: ax, py: ay, clamped: r.clamped };
   }
   function whereAmI() {
+    if (!_gReady) return null; // before the first global-pos broadcast curDisp is a placeholder — a wrong-frame position is worse than an honest null
     return {
       screen: [curDisp.width, curDisp.height],
       screenPos: posScreen(),
@@ -483,16 +513,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // instead of a snap+look round-trip. getWorldPosition RECOMPUTES from the current local
     // quaternions; between frames (where bus handlers run) those hold the final composed pose,
     // so the answer matches the glass — never the mid-pass base pose.
-    if (!proc) return null;
+    if (!proc || !_gReady) return null; // no rig, or curDisp is still the boot placeholder (the px would be in the wrong frame)
     const roles = proc.roles();
     const bones = {};
     for (const role in roles) {
       const b = roles[role];
       if (!b) continue;
       b.getWorldPosition(_bpV);
-      const [lx, ly] = toScreen(_bpV.x, _bpV.y);
-      const g = localPxToGlobal(lx, ly);
-      bones[role] = [Math.round(g.x - curDisp.x), Math.round(g.y - curDisp.y)];
+      const g = worldToGlobalPx(_bpV.x, _bpV.y);
+      bones[role] = globalToMonitorPx(g.x, g.y);
     }
     return { screen: [curDisp.width, curDisp.height], screenPos: posScreen(), bones };
   }
@@ -665,6 +694,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     vrm = null;
     proc = null;
     spring = null;
+    _sprungNames = [];
+    _lockExclude = new Set();
     clearMeshList();
   }
 
@@ -794,12 +825,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (o.isMesh && o.morphTargetInfluences && o.morphTargetInfluences.length) _poseMorphs.push(o);
     });
     poseLen = 7 + 4 * _poseBones.length + _poseMorphs.reduce((n, m) => n + m.morphTargetInfluences.length, 0);
-    {
-      let h = 0;
-      const s = String(curKey);
-      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-      _poseTag = (h >>> 8) / 8388608;
-    } // same url → same tag in every window; float32-exact
+    _poseTag = poseTag(curKey); // same url → same tag in every window AND in the sim host (shared mathutil.poseTag)
     _poseBuf = new Float32Array(poseLen);
     _lastPose = null;
     sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE; // remember size per model (persisted)
@@ -1079,7 +1105,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     applyMeshVisibility(); // re-hide any meshes turned off (clothing variants etc.)
     applyMorphs(); // re-apply saved morph/blendshape values (the avatar's own toggles)
     applyRotation(); // restore the saved rotation (all 3 axes)
-    proc?.bindExtras?.({ sprungNames: spring ? spring.names : [] }); // the finger-grip layer must not double-drive a sprung hand ribbon (the spring writes those every frame after proc)
+    // Build the model's sprung-bone truth (see the declaration): GLB = the spring engine's bones,
+    // VRM = springBoneManager's joints. bindExtras gets the NAMES so the finger-grip layer never
+    // double-drives a sprung hand ribbon (springs write those every frame after proc) — on VRM
+    // too, where spring is null but vrm.update stomps its joints just the same.
+    _sprungNames = spring ? [...spring.names] : [];
+    _lockExclude = new Set(spring?.ownedNames || []);
+    if (vrm?.springBoneManager?.joints)
+      for (const j of vrm.springBoneManager.joints) {
+        if (j.bone?.isBone) _sprungNames.push(j.bone.name);
+        j.bone?.traverse?.((o) => {
+          if (o.isBone) _lockExclude.add(o.name);
+        });
+      }
+    proc?.bindExtras?.({ sprungNames: _sprungNames });
     // (There is NO per-model idle profile — the whole idle system is deliberately absent; do not
     // re-add. Reactive channels — cursor-look, blink, springs, gestures, grip — stay.)
     // flush relayed mutations that were queued while THIS window's copy lagged the model switch
@@ -1096,9 +1135,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     try {
       if (/\/models\//.test(curKey)) localStorage.setItem(LAST_MODEL_KEY, curKey);
     } catch {} // remember this model → reopen it next launch
-    // Tell main → peers mirror it. Transient blob loads (bare filename) stay LOCAL — a peer can't
-    // resolve another window's blob URL; it keeps the previous model instead of bricking on a phantom.
-    if (_isBrain && (curKey === DEFAULT_KEY || /\/models\//.test(curKey))) window.avatarIPC?.modelLoaded?.(curKey);
+    // Tell main EVERY load — main owns currentModelUrl, and the sim host must never keep ticking
+    // a skeleton that is not the current model. Main routes per consumer: peers mirror only urls
+    // they can resolve (a peer can't fetch another window's blob URL; they keep the previous
+    // model), the sim host gets a build or an honest DROP.
+    if (_isBrain) window.avatarIPC?.modelLoaded?.(curKey);
   }
   // --- skeleton overlay (inspect the rig: see EVERY bone, role-matched or not) ----
   function updateBoneHelper() {
@@ -2506,8 +2547,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     b.updateWorldMatrix(true, false);
     const p = b.localToWorld(_glV.copy(_grabLock.local));
-    const [lx, ly] = toScreen(p.x, p.y);
-    const g = localPxToGlobal(lx, ly);
+    const g = worldToGlobalPx(p.x, p.y);
     const rel = { x: g.x - gPos.x, y: g.y - gPos.y }; // the part's live offset from her anchor (DIP)
     if (!isFinite(rel.x) || !isFinite(rel.y)) return;
     let s = _grabLock.sent;
@@ -2541,17 +2581,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     {
       const bv = new THREE.Vector3();
       const lockR = (modelDims.h || 2) * sizeScale * 0.5; // generous: the click was on her silhouette
-      // sprung exclusion = the spring's OWNED subtrees (`names` alone misses chain LEAVES — a
-      // leaf is never an item but swings with its ancestors, and the tail tip is the most
-      // natural grab point) PLUS VRM's own springbone joints (spring is null on VRM;
-      // vrm.update drives that hair/skirt — the servo must not lock it either).
-      const lockExclude = new Set(spring?.ownedNames || []);
-      if (vrm?.springBoneManager?.joints)
-        for (const j of vrm.springBoneManager.joints)
-          j.bone?.traverse?.((o) => {
-            if (o.isBone) lockExclude.add(o.name);
-          });
-      const bb = pickLockBone(model, wx, wy, lockR, lockExclude, bv);
+      // sprung exclusion = the model's load-time _lockExclude (spring OWNED subtrees + VRM
+      // springbone subtrees — one truth, built where spring/vrm are known, not re-derived here).
+      const bb = pickLockBone(model, wx, wy, lockR, _lockExclude, bv);
       if (bb) {
         bb.updateWorldMatrix(true, false);
         const local = bb.worldToLocal(new THREE.Vector3(wx, wy, bb.getWorldPosition(bv).z)); // click at the bone's depth

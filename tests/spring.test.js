@@ -35,13 +35,7 @@ test("ownedNames covers the WHOLE sprung subtree — a chain LEAF is never an it
   const m = hairRig();
   // the hair chain extends in -Y, so its bones separate in the picker's SCREEN plane (x/y);
   // the tail runs in -Z where every link shares one screen point
-  const tip = (() => {
-    let b = null;
-    m.traverse((o) => {
-      if (o.isBone && o.name === "Hair_03") b = o;
-    });
-    return b;
-  })();
+  const tip = m.getObjectByName("Hair_03");
   const w = tip.getWorldPosition(new THREE.Vector3());
   const byNames = pickLockBone(m, w.x, w.y, 0.05, names, new THREE.Vector3());
   assert.equal(byNames && byNames.name, "Hair_03", "guard: the names-only exclude DOES lock the tip (the hole)");
@@ -58,13 +52,7 @@ test("role-matched limbs are NOT sprung once excluded (Phase 1 fix)", () => {
 });
 
 test("springs are DEAD STILL at rest (no self-generated breeze)", () => {
-  const findBone = (m, n) => {
-    let b = null;
-    m.traverse((o) => {
-      if (o.isBone && o.name === n) b = o;
-    });
-    return b;
-  };
+  const findBone = (m, n) => m.getObjectByName(n);
   const m = hairRig();
   const s = buildSpringBones(m, {});
   const q0 = findBone(m, "Hair_01").quaternion.clone();
@@ -193,13 +181,7 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
 test("a 0<w<1 region weight DAMPS amplitude under motion (the damp branch, behaviorally)", () => {
   // regionFeel's mapping is unit-tested in mathutil.test.js, but this is the spring test that
   // drives the `feel.damp > 0` branch itself.
-  const findBone = (m, n) => {
-    let b = null;
-    m.traverse((o) => {
-      if (o.isBone && o.name === n) b = o;
-    });
-    return b;
-  };
+  const findBone = (m, n) => m.getObjectByName(n);
   const qdot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
   const ang = (a, b) => 2 * Math.acos(Math.min(1, qdot(a, b)));
   const defl = (weight) => {
