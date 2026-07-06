@@ -275,6 +275,17 @@ export function buildSpringBones(model, opts = {}) {
   return {
     count: items.length,
     names: items.map((i) => i.bone.name),
+    // every bone whose MOTION this spring owns: the sprung items PLUS their whole bone subtrees.
+    // A chain LEAF is never an item (it has no child link to integrate) but swings with its
+    // sprung ancestors — anything servoing against "rigid" bones must exclude these, not `names`.
+    ownedNames: (() => {
+      const s = new Set();
+      for (const it of items)
+        it.bone.traverse((o) => {
+          if (o.isBone) s.add(o.name);
+        });
+      return [...s];
+    })(),
     update,
     setParams: (p) => {
       if (!p) return;

@@ -480,8 +480,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   function bonePoints() {
     // PROPRIOCEPTION (query "pose"): where each resolved role bone ACTUALLY is right now, in her
     // current monitor's px (the `where`/`glideTo` convention) — a driver verifies a pose by NUMBERS
-    // instead of a snap+look round-trip. Reads the last-RENDERED matrixWorld, i.e. post-sim truth,
-    // the same frame the glass shows — never the base pose a command handler would see mid-frame.
+    // instead of a snap+look round-trip. getWorldPosition RECOMPUTES from the current local
+    // quaternions; between frames (where bus handlers run) those hold the final composed pose,
+    // so the answer matches the glass — never the mid-pass base pose.
     if (!proc) return null;
     const roles = proc.roles();
     const bones = {};
@@ -2540,7 +2541,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     {
       const bv = new THREE.Vector3();
       const lockR = (modelDims.h || 2) * sizeScale * 0.5; // generous: the click was on her silhouette
-      const bb = pickLockBone(model, wx, wy, lockR, new Set(spring?.names || []), bv);
+      // sprung exclusion = the spring's OWNED subtrees (`names` alone misses chain LEAVES — a
+      // leaf is never an item but swings with its ancestors, and the tail tip is the most
+      // natural grab point) PLUS VRM's own springbone joints (spring is null on VRM;
+      // vrm.update drives that hair/skirt — the servo must not lock it either).
+      const lockExclude = new Set(spring?.ownedNames || []);
+      if (vrm?.springBoneManager?.joints)
+        for (const j of vrm.springBoneManager.joints)
+          j.bone?.traverse?.((o) => {
+            if (o.isBone) lockExclude.add(o.name);
+          });
+      const bb = pickLockBone(model, wx, wy, lockR, lockExclude, bv);
       if (bb) {
         bb.updateWorldMatrix(true, false);
         const local = bb.worldToLocal(new THREE.Vector3(wx, wy, bb.getWorldPosition(bv).z)); // click at the bone's depth

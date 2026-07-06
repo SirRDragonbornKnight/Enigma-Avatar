@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { buildSpringBones } from "../src/motion/spring.js";
+import { pickLockBone } from "../src/motion/grabfollow.js";
 import { resolveRig } from "../src/rig/rig.js";
 import { hairRig, fullBiped, opaqueBiped } from "./fixtures.js";
 
@@ -20,6 +21,34 @@ test("hairRig — springs hair/strand/tail/skirt; excludes forearm & fingers", (
   assert.equal(set.size, 9);
 });
 
+test("ownedNames covers the WHOLE sprung subtree — a chain LEAF is never an item but swings with its ancestors", () => {
+  const s = buildSpringBones(hairRig());
+  const names = new Set(s.names);
+  const owned = new Set(s.ownedNames);
+  for (const leaf of ["Tail_02", "Hair_03", "BackStrand3"]) {
+    assert.ok(!names.has(leaf), `${leaf} is a leaf — not an item`);
+    assert.ok(owned.has(leaf), `${leaf} swings with its sprung ancestors — the spring OWNS it`);
+  }
+  for (const n of s.names) assert.ok(owned.has(n), `owned includes every item (${n})`);
+  // the mouse-lock regression: excluding by \`names\` leaves the tail TIP lockable — the servo
+  // through a swinging leaf is the exact resonant launch the rigid-only picker exists to prevent
+  const m = hairRig();
+  // the hair chain extends in -Y, so its bones separate in the picker's SCREEN plane (x/y);
+  // the tail runs in -Z where every link shares one screen point
+  const tip = (() => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === "Hair_03") b = o;
+    });
+    return b;
+  })();
+  const w = tip.getWorldPosition(new THREE.Vector3());
+  const byNames = pickLockBone(m, w.x, w.y, 0.05, names, new THREE.Vector3());
+  assert.equal(byNames && byNames.name, "Hair_03", "guard: the names-only exclude DOES lock the tip (the hole)");
+  const byOwned = pickLockBone(m, w.x, w.y, 0.05, owned, new THREE.Vector3());
+  assert.ok(!byOwned || !owned.has(byOwned.name), "ownedNames exclude never locks a spring-owned bone");
+});
+
 test("role-matched limbs are NOT sprung once excluded (Phase 1 fix)", () => {
   // Pre-cascade, a hairless humanoid hit the geometric fallback and sprang all 14
   // limb bones. Passing the resolved role bones as `exclude` stops that.
@@ -28,7 +57,7 @@ test("role-matched limbs are NOT sprung once excluded (Phase 1 fix)", () => {
   assert.equal(buildSpringBones(model, { exclude }).count, 0);
 });
 
-test("springs are DEAD STILL at rest (the breeze was deleted with the idle system, 2026-06-12)", () => {
+test("springs are DEAD STILL at rest (no self-generated breeze)", () => {
   const findBone = (m, n) => {
     let b = null;
     m.traverse((o) => {
