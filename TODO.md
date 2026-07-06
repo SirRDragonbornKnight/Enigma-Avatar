@@ -119,6 +119,10 @@ real bus drive.**
       mangle arm recovery (+mangle hips/chest) via a cascade-tier improvement; grace_howard needs a UTF-8
       bone-name re-export (baked-in `U+FFFD` mojibake). Plus the user-input questions in section B (makiro
       hair, "reversed bones", "some parts don't show") -- need the user to say WHICH model/part.
+- [ ] **ryuri: teeth clip through her face** (user 2026-07-06). Her facial mode is morph-geom
+      (geometric mouth morph), blink none. Suspects: the jaw-drop morph moving lips but not a separate
+      teeth mesh, or a bind offset. Repro: load ryuri, closeup snap at rest + while speaking/mouth 0.7,
+      find WHEN the teeth surface. (zhu_yuan's face verified clean at rest/smile/mouth-open, front-on.)
 
 ### 2) Fixable now (small, code-only)
 
