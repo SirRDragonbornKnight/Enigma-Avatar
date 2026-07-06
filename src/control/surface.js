@@ -79,7 +79,7 @@ export function createControlSurface(engine, services) {
   };
 
   const EnigmaAvatar = {
-    // (clip-playback API — actions / play / loopClip / playAnim / stopAnim — removed with the clip-library purge 2026-06-25)
+    // (deliberately NO clip-playback API — actions / play / loopClip / playAnim / stopAnim; motion is AI-authored)
     moveTo(px, py, dur) {
       return glideTo(px, py, dur); // -> {px,py,clamped} accepted-target truth; dur (s) = timed glide
     }, // smooth-glide to screen px,py (stays there)
@@ -310,8 +310,7 @@ export function createControlSurface(engine, services) {
     stopSpeak: () => voice.stop(),
     expr: (p) => {
       // smile/brows 0..1 down the per-channel ladders; the reply names the tier that answered
-      // each channel ("vrm"|"morph"|"bones"|"none"). Facade home so devtools can drive it too
-      // (audit 2026-07-04: the bus verbs had no EnigmaAvatar counterpart).
+      // each channel ("vrm"|"morph"|"bones"|"none"). Facade home so devtools can drive it too.
       const f = engine.facial;
       if (!f?.setExpr) return { error: "no facial rig on this model" };
       return f.setExpr({ smile: p?.smile, brows: p?.brows });
@@ -395,7 +394,7 @@ export function createControlSurface(engine, services) {
           deforms: mass == null ? null : mass > 0.5,
         });
       });
-      out.sort((a, b) => (b.role ? 1 : 0) - (a.role ? 1 : 0) || (b.mass || 0) - (a.mass || 0)); // the bones that MATTER first: roles, then by how much mesh they really move ("the bone system seems bad" = 593 soup rows; user 2026-06-12)
+      out.sort((a, b) => (b.role ? 1 : 0) - (a.role ? 1 : 0) || (b.mass || 0) - (a.mass || 0)); // the bones that MATTER first: roles, then by how much mesh they really move — soup rigs list hundreds of helper rows
       return out;
     },
     setBoneLabel: (n, l) => setBoneLabel(n, l), // name a bone (saved per avatar)

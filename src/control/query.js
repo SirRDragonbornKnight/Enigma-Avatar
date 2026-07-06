@@ -2,18 +2,20 @@
 //
 // answerQuery(what) returns LIVE ground truth about the avatar for the bus `query` action: the
 // recolor/mesh/region/bone/morph handles, live rotation, facial mode, model, position, the
-// driver's capabilities, and a set of DIAGNOSTIC probes (joints, stance, IK residual, grip,
-// skin-weight truth, per-mesh bounds, eye gaze). Read-ONLY — it never mutates engine state.
+// driver's capabilities, and a set of DIAGNOSTIC probes (pose proprioception, joints, stance,
+// IK residual, grip, skin-weight truth, per-mesh bounds, eye gaze). Read-ONLY — it never mutates
+// engine state.
 //
 // WIRING: avatar.js calls createQueryReporter(engine, services) after the control surface exists.
 // `engine` is the live state container (built inline in avatar.js); state that changes over the avatar's life
 // (facial/proc/platforms/curDisp/curKey/sizeScale/weight maps/rig) is read off it and
 // snapshotted once at the TOP of each call so a single report is internally consistent. `services`
-// holds the stable helpers (EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo).
+// holds the stable helpers (EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo,
+// bonePoints).
 import * as THREE from "three";
 
 export function createQueryReporter(engine, services) {
-  const { EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo } = services;
+  const { EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo, bonePoints } = services;
 
   return function answerQuery(what) {
     const facial = engine.facial,
@@ -45,22 +47,23 @@ export function createQueryReporter(engine, services) {
             mode: facial.mode,
             info: facial.info,
             lipSync: facial.mode !== "none",
-            exprMode: facial.exprMode || { smile: "none", brows: "none" }, // which ladder tier answers each expr channel (audit 2026-07-04: this existed but was dropped from the report)
+            exprMode: facial.exprMode || { smile: "none", brows: "none" }, // which ladder tier answers each expr channel
           }
         : { mode: "none", lipSync: false, exprMode: { smile: "none", brows: "none" } };
     if (what === "model") return { url: curKey, size: +sizeScale.toFixed(2) };
     if (what === "where") return EnigmaAvatar.where(); // screen-px position + screen size + cursor (AI movement)
     if (what === "capabilities" || what === "caps") {
       // what the brain can drive: roles, flex-able limbs, channels, limits + the expression
-      // channels (audit 2026-07-04: `expr` existed but was NOT machine-discoverable — a driver
-      // grounding itself here concluded the model had no expressions and never sent it)
+      // channels — `expr` must be machine-discoverable here, or a driver grounding itself on
+      // capabilities concludes the model has no expressions and never sends it
       if (!proc) return null;
       return { ...proc.capabilities(), expressions: facial?.exprMode || { smile: "none", brows: "none" } };
     }
     if (what === "roles") return proc ? { bones: proc.roleBones(), flex: proc.flexAxes() } : null; // DIAGNOSTIC: role → actual bone name + flex axes
+    if (what === "pose") return bonePoints(); // PROPRIOCEPTION: each role bone's LIVE monitor-px landing spot — verify a pose by numbers, not a snap (null when no rig resolved)
     if (what === "joints") return proc ? proc.jointAngles() : null; // DIAGNOSTIC: live knee/elbow angles
     if (what === "stance") return proc?.stance ? proc.stance() : null; // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
-    if (what === "grip") return proc?.gripState ? proc.gripState() : null; // DIAGNOSTIC: the reactive finger grip (the idle diagnostic died with the idle machinery, 2026-06-12)
+    if (what === "grip") return proc?.gripState ? proc.gripState() : null; // DIAGNOSTIC: the reactive finger grip
     if (what === "outfits") return { outfits: outfitNames(), hiddenMeshes: profileFor(curKey).hiddenMeshes || [] }; // the saved looks + the live hidden set
     if (what === "platforms")
       return {

@@ -476,6 +476,25 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       gliding,
     };
   }
+  const _bpV = new THREE.Vector3();
+  function bonePoints() {
+    // PROPRIOCEPTION (query "pose"): where each resolved role bone ACTUALLY is right now, in her
+    // current monitor's px (the `where`/`glideTo` convention) — a driver verifies a pose by NUMBERS
+    // instead of a snap+look round-trip. Reads the last-RENDERED matrixWorld, i.e. post-sim truth,
+    // the same frame the glass shows — never the base pose a command handler would see mid-frame.
+    if (!proc) return null;
+    const roles = proc.roles();
+    const bones = {};
+    for (const role in roles) {
+      const b = roles[role];
+      if (!b) continue;
+      b.getWorldPosition(_bpV);
+      const [lx, ly] = toScreen(_bpV.x, _bpV.y);
+      const g = localPxToGlobal(lx, ly);
+      bones[role] = [Math.round(g.x - curDisp.x), Math.round(g.y - curDisp.y)];
+    }
+    return { screen: [curDisp.width, curDisp.height], screenPos: posScreen(), bones };
+  }
   // Root-motion (jump / flip / lay-down / get-up) was purged 2026-06-25; _motionY (the live vertical hop,
   // still carried in the pose buffer) stays 0. _cancelMotion just zeroes it so a model switch / manual
   // rotate can never strand her mid-air from a streamed-in value.
@@ -2419,6 +2438,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const answerQuery = createQueryReporter(engine, {
     EnigmaAvatar,
     _norm360,
+    bonePoints,
     getRot,
     outfitNames,
     profileFor,

@@ -33,6 +33,7 @@ function makeReporter(over = {}) {
   // `live` IS the engine state container (the reporter reads engine.facial / engine.proc / … off it);
   // mutate it between calls to prove live reads. rig is a stable object on the container.
   const engine = Object.assign(live, { rig: { rotation: { x: 0, y: Math.PI, z: 0 } } });
+  const bonePoints = spy(null); // avatar.js's world->monitor-px projector (null = no rig resolved)
   const aq = createQueryReporter(engine, {
     EnigmaAvatar: EA,
     _norm360: (v) => ((v % 360) + 360) % 360,
@@ -40,8 +41,9 @@ function makeReporter(over = {}) {
     outfitNames: () => ["casual"],
     profileFor: () => ({ hiddenMeshes: [] }),
     allMeshesInfo: () => [],
+    bonePoints,
   });
-  return { aq, EA, live };
+  return { aq, EA, live, bonePoints };
 }
 
 test("query('model') reports the current model + size, and reads it LIVE", () => {
@@ -71,8 +73,8 @@ test("query('facial') is honest when there is no face rig — and always reports
 test("query('capabilities') returns the driver's capabilities + expression channels, or null when no rig resolved", () => {
   const caps = { roles: 19, flexRoles: 10 };
   const { aq, live } = makeReporter({ proc: { capabilities: () => caps } });
-  // expr must be machine-DISCOVERABLE here (audit 2026-07-04: a driver grounding itself against
-  // capabilities concluded the model had no expressions and never sent the verb).
+  // expr must be machine-DISCOVERABLE here: a driver grounding itself against capabilities
+  // would otherwise conclude the model has no expressions and never send the verb.
   assert.deepEqual(aq("capabilities"), { ...caps, expressions: { smile: "none", brows: "none" } });
   live.facial = { exprMode: { smile: "morph", brows: "bones" } };
   assert.deepEqual(
@@ -93,6 +95,20 @@ test("query('rotation') converts the LIVE rig radians to normalized degrees", ()
 test("query('platforms') maps global platforms back into the current display's local px", () => {
   const { aq } = makeReporter({ curDisp: { x: 1000, y: 2000 }, platforms: [{ gx: 1005, gy: 2007, w: 50 }] });
   assert.deepEqual(aq("platforms"), { count: 1, platforms: [{ px: 5, py: 7, w: 50 }] });
+});
+
+test("query('pose') is the proprioception report — the projector's LIVE answer, honest null without a rig", () => {
+  // INTENT: a driver must be able to verify where a pose LANDED by numbers (monitor px), not by
+  // burning a snap+look round-trip. The reporter delegates to avatar.js's bonePoints projector.
+  const { aq, bonePoints } = makeReporter();
+  assert.equal(aq("pose"), null, "no rig resolved -> honest null, never a fake skeleton");
+  bonePoints.ret = {
+    screen: [2560, 1440],
+    screenPos: [1200, 1380],
+    bones: { head: [1210, 700], left_hand: [1120, 980] },
+  };
+  assert.deepEqual(aq("pose"), bonePoints.ret, "reports the projector's answer verbatim");
+  assert.equal(bonePoints.calls.length, 2, "every query re-projects — positions are read LIVE, never cached");
 });
 
 test("an unknown 'what' falls back to full live state (default), never a throw", () => {

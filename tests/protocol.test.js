@@ -26,7 +26,7 @@ test("isAction recognizes known verbs and rejects everything else", () => {
 });
 
 test("QUERY_KINDS covers the load-bearing reports and excludes the registry-handled 'actions'", () => {
-  for (const k of ["capabilities", "model", "where", "joints", "bones"]) {
+  for (const k of ["capabilities", "model", "where", "pose", "joints", "bones"]) {
     assert.ok(QUERY_KINDS.includes(k), `query:"${k}" must be a declared kind`);
   }
   // "actions" is answered by the registry itself (Object.keys(COMMANDS)), not the query reporter, so

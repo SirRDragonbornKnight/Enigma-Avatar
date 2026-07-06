@@ -111,12 +111,12 @@
  * The `what` values `query` understands (answered by control/query.js; "actions" is answered by the
  * registry itself, "state" is the default full-state report).
  * @typedef {"materials" | "meshes" | "regions" | "bones" | "morphs" | "rotation" | "facial" | "model"
- *   | "where" | "capabilities" | "caps" | "roles" | "joints" | "stance" | "grip" | "outfits"
+ *   | "where" | "capabilities" | "caps" | "roles" | "pose" | "joints" | "stance" | "grip" | "outfits"
  *   | "platforms" | "bounds" | "weights" | "state"} QueryKind
  */
 
 /**
- * The bus move set — one verb per concept (the 2026-06-29 alias purge). This list is the typed
+ * The bus move set — one verb per concept. This list is the typed
  * vocabulary; tests/protocol.test.js asserts it equals the live registry's COMMANDS keys, so the
  * contract and the implementation cannot drift.
  * @type {readonly string[]}
@@ -182,6 +182,7 @@ export const QUERY_KINDS = Object.freeze([
   "capabilities",
   "caps",
   "roles",
+  "pose",
   "joints",
   "stance",
   "grip",
