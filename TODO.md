@@ -45,8 +45,14 @@ schema-first protocol generation. Staged order, each stage COMPLETE + gated + sm
      to engine/sim.js -- the canonical order is headless + test-pinned (5 intent tests,
      mutation-checked: reordering the servo before the pose fails the suite); animate() is now
      view-only (fps ladder, glide publish, shadow, render, broadcast, footprint). Smoke 7/7 with
-     MOTION flowing through sim.tick live. NEXT: S2-b (utilityProcess host; the big day -- live
-     launches + user click-through spot-checks between sub-steps).
+     MOTION flowing through sim.tick live. S2-b-i DONE 2026-07-06: the sim-host utilityProcess
+     scaffold is LIVE (shell/simhost.mjs) -- imports the ESM sim stack (three r184 + snapshotBones
+     + createSimTick) in-process, ticks paced with stub subsystems, main owns spawn/ping/restart
+     (capped 3)/shutdown. Receipt in the overlay log: "[simhost] ready -- probe bones 3". No window
+     consumes it yet (zero behavior change). NEXT: S2-b-ii -- the host drives a REAL skeleton
+     (compositor + springs on the loaded model's bone snapshot) and emits the flat pose buffer to
+     main (windows still ignore it); THEN S2-b-iii, the switchover day (brain window demotes to a
+     view; live launches + user click-through spot-checks).
   S3: one state store in main (localStorage + browser fallbacks removed).
   S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
   S5: IK + ragdoll on the clean core.

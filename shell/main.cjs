@@ -26,6 +26,7 @@ const {
   nativeImage,
   protocol,
   net,
+  utilityProcess,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -850,6 +851,7 @@ function init() {
   try {
     app.setAppUserModelId("com.enigma.avatar");
   } catch {} // stable identity → tray balloons + correct grouping
+  startSimHost(); // S2-b-i: the sim-host utilityProcess (scaffold; no window consumes it yet)
   _aiControlOn = loadSavedAiControl(); // BEFORE any window: avatar:init carries this to every renderer
   // app://enigma file server (see registerSchemesAsPrivileged at the top for the URL shapes).
   // GUARD AT THE BOUNDARY: bundle paths are contained to ROOT (a crafted ../ cannot escape);
@@ -1271,7 +1273,51 @@ app.on("before-quit", () => {
   }
   console.error("[main] before-quit (uptime " + (process.uptime() | 0) + "s)");
 });
+// ── SIM HOST (S2-b-i): the utilityProcess that will own the simulation core. Main owns its
+// lifecycle: spawn at init, ping/pong readiness receipt, restart on an unexpected exit (capped —
+// a crash-looping host must not spin forever), graceful shutdown at quit. The scaffold hosts the
+// canonical tick with stub subsystems; no window consumes it yet (zero behavior change).
+let _simHost = null,
+  _simHostRestarts = 0,
+  _simHostDown = false; // true once WE asked it to die (quit path) — an expected exit never restarts
+function startSimHost() {
+  try {
+    _simHost = utilityProcess.fork(path.join(__dirname, "simhost.mjs"), [], { serviceName: "enigma-sim-host" });
+  } catch (e) {
+    console.error("[simhost] fork failed:", String(e));
+    return;
+  }
+  _simHost.on("spawn", () => _simHost.postMessage({ type: "ping" }));
+  _simHost.on("message", (m) => {
+    if (m && m.type === "pong")
+      console.log(
+        `[simhost] ready -- ${m.ticks} ticks in ${m.uptimeMs}ms, probe bones ${m.probeBones}, three r${m.threeRev}`
+      );
+  });
+  _simHost.on("exit", (code) => {
+    _simHost = null;
+    if (_simHostDown) return; // asked-for exit (quit) — not a crash
+    if (_simHostRestarts >= 3) {
+      console.error(`[simhost] exit code ${code}; restart cap reached -- staying down`);
+      return;
+    }
+    _simHostRestarts++;
+    console.error(`[simhost] unexpected exit code ${code}; restart ${_simHostRestarts}/3`);
+    startSimHost();
+  });
+}
+function stopSimHost() {
+  _simHostDown = true;
+  try {
+    _simHost?.postMessage({ type: "shutdown" });
+  } catch {}
+  try {
+    _simHost?.kill();
+  } catch {} // backstop — a hung host must not outlive the app
+}
+
 app.on("will-quit", () => {
+  stopSimHost();
   globalShortcut.unregisterAll();
   if (_dragTimer) clearInterval(_dragTimer);
   if (_topmostTimer) {
