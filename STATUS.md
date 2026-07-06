@@ -33,6 +33,31 @@ _Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smok
   `animate()` is now VIEW-only. The S1 milestone was squash-merged to `main` (e2b71c2,
   tree-identical to the branch). Suite **358/0/6**, smoke 7/7 with MOTION through sim.tick live.
 
+## 2026-07-05/06 -- the re-grab launch: fix, then the audit that overturned the fix's story
+
+- **The bug:** move her, quickly re-grab a part -> spaz + launched. First fix (ef39b92): the
+  ragdoll servo assumed the limb was AT REST at grab time; a re-grab mid ease-back poisoned the
+  one-shot sign discovery -> wrong sign locked -> limb whipped to the cap, mouse-lock dragged the
+  body after it. Regression-tested and committed -- and WRONG in vivo.
+- **Round-2 adversarial audit (8571151), probe-proven:** a compositor fn() layer runs in
+  applyLayers PASS 1, where bones are freshly RESET to base pose -- aimState read a FROZEN base
+  pose every frame. The sign discovery never voted live; the harness modeled a feedback loop the
+  wiring didn't have. LESSON: verify the loop EXISTS in vivo before fixing its dynamics.
+- **Audit fixes:** aimState reads a POST-UPDATE SNAPSHOT (grab time + per rendered frame -- the
+  measuring servo finally measures); aim geometry in the PARENT frame (`st.pa`) so the pendulum's
+  own spine/chest roll ease-back (0.052 rad/frame vs the servo's 0.026) can't poison votes or
+  restDir; `abd0` = the ORPHAN residual (`appliedFlex - flexCommand(role, excl "grab_follow")` --
+  full applied double-counted a coexisting AI pose layer); the near-base deadband HOLDS by
+  re-commanding (absent flex = compositor RELEASE; the held limb sagged); `dragAdjust` is
+  seq-stamped and main drops stale adjusts crossing a latest-grab-wins replacement (double-flick
+  teleport); the mouse-lock's FIRST baseline seeds from main's live offset, not one uncapped jump;
+  grabs are primary-button only (right-click used to start a grab under the context menu).
+- **Also caught:** `buildProceduralRig` limits ride under `boneLimits.bones` -- a flat map is
+  silently ignored (the speed_limit:0 GUARD test passed vacuously; fixed). Cleared as no-finding:
+  abd0 read timing, the lock-servo/spring loop (bounded everywhere -- no launch path), the
+  appliedFlex accessor. Known-open, bounded: peer-monitor cursor staleness can mispin a fast
+  flick-grab by ~60-100 DIP. Suite 326/0 + py 21/21; smoke 7/7 on a fresh overlay.
+
 ## 2026-07-05 -- the grab feel: honest bounds, constant size, ragdoll grab, mouse-lock
 
 - **The grab jump was a LYING WINDOW SIZE:** Windows constrains a display-sized overlay window
