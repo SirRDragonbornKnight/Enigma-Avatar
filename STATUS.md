@@ -33,6 +33,37 @@ _Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smok
   `animate()` is now VIEW-only. The S1 milestone was squash-merged to `main` (e2b71c2,
   tree-identical to the branch). Suite **358/0/6**, smoke 7/7 with MOTION through sim.tick live.
 
+## 2026-07-06 -- full audit: sweep verified, messages reworded, 3 real holes closed
+
+- **Comment sweep landed repo-wide** (code comments state behavior/constraints only; history
+  lives HERE and in TODO.md). Verified comment-only by per-line diff filter; the one heuristic
+  checker built for this produced false negatives and was discarded -- the mechanical filter is
+  the tool. The uncommitted pose-proprioception feature (query "pose" -> bonePoints) found mixed
+  into the worktree was split out and landed as its own commit, tests green.
+- **Commit messages reworded** (7 narrative titles -> what-the-code-does), trees verified
+  byte-identical across the rewrite, force-pushed with lease.
+- **Adversarial audit of the unaudited commits** (2 readers, every finding hand-verified):
+  - FIXED: sim host went STALE on a switch to an unsupported/default model (no drop message
+    existed); modelUrlToPath could throw uncaught in MAIN on a malformed %; the pose-buffer tag
+    was bone COUNT (the renderer rejects that exact tag as unsafe -- now the curKey hash);
+    dedup key recorded before the send.
+  - FIXED: the rigid-lock picker excluded `spring.names` -- which structurally OMITS chain
+    LEAVES (a leaf is never an item but swings with its ancestors; the tail tip is the most
+    natural grab point), and covered NOTHING on VRM (spring is null there). Exclusion is now
+    the spring's ownedNames subtrees + VRM springBoneManager joints. Executed-proof finding;
+    test pins both exclude sets.
+  - Clean: load-bearing spring guard (correct as built), pose query coordinates/wire/nulls,
+    double-drive (host pose buffer is counted + discarded, renderer stays the one writer),
+    host lifecycle/pacing.
+  - Known-open (recorded, by design or deferred): host buffer still lacks morphs + scale
+    semantics and bone-ORDER parity is count-only (switchover prerequisites); real-model parity
+    tests skip on boxes without models/; sim-host restart cap never resets; a spring-region
+    mis-resolution now de-springs the whole carried chain (amplification, needs a rig that
+    fools tier-3 to matter); pickLockBone exclusion is name-keyed (FBX duplicate names could
+    over-exclude -- fails safe).
+- Receipts: suite 370/0 + py 21/21, smoke 7/7 live (zhu_yuan, sim host 493 bones 19/19 roles,
+  pose buffer ~30/s through the new drop-capable protocol).
+
 ## 2026-07-05/06 -- the re-grab launch: fix, then the audit that overturned the fix's story
 
 - **The bug:** move her, quickly re-grab a part -> spaz + launched. First fix (ef39b92): the
