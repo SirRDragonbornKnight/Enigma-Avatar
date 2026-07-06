@@ -17,6 +17,7 @@ import { parseControlTags, parseTagArg, resolvePropName } from "./control/contro
 import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar control surface (facade the bus/query/devtools drive)
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
 import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable setup (headless engine module, carve S1-a)
+import { createMeshStore } from "./engine/meshes.js"; // mesh visibility + outfits (headless engine module, carve S1-b)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
 import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
@@ -642,7 +643,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     vrm = null;
     proc = null;
     spring = null;
-    _meshList = null;
+    clearMeshList();
   }
 
   // #13: the NO-MODEL state. We do NOT run the model pipeline (resolve / compositor / spring / facial)
@@ -758,10 +759,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (o.isMesh) o.frustumCulled = false;
     });
     rig.add(model);
-    _meshList = [];
-    model.traverse((o) => {
-      if (o.isMesh) _meshList.push({ mesh: o, name: o.name || null });
-    }); // INDEX AUTHORITY: pristine file order, captured before any surgery/adoption can reshuffle traversal
+    cacheMeshList(); // INDEX AUTHORITY: pristine file order, captured before any surgery/adoption can reshuffle traversal
     modelDims = { w: _box.max.x - _box.min.x, h: _box.max.y - _box.min.y };
     // pose-broadcast layout (brain serializes → peers mirror): ordered bones + morph meshes. Both windows
     // load the SAME model → identical traversal order, so the flat buffer is self-describing by length.
@@ -1570,45 +1568,32 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     setStatus("colors reset to original");
   }
 
-  // --- meshes (sub-objects: clothing variants, hide-able body parts) ----------
-  // A model bundles multiple meshes (e.g. 2 shirts / shorts / a nude body). Address them by INDEX in
-  // traversal order — names are unreliable — and toggle visibility to pick a variant. Hidden set saved.
-  // Mesh list in PRISTINE FILE ORDER, cached at load BEFORE any hierarchy surgery/adoption.
-  // hiddenMeshes/meshLabels/colors are keyed by INDEX — live traversal order CHANGES when bones are
-  // reparented (battery 2026-06-12: aveline's hidden floor planes came back because the skin-weight
-  // adoption shifted traversal and her saved [0..4] started hiding five robot parts instead).
-  let _meshList = null;
-  function allMeshesInfo() {
-    if (_meshList) return _meshList.filter((e) => e.mesh && e.mesh.parent !== null); // drop disposed strays, keep order
-    const out = [];
-    model?.traverse((o) => {
-      if (o.isMesh) out.push({ mesh: o, name: o.name || null });
-    });
-    return out;
-  }
-  function setMeshVisible(i, on) {
-    const arr = allMeshesInfo();
-    const it = arr[i];
-    if (!it) return 0;
-    it.mesh.visible = !!on;
-    const p = profileFor(curKey);
-    const hid = new Set(p.hiddenMeshes || []);
-    if (on) hid.delete(i);
-    else hid.add(i);
-    p.hiddenMeshes = [...hid].sort((a, b) => a - b);
-    saveProfileSoon();
-    hitMask = null;
-    computeFootprint();
-    refreshDims(); // silhouette changed → re-scan the grab footprint + the dims (shadow/walls/capsule)
-    setStatus(`mesh #${i}${it.name ? " (" + it.name + ")" : ""} -> ${on ? "shown" : "hidden"}`);
-    return 1;
-  }
-  function applyMeshVisibility() {
-    const hid = profileFor(curKey).hiddenMeshes;
-    if (!hid || !hid.length) return;
-    const arr = allMeshesInfo();
-    for (const i of hid) if (arr[i]) arr[i].mesh.visible = false;
-  }
+  // --- meshes + outfits (engine/meshes.js, carve S1-b) -------------------------
+  // Mesh show/hide by pristine-order INDEX + named outfit presets live in the headless store;
+  // this closure injects the live thunks. onSilhouetteChange: a visibility toggle changes what
+  // RENDERS → drop the hit mask and re-measure footprint + dims (shadow/walls/capsule/grab box).
+  const {
+    cacheMeshList,
+    clearMeshList,
+    allMeshesInfo,
+    setMeshVisible,
+    applyMeshVisibility,
+    outfitNames,
+    saveOutfit,
+    wearOutfit,
+    deleteOutfit,
+  } = createMeshStore({
+    getModel: () => model,
+    profileFor,
+    saveProfileSoon,
+    getKey: () => curKey,
+    onSilhouetteChange: () => {
+      hitMask = null;
+      computeFootprint();
+      refreshDims();
+    },
+    setStatus,
+  });
   // Bounds over VISIBLE meshes, SKINNING-AWARE: expandByObject reads the UNSKINNED geometry box,
   // which lies for models whose parts are authored side-by-side and assembled by skinning (aveline:
   // a 15-unit-wide geometry box on a 1-unit-wide robot → giant shadow + crushed scale). SkinnedMesh
@@ -1704,49 +1689,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     rig.quaternion.copy(rq);
     rig.updateWorldMatrix(true, true);
-  }
-
-  // --- OUTFITS — named mesh-visibility presets per model ("can i put clothes on avatars", 2026-06-12):
-  // one-click looks built from the parts a model SHIPS (dressed / undressed / armor-off …). A preset
-  // is just the hidden-mesh index list under a name, saved in the profile; wearing one shows
-  // EVERYTHING first then hides the preset's set (applyMeshVisibility only hides — a wear must also
-  // restore parts the previous look had off).
-  function outfitNames() {
-    return Object.keys(profileFor(curKey).outfits || {});
-  }
-  function saveOutfit(name) {
-    const s = String(name || "").trim();
-    if (!s) return null;
-    const p = profileFor(curKey);
-    p.outfits = p.outfits || {};
-    p.outfits[s] = [...(p.hiddenMeshes || [])];
-    saveProfileSoon();
-    setStatus(`outfit saved: ${s}`);
-    return outfitNames();
-  }
-  function wearOutfit(name) {
-    const p = profileFor(curKey),
-      o = (p.outfits || {})[String(name || "").trim()];
-    if (!o) {
-      setStatus(`no outfit "${name}"`);
-      return false;
-    }
-    const hid = new Set(o.map((i) => +i).filter((i) => Number.isInteger(i) && i >= 0));
-    const arr = allMeshesInfo();
-    for (let i = 0; i < arr.length; i++) arr[i].mesh.visible = !hid.has(i);
-    p.hiddenMeshes = [...hid].sort((a, b) => a - b);
-    saveProfileSoon();
-    hitMask = null;
-    computeFootprint();
-    refreshDims(); // silhouette changed
-    setStatus(`outfit: ${name}`);
-    return true;
-  }
-  function deleteOutfit(name) {
-    const p = profileFor(curKey);
-    if (p.outfits) delete p.outfits[String(name || "").trim()];
-    saveProfileSoon();
-    return outfitNames();
   }
 
   // --- rotation: turn the avatar on ALL THREE axes (pitch X / yaw Y / roll Z); persisted per model.

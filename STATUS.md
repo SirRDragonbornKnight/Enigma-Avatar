@@ -17,6 +17,11 @@ _Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smok
 - CI added: `.github/workflows/ci.yml` runs the full headless gate (lint + typecheck +
   format:check + node --test + pytest) on every push/PR -- the remote-side twin of the
   pre-commit hook (realmodels skips cleanly without the model library).
+- CODE, same day: comment sweep -- every comment that narrated history ("was removed with the
+  PURGE") now states its standing rule present-tense, fences intact. Engine carve **S1-b**: mesh
+  visibility + OUTFITS lifted out of the avatar.js closure into headless `src/engine/meshes.js`
+  (the profiles.js thunk pattern; 10 intent tests incl. the aveline index-authority regression;
+  avatar.js 3631 -> 3573 lines). Suite **336/0/6**, smoke 7/7 with the carved load path live.
 
 ## 2026-07-05 -- the grab feel: honest bounds, constant size, ragdoll grab, mouse-lock
 
