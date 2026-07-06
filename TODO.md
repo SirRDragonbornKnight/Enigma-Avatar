@@ -17,6 +17,66 @@ logs a dead key). Lower-severity items left open are in the buckets below (H1 re
 or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-window reload,
 `verify:"where"` mouse false-positive, name-tier center-role drop when the sole center bone is side-tagged.
 
+### 0) Restructure (conceptual rebuild) -- Phase 1 DONE, Phases 2-5 OPEN
+
+**THE TARGET SHAPE (decided with the user 2026-07-02): "everything is a peer".** A headless
+SIMULATION CORE (rig resolution + layer compositor + springs + rapier + facial) runs in an Electron
+`utilityProcess`, ticks without DOM/GPU, and emits the same flat pose buffer peers already consume.
+EVERY window -- including today's "brain" -- becomes a ~150-line view: load model, apply buffer,
+render, hit-test. The bus + all state live with the sim/main. What this DELETES outright: the
+avatar.js closure, the brain/peer asymmetry, UI_CMDS relay scopes, the mid-switch stale queue,
+localStorage, browser-mode fallbacks, the dual accessor bridges. What it ADDS once the core is
+clean: IK (reach/point over the 19 roles), rapier-jointed ragdoll, an MCP wrapper for the bus,
+schema-first protocol generation. Staged order, each stage COMPLETE + gated + smoke-proven:
+  S0 (DONE 2026-07-02): `npm run smoke` -- launch the real overlay, drive it over the bus, assert
+     NUMERIC receipts (boot / limits / strict wire / elbow bend+release / snap). 6/6 on first run.
+  S1: extract the sim modules from the avatar.js closure into headless `src/engine/` with explicit
+     state (several sessions; per-subsystem, gate + smoke after each carve).
+  S2: move the hosted sim to a utilityProcess; demote every window to a peer; bus to main.
+     (The relays, the queue, and the closure die together this day.)
+  S3: one state store in main (localStorage + browser fallbacks removed).
+  S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
+  S5: IK + ragdoll on the clean core.
+
+**Phase 1 (DONE 2026-06-29):** folderized the flat repo into `shell/` + `src/<concern>/` +
+`python/` with zero logic changes; all refs repointed; green at every headless layer
+(node --test 236/11, pytest 14, eslint 0, tsc 0). The ONE thing headless can't prove is the
+Electron BOOT (the new `ROOT` paths in `shell/main.js`, `package.json "main"`, `index.html`
+src, launcher `python/bus.py`) -- **launch once to confirm the overlay still boots.**
+
+**Move-set redesign (DONE 2026-06-29):** one name per concept, NO backward-compat aliases. Merged 4
+duplicate pairs so a driver never guesses which verb: `move` (was moveTo+goTo, routes on {px,py} vs
+{to}), `look` (was lookAt+lookMode — `look` itself was REMOVED 2026-06-30 with the cursor-gaze
+system; it is not a live verb), `morph` (was morph+setMorph, default saves /
+{save:false} probes), `pose` (was pose+layer, {clear:"id"}|{clear:true}). Renamed 2 implementation
+names: `setDisplay`->`monitor`, `setMesh`->`mesh`. Dropped 4 aliases (`screenshot`/`hand`/`caps`/old
+`monitor`). Added `query:"actions"` (live verb list -- the AI "what can I send?" hook). Touched
+`bus.js` + `say.py` + `tools/test_battery.py` + `tests/bus.test.js` only; `avatar.js` control surface
+UNCHANGED (the merged verbs route in the bus handler onto existing methods). Green: node --test 255/11,
+eslint 0; merge tests bite (mutation-checked). **FOLLOW-UP:** the external MCP `avatar_command`
+forwarder (`modkit_mcp.py`, NOT in this repo) still lists `lookAt`/`lookMode`/`goTo`/`setMesh` -- update
+its key-list to the new names or those forwards will no-op. **Still needs a live launch to confirm a
+real bus drive.**
+
+**Phases 2-5 (OPEN -- must be done WITH a live launch between carves):** decompose the
+~3.6k-line `src/avatar.js` orchestrator closure into modules (`src/scene/`, `src/control/bus.js`
+
+- `surface.js`, `src/appearance/*`, `src/interaction/input.js`). NOT safe to do blind:
+
+* **Deferred-reference web.** The bus `COMMANDS` table reads `ui` + ~20 `ui*` relays defined
+  ~700 lines LATER; only deferred (runtime) execution makes it legal. Any extraction must
+  rebuild that graph via a deps object and be INVOKED after the deps exist (TDZ/order traps).
+* **Live mutable state.** Handlers read `let`s reassigned elsewhere (`facial`, `spring`,
+  `platforms`, `bonesShown`, `rotateMode`, `springOn`, `curDisp`) -- pass them as live
+  thunks/getters, NEVER frozen values, or a bus command silently breaks.
+* **No glue test coverage + no headless Electron.** Tests cover the pure modules, not the
+  dispatch table or the SAFETY-critical hit-test/input/click-through -- and Electron can't be
+  launched in the agent shell. So each carve needs the user to launch & spot-check (esp.
+  click-through) before the next. Suggested order (leaf-first): bus registry -> control
+  surface -> appearance (outfits/meshes/morphs/recolor/jiggle/attachments) -> scene/render
+  loop -> hit-test/input LAST and most carefully. Also split `ui.js` (1.6k) + `shell/main.js`
+  (1k) along their section seams. Net target: `src/avatar.js` ~150-line bootstrap.
+
 ### 1) Needs the live overlay + real models (cannot be judged from code/tests)
 
 - [ ] **FEEL TUNING by the user's eye.** Motion amplitude/choreography; the velocity-clamp vs Filian
@@ -30,18 +90,28 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 
 ### 2) Fixable now (small, code-only)
 
-- [ ] **(SAFETY) No periodic main-side re-arbitration** (`main.js` `applyInteractive` is event-driven only).
-      A _hung_ renderer latched at `over:true` keeps capturing clicks over her footprint until the user hits
-      the panic key / tray (no auto self-heal). Add a periodic `applyInteractive()` (or a renderer-heartbeat ->
-      force-through) on the existing 4s topmost-reassert timer. Also clear the sender's `_overByWin` entry on
-      `render-process-gone`/reload so a reused webContents id can't keep a stale `true`.
-- [ ] **Spring verlet only PARTIALLY dt-normalized** -- gravity is dt-scaled (`spring.js`); inertia +
-      the stiffness pull are still frame-count-based. Normalize the rest for frame-rate independence.
-- [ ] **Folder rename renames only the manifest LABEL, not the on-disk folder** (`library.js`
-      `renameModel`, comment at its head). A true rename must migrate the folder/URL + the profile key.
-- [ ] **Click-through guard has no test.** The silhouette hit-test (`computeOver`/`overSilhouette`,
-      avatar.js) + `containsEvent` (ui.js) are safety-critical and untested -- needs the logic extracted
-      to be unit-testable headlessly. `dom.js` mock also omits `importDropped`/`setInteractive`.
+**Reconciled vs code 2026-06-29 (each item re-verified by direct read):** the first four below were
+already DONE in the tree -- the doc had drifted. Left checked here as a record; only the last three
+are genuinely open.
+
+- [x] **(SAFETY) Periodic main-side re-arbitration -- DONE.** `shell/main.js` runs `_healTimer =
+  setInterval(applyInteractive, 1000)`, and `applyInteractive` fails OPEN when a renderer's last
+      `over:true` report is older than `REPORT_STALE_MS` (hung-renderer self-heal). The sender's
+      `_overByWin` entry is cleared on both `render-process-gone` and reload. (Verified main.js:208-210,
+      592, 1007-1012.)
+- [x] **Spring verlet dt-normalization -- DONE.** `src/motion/spring.js` re-scales the drag decay,
+      stiffness pull, and damp to real dt (`kFrame = dt*REF_FPS`, `Math.pow(...)`) and time-corrects the
+      inertia carry (`tcv = dt/_prevDt`); gravity stays dt*dt-scaled. Identity at REF_FPS so the
+      fixed-1/60 unit tests still hold. (Verified spring.js:145-225.)
+- [x] **Click-through guard now tested -- DONE.** The silhouette hit-test is extracted to
+      `src/interaction/hittest.js` (`buildSilhouette`/`overSilhouette`/`fallbackGrabHandle`) and pinned by
+      `tests/hittest.test.js`, including the safety-critical "empty render -> ok:false (fail-open)" case.
+      (Minor leftover: `tests/dom.js` mock still omits `importDropped`/`setInteractive` -- only matters if a
+      future test drives those through the mock.)
+- [~] **Folder rename is label-only -- BY DESIGN, not a gap.** `src/model/library.js` `renameModel`
+  updates the manifest label only and deliberately leaves the folder/URL/profile key intact (so URLs
+  and per-avatar profiles keyed by URL don't break); documented in the comment at its head. A true
+  folder+URL+profile migration is a feature, not a defect -- only do it on an explicit ask.
 - [ ] **No speech bubble** for spoken lines (none in any source).
 - [ ] **Multi-mesh divergent-morph UI** + morph/lip-sync index collision -- only the bounded
       "primary group" morph path exists (Low).
@@ -49,9 +119,12 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 ### 3) The brain (P4) -- PARTIAL (ties to the 2026-06-26 deep-research)
 
 - [ ] The bus + `perform`/`pose`/verify path and `brain.py` are BUILT (capabilities->author->
-      verify-by-numbers loop; deterministic grounded author + optional `--llm`). OPEN: the persistent,
-      perception/memory-driven "mind" (event loop, conversation integration) and Enigma-as-author once it
-      finishes pretraining. Architecture decision pending the deep-research report.
+      verify-by-numbers loop; deterministic grounded author + optional `--llm`). **A working brain exists
+      TODAY: the `--llm` author accepts ANY OpenAI-compatible endpoint -- a local model, OR Claude/any
+      agent that can emit the perform-tagged lines (tags are sanitized against live caps before they reach
+      the body, so it can never drive a missing limb). It is NOT blocked on Enigma.** OPEN: the persistent,
+      perception/memory-driven "mind" (event loop, conversation integration) -- and Enigma-as-author once it
+      finishes pretraining, as the local from-scratch option. Architecture decision pending the deep-research report.
 
 ### 4) Deferred by design (bigger -- do NOT start without an explicit call)
 
@@ -64,13 +137,18 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 
 ### 5) Environment / housekeeping
 
-- [ ] **`BALL_URL` asset missing** from this checkout (`props/worn_baseball_ball/...glb`) -> conjure/
-      throw have nothing to render here; conjure already fails HONESTLY via `onMiss`. Stage the .glb (it
-      lives in the standalone mirror).
-- [ ] Orphan `profiles.json` keys for removed models (harmless stale tuning; could prune).
-- [ ] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree`** (`--tree` path only): `pathname` from
-      the package is joined to `out_dir` with no `..`/absolute containment check. The UI import path uses
-      `basename` and is safe; only a manual `--tree` on a malicious package is exposed. Add a containment assert.
+- [x] **`BALL_URL` asset staged locally 2026-06-29.** Copied `worn_baseball_ball.glb` from
+      `C:\Users\SirKn\3d Avatar\Avatars\` into `props/worn_baseball_ball/` so conjure/throw render here.
+      `props/` is gitignored (provisioned-locally convention), so this is a per-box stage, not a commit --
+      re-stage on a fresh clone. (NB: the file is ~64 MB -- heavy for a thrown prop; consider a lighter ball.)
+- [x] **Orphan `profiles.json` keys -- PRUNED 2026-07-06.** 7 keys whose targets no longer exist
+      (the trashed zhu_yuan__nsfw__zzz x3 + 4 unresolvable bare-name keys). The archive of the
+      pruned entries went to the Recycle Bin with `models/_trash` (emptied same day at the user's
+      direction; the trashed models are gone for good, so their tuning is moot).
+- [x] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree` -- DONE.** `extract_tree` now
+      contains every write under `realpath(out_dir)`: it strips a leading `/` and Windows drive letter, then
+      skips+warns on any entry whose `realpath` isn't under the out-root (`commonpath` check).
+      (Verified import_unitypackage.py:105-122.)
 
 ## INTENT OVERHAUL -- audit #9 reconciliation (2026-06-26). FIXED + suite 186/0/11 + python 6/6 + node --check clean.
 
@@ -104,7 +182,6 @@ or noted as minor: drag 48px watchdog deadzone, stale `_overByWin` on single-win
 ## ⚡ AUDIT #8 — P1-P4 / f94b288d batch, trust-nothing pass (2026-06-25). FIXED + suite 163/0/11 + live-verified.
 
 **Audited CLEAN (suspicions refuted by reading the code):** the f94b288d joint cap is correct — `clamp` converts the degree limit table to radians (`*DEG`) before clamping the radian offset (cap test: 2.0rad -> ~40deg); `perform [look:...]` -> `EnigmaAvatar.lookAt(px,py)` exists. **Real defects FOUND + FIXED in the conjure/control path:** (1) `perform`'s `[conjure:NAME]` and the `conjure` command passed a bare name straight to `loadAsset` as a URL -> a silent no-op (no name->asset resolver; the control.js example even uses `[conjure:sword]`). Added `resolvePropName` (control.js, unit-tested) + a `CONJURE_ASSETS` map -> a bare name maps to a known prop, a path passes through, an unknown name returns an HONEST error instead of silently spawning a guess. (2) conjure load FAILURES vanished silently while the bus reply already claimed success (violates "fail honestly") -> `conjure.js` now takes an `onMiss` cb (unit-tested); avatar.js surfaces it via setStatus + console.warn. (3) `perform`'s conjure branch never called `wake()` -> a conjure-only line never animated the pop-in; added wake + a transient `dur` so a performed prop self-dismisses (no accumulation across a conversation). (4) `capabilities()` now advertises `units {offsets:radians, limits:degrees}` (the brain read degree limits while sending radian offsets; the clamp made it SAFE but the intent was ambiguous). **DEFERRED item now RESOLVED 2026-06-26 (intent overhaul):** the flex channel now honors the per-role joint limits (was the flat +-2.2rad noted here), with the sum-then-cap rewrite. **FLAGGED (environment, not code):** `BALL_URL` (`props/worn_baseball_ball/...glb`) is MISSING from this checkout -> conjure/throwball/dropball have NO bundled asset to render here; stage the .glb (it lives in the standalone mirror; was the ~64MB physics-slice asset). Conjure props stay BRAIN-window-only on multi-monitor (same as physics props; deferred).
-_Last updated: 2026-06-11. When an item is done, move it to the bottom “DONE” log so we never re-investigate it._
 
 ---
 

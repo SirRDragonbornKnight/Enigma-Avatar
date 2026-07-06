@@ -6,7 +6,7 @@
 //       'catch{}' while loadAsset still reports a clean success.
 import { test } from "node:test";
 import assert from "node:assert";
-import { kindOf, loadAsset, applyFbxMaterials } from "../loader.js";
+import { kindOf, loadAsset, applyFbxMaterials } from "../src/model/loader.js";
 
 // a minimal three.js-ish node: only the .traverse() + isMesh/material shape applyFbxMaterials reads.
 function meshRoot() {

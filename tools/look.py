@@ -14,7 +14,12 @@ Requires the overlay running (Start-Avatar.ps1). Throwaway/operational, not ship
 """
 
 from __future__ import annotations
-import argparse, asyncio, json, os, sys, tempfile
+import argparse
+import asyncio
+import json
+import os
+import sys
+import tempfile
 import websockets
 
 URI = "ws://127.0.0.1:8765"

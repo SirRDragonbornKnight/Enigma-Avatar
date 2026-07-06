@@ -2,7 +2,10 @@
 # against what is ACTUALLY in the file, not the names people gave parts.
 # Surfaces: glTF extensions (VRM / springbone), node/bone names (physbones, "dick"),
 # meshes + their morph-target (blendshape) names, materials, skins.
-import sys, json, struct, re
+import sys
+import json
+import struct
+import re
 
 
 def load_gltf_json(path):
@@ -190,6 +193,9 @@ def main(path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("usage: python inspect_model.py <model.glb> [more.glb ...]", file=sys.stderr)
+        raise SystemExit(2)
     for p in sys.argv[1:]:
         try:
             main(p)

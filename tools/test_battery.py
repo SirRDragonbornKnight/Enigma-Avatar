@@ -8,7 +8,12 @@ Usage:  python tools/test_battery.py [models|behavior|all]   (default all)
 Report: prints a table + writes %TEMP%/avatar_battery_report.json
 """
 
-import asyncio, hashlib, json, sys, tempfile, time
+import asyncio
+import hashlib
+import json
+import sys
+import tempfile
+import time
 from pathlib import Path
 import websockets
 
@@ -123,7 +128,8 @@ async def behavior(bus, url):
     a = await bus.snap("bat_still_a.png")
     await asyncio.sleep(6)
     b = await bus.snap("bat_still_b.png")
-    h = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest() if p else "?"
+    def h(p):
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest() if p else "?"
     r["stillness"] = "IDENTICAL" if a and b and h(a) == h(b) else f"DIFFER {h(a)[:8]} vs {h(b)[:8]}"
     # motion compositor end-to-end: pose/flex layers + per-finger curl (no gesture/emote catalog now)
     await bus.cmd({"action": "pose", "flex": {"right_arm": [1.1], "right_forearm": [0.6]}, "dur": 2.0, "id": "bat"})
@@ -138,9 +144,7 @@ async def behavior(bus, url):
     r["motion"] = f"end: knee={j.get('leftKnee')} elbow={j.get('leftElbow')}"
     # perform: inline-tagged speech -> motion + the clean line back
     r["perform"] = await bus.ask({"action": "perform", "text": "Watch this! [pose:right_arm=1.0]"}) or "fired"
-    # look + highlight + naming
-    await bus.cmd({"action": "lookAt", "px": 100, "py": 100})
-    await asyncio.sleep(0.6)
+    # highlight + naming
     bones = await bus.query("bones") or []
     bn = bones[2]["name"] if len(bones) > 2 else None
     r["highlight"] = (await bus.ask({"action": "highlightBone", "bone": bn, "dur": 1})) if bn else "n/a"
@@ -158,10 +162,10 @@ async def behavior(bus, url):
     meshes = await bus.query("meshes") or []
     if meshes:
         i = meshes[0]["index"]
-        await bus.ask({"action": "setMesh", "index": i, "on": False})
+        await bus.ask({"action": "mesh", "index": i, "on": False})
         m2 = await bus.query("meshes")
         r["meshToggle"] = m2 and not m2[0]["visible"]
-        await bus.ask({"action": "setMesh", "index": i, "on": True})
+        await bus.ask({"action": "mesh", "index": i, "on": True})
     # impulse (tail/hair kick through the springs)
     r["impulse"] = await bus.ask({"action": "impulse", "region": "tail", "x": 1.2, "dur": 0.5})
     if r["impulse"] is False or r["impulse"] is None:
@@ -175,10 +179,10 @@ async def behavior(bus, url):
     # movement walls: bottom + side, then recenter
     st = await bus.query("state") or {}
     sw, sh = st.get("screen") or [2560, 1440]
-    await bus.cmd({"action": "moveTo", "px": sw / 2, "py": sh + 500})
+    await bus.cmd({"action": "move", "px": sw / 2, "py": sh + 500})
     await asyncio.sleep(2)
     w1 = await bus.query("where") or {}
-    await bus.cmd({"action": "moveTo", "px": -500, "py": sh * 0.6})
+    await bus.cmd({"action": "move", "px": -500, "py": sh * 0.6})
     await asyncio.sleep(2)
     w2 = await bus.query("where") or {}
     r["walls"] = f"bottom y={w1.get('screenPos', ['?', '?'])[1]}/{sh}  left x={w2.get('screenPos', ['?', '?'])[0]}"
@@ -188,7 +192,7 @@ async def behavior(bus, url):
     r["peerSnap"] = await bus.snap("bat_peer.png")
     await bus.cmd({"action": "monitor", "value": "prev"})
     await asyncio.sleep(1.5)
-    await bus.cmd({"action": "goTo", "to": "center"})
+    await bus.cmd({"action": "move", "to": "center"})
     return r
 
 

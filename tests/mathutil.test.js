@@ -2,7 +2,16 @@
 // save, the spring weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
 import { test } from "node:test";
 import assert from "node:assert";
-import { norm360, rotFromProfile, rotToSave, regionFeel, pickFps, dipToLocalPx, localPxToDip } from "../mathutil.js";
+import {
+  norm360,
+  signed180,
+  rotFromProfile,
+  rotToSave,
+  regionFeel,
+  pickFps,
+  dipToLocalPx,
+  localPxToDip,
+} from "../src/util/mathutil.js";
 
 // (the ambientAmp + idle-v4 primitive tests died with the idle system, 2026-06-12)
 
@@ -55,6 +64,18 @@ test("norm360 wraps any angle into [0,360)", () => {
   assert.strictEqual(norm360("90"), 90);
 });
 
+test("signed180 maps angles into (-180,180] so the rotate fields can go the OTHER way", () => {
+  assert.strictEqual(signed180(0), 0);
+  assert.strictEqual(signed180(15), 15);
+  assert.strictEqual(signed180(180), 180); // boundary stays positive
+  assert.strictEqual(signed180(181), -179);
+  assert.strictEqual(signed180(345), -15); // a left turn reads as negative, not 345
+  assert.strictEqual(signed180(360), 0);
+  assert.strictEqual(signed180(-15), -15); // already-negative input round-trips
+  assert.strictEqual(signed180(undefined), 0); // junk → 0
+  assert.strictEqual(signed180(NaN), 0);
+});
+
 test("rotFromProfile reads {x,y,z} and migrates legacy yaw → Y", () => {
   assert.deepStrictEqual(rotFromProfile({ rot: { x: 10, y: 20, z: 30 } }), { x: 10, y: 20, z: 30 });
   assert.deepStrictEqual(rotFromProfile({ yaw: 90 }), { x: 0, y: 90, z: 0 }); // legacy single-axis
@@ -92,6 +113,18 @@ test("regionFeel: w≤0.001 pins; w=1 is the default feel; w<1 damps; w>1 is bou
 test("regionFeel: geo chains are stiffer; dragv is clamped to a floor", () => {
   assert.ok(regionFeel(1, 0.14, 0.5, true).stiff > regionFeel(1, 0.14, 0.5, false).stiff, "geo = 1.5× stiffer");
   assert.ok(close(regionFeel(2, 0.14, 0.05, false).dragv, 0.05), "dragv floor 0.05 (0.05/2 would underflow)");
+});
+
+test("regionFeel: stiff stays below 1 at max user stiffness (pow(1-stiff, frac-kFrame) must never be pow(negative, fraction) = NaN)", () => {
+  // geo chains multiply stiffness by 1.5: any user stiffness > 2/3 used to yield stiff > 1,
+  // which froze EVERY geo-sprung chain (tail/wings) at rest via a per-frame NaN reset.
+  for (const s of [0.7, 0.9, 1]) {
+    for (const geo of [true, false]) {
+      const f = regionFeel(1, s, 0.5, geo);
+      assert.ok(f.stiff < 1, `stiffness=${s} geo=${geo} → stiff ${f.stiff} must stay < 1`);
+      assert.ok(Number.isFinite(Math.pow(1 - f.stiff, 0.7)), "the verlet's fractional pow stays finite");
+    }
+  }
 });
 
 test("pickFps: full rate when active; idle → IDLE; deep-rest → REST", () => {

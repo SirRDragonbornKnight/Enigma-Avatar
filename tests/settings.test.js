@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { installDOM, fire, makeApi } from "./dom.js";
-import { createUI } from "../ui.js";
+import { createUI } from "../src/ui/ui.js";
 
 const S = () => document.getElementById("avsettings");
 const M = () => document.getElementById("avmenu");
@@ -31,7 +31,6 @@ test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
     createUI(api).showSettings();
     const cases = [
       ["Spring physics", "springOn"],
-      ["Look at cursor", "lookOn"],
       ["Face (blink", "facialOn"],
       ["Lock in place", "locked"],
     ]; // ("Idle motion" checkbox removed 2026-06-12 with the whole idle system; the random-emotes checkbox went 2026-06-11 — nothing fires by itself)
@@ -202,6 +201,29 @@ test("Rotate X/Y/Z fields call setRotAxis per axis (all 3 axes)", () => {
   }
 });
 
+test("Rotate fields go BOTH directions: signed display + a negative min (rotate her the other way)", () => {
+  const dom = installDOM();
+  try {
+    // A saved 345°/15° left/right turn must read back as the SIGNED -15 / +15 the user can dial down past 0.
+    const { api } = makeApi({ getRot: () => ({ x: 345, y: 15, z: 0 }) });
+    createUI(api).showSettings();
+    let row = null;
+    for (const span of S().querySelectorAll("span"))
+      if (span.textContent.includes("Rotate °") && span.parentElement) {
+        row = span.parentElement;
+        break;
+      }
+    assert.ok(row, "Rotate row exists");
+    const nums = [...row.querySelectorAll("input[type=number]")];
+    assert.strictEqual(nums[0].value, "-15", "X 345 stored → shown as -15 (the OTHER direction), not 345");
+    assert.strictEqual(nums[1].value, "15", "Y 15 stays +15");
+    assert.strictEqual(nums[0].min, "-180", "min is negative so the spinner can rotate left/down past 0");
+    assert.strictEqual(nums[0].max, "180", "max 180");
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("Rotate ↺ reset calls setRot(0,0,0)", () => {
   const dom = installDOM();
   try {
@@ -365,16 +387,25 @@ test("Cloth has its OWN weight section (fabric is separate from the body jiggle)
   }
 });
 
-test("rotate is Alt+drag (no mode checkbox) and the Idle section is GONE (idle deleted 2026-06-12)", () => {
+test("rotate-by-drag is a TOGGLE (arms setRotateMode) and the Idle section is GONE (idle deleted 2026-06-12)", () => {
   const dom = installDOM();
   try {
     const m = makeApi();
     createUI(m.api).showSettings();
-    // The MODE checkbox is gone — armed, it hijacked plain drag ("can't move her, can rotate"; 2026-06-11).
-    assert.ok(!checkboxByLabel("Rotate by dragging"), "rotate MODE checkbox removed");
+    // The toggle is back (user request 2026-06-30: "make rotate a toggle instead of the Alt button").
+    // Safe because hideSettings() auto-disarms it — see the disarm-on-close test below.
+    const cb = checkboxByLabel("Rotate by dragging her");
+    assert.ok(cb, "rotate-by-drag toggle exists");
+    cb.checked = true;
+    fire(cb, "change");
+    assert.ok(
+      m.calls.some((c) => c[0] === "setRotateMode" && c[1] === true),
+      "ticking it → setRotateMode(true)"
+    );
+    // Alt+drag still works too, so the hint mentions it.
     assert.ok(
       [...document.querySelectorAll("div")].some((d) => /hold Alt and drag/i.test(d.textContent || "")),
-      "Alt+drag hint shown instead"
+      "Alt+drag hint still shown"
     );
     // The whole idle system was deleted (user order 2026-06-12) — NO idle UI may exist.
     assert.ok(
@@ -384,29 +415,6 @@ test("rotate is Alt+drag (no mode checkbox) and the Idle section is GONE (idle d
       "no Idle section / sliders / re-seed button anywhere"
     );
     assert.ok(!checkboxByLabel("Idle motion"), "the Idle motion toggle is gone (nothing to toggle)");
-  } finally {
-    dom.cleanup();
-  }
-});
-
-test("Look-with dropdown (head/eyes/both) calls setLookMode when the model has eyes", () => {
-  const dom = installDOM();
-  try {
-    const { api, calls } = makeApi();
-    createUI(api).showSettings();
-    let sel = null;
-    for (const span of S().querySelectorAll("span"))
-      if (span.textContent.includes("Look with") && span.parentElement) {
-        sel = span.parentElement.querySelector("select");
-        break;
-      }
-    assert.ok(sel, "Look-with dropdown present (model has eyes)");
-    sel.value = "eyes";
-    fire(sel, "change");
-    assert.ok(
-      calls.some((c) => c[0] === "setLookMode" && c[1] === "eyes"),
-      "→ setLookMode('eyes')"
-    );
   } finally {
     dom.cleanup();
   }
@@ -745,11 +753,10 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       ],
     });
     m.api.setBoneLabel = (n, l) => m.calls.push(["setBoneLabel", n, l]);
-    m.api.highlightBone = (n, d) => m.calls.push(["highlightBone", n, d]);
-    let pickCb = null;
-    m.api.pickBone = (cb) => {
-      pickCb = cb;
-      m.calls.push(["pickBone"]);
+    m.api.boneMarks = () => ["DEF-spine006_016"]; // engine says this bone is already marked -> renders pre-checked
+    m.api.setBoneMark = (n, on) => {
+      m.calls.push(["setBoneMark", n, on]);
+      return true;
     };
     createUI(m.api).showSettings();
     const filt = [...document.querySelectorAll("input")].find((i) => /filter bones/i.test(i.placeholder || ""));
@@ -764,21 +771,26 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       m.calls.some((c) => c[0] === "setBoneLabel" && c[1] === "Shibahu_Tail1_0199" && c[2] === "tail base"),
       "-> setBoneLabel(raw name, label)"
     );
-    // IDENTIFY (2026-06-12): hovering a row's raw name highlights that bone on her body…
-    const raw = [...document.querySelectorAll("span")].find((s) => /Shibahu_Tail1_0199/.test(s.textContent || ""));
-    assert.ok(raw, "raw bone name span exists");
-    fire(raw, "mouseenter");
+    // IDENTIFY (2026-07-03 redesign): each row leads with a checkbox — ✓ pins a marker on that bone…
+    const seeIt = (i) => i.type === "checkbox" && /show this bone/i.test(i.title || "");
+    const boxes = [...document.querySelectorAll("input")].filter(seeIt);
+    assert.equal(boxes.length, 1, "one see-it checkbox per visible row");
+    boxes[0].checked = true;
+    fire(boxes[0], "change");
     assert.ok(
-      m.calls.some((c) => c[0] === "highlightBone" && c[1] === "Shibahu_Tail1_0199"),
-      "hover -> highlightBone(raw name)"
+      m.calls.some((c) => c[0] === "setBoneMark" && c[1] === "Shibahu_Tail1_0199" && c[2] === true),
+      "checkbox -> setBoneMark(raw name, true)"
     );
-    // …and the 🎯 pick button arms a click-on-her pick whose result lands in the filter.
-    const pk = [...document.querySelectorAll("button")].find((b) => /Pick a bone/i.test(b.textContent || ""));
-    assert.ok(pk, "pick button exists");
-    pk.click();
-    assert.ok(pickCb, "pick armed a callback");
-    pickCb("DEF-spine006_016");
-    assert.equal(filt.value, "DEF-spine006_016", "picked bone name lands in the filter");
+    // …the old click-modes are gone…
+    assert.ok(
+      ![...document.querySelectorAll("button")].some((b) => /Pick a bone/i.test(b.textContent || "")),
+      "no click-her-to-pick button"
+    );
+    // …and a bone the engine reports as already marked renders pre-checked.
+    filt.value = "spine";
+    fire(filt, "input");
+    const pre = [...document.querySelectorAll("input")].find(seeIt);
+    assert.ok(pre && pre.checked, "already-marked bone renders with its checkbox ticked");
   } finally {
     dom.cleanup();
   }

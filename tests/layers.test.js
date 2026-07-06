@@ -3,7 +3,7 @@
 // Headless: build the synthetic fullBiped, drive update(), assert on the live role bones.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProceduralRig } from "../procedural.js";
+import { buildProceduralRig } from "../src/motion/procedural.js";
 import { fullBiped } from "./fixtures.js";
 
 // rotation angle (rad) between a bone's current orientation and a captured rest quaternion:
@@ -72,6 +72,26 @@ test("a timed layer self-expires after dur", () => {
   assert.deepEqual(proc.layerIds(), [], "expired layer removed from the stack");
 });
 
+test("no-hinge flex + parts pitch clamp COMBINED to the role's pitch limit, not 2x", () => {
+  // head has no flexAxis, so its flex channel falls back to LOCAL PITCH — the same physical axis
+  // as parts pitch. Clamped separately, 0.7+0.7 rad reached ~80deg against an advertised 40.
+  const LIM = {
+    bones: { head: { pitch_min: -40, pitch_max: 40, yaw_min: -80, yaw_max: 80, roll_min: -30, roll_max: 30 } },
+  };
+  const proc = buildProceduralRig(fullBiped(), LIM);
+  const bones = proc.roles();
+  const restHead = bones.head.quaternion.clone();
+  proc.setLayer("a", { parts: { head: [0.7, 0, 0] }, flex: { head: [0.7] } });
+  for (let i = 0; i < 30; i++) proc.update(0.016); // no speed_limit entry -> clamp inert, arrives immediately; iterate for settle anyway
+  const total = angOff(bones.head, restHead);
+  const cap = (40 * Math.PI) / 180;
+  assert.ok(
+    total <= cap + 0.03,
+    `combined parts+flex head pitch ${total.toFixed(3)} rad must respect the ${cap.toFixed(3)} rad limit`
+  );
+  assert.ok(total > cap - 0.1, "and it should actually REACH the limit (the clamp bites, the motion isn't lost)");
+});
+
 test("a flex-channel layer bends a limb about its hinge", () => {
   const proc = buildProceduralRig(fullBiped(), {});
   const bones = proc.roles();
@@ -97,7 +117,7 @@ test("capabilities reports this model's resolved roles + channels", () => {
   const cap = buildProceduralRig(fullBiped(), {}).capabilities();
   assert.ok(cap.roles.includes("head") && cap.roles.includes("left_arm"), "roles list the resolved bones");
   assert.ok(cap.flexRoles.includes("left_arm"), "arms are flex-able");
-  assert.ok(cap.channels.pose && cap.channels.look && cap.channels.layers, "core channels present");
+  assert.ok(cap.channels.pose && cap.channels.layers, "core channels present");
   assert.equal(
     cap.units && cap.units.offsets,
     "radians",
@@ -274,7 +294,21 @@ test("GUARD: an fn returning a stringly/NaN part never bricks a bone (additive m
 });
 
 test("GUARD: speed_limit:0 is INERT (Infinity), it does not FREEZE the role", () => {
-  const proc = buildProceduralRig(fullBiped(), { head: { speed_limit: 0, pitch: 120, yaw: 120, roll: 120 } });
+  // limits ride under boneLimits.bones — the old flat shape here never reached the compositor,
+  // so this guard passed vacuously (audit 2026-07-05 round 2)
+  const proc = buildProceduralRig(fullBiped(), {
+    bones: {
+      head: {
+        speed_limit: 0,
+        pitch_min: -120,
+        pitch_max: 120,
+        yaw_min: -120,
+        yaw_max: 120,
+        roll_min: -120,
+        roll_max: 120,
+      },
+    },
+  });
   const bones = proc.roles();
   const restHead = bones.head.quaternion.clone();
   proc.setLayer("a", { parts: { head: [0.3, 0, 0] } });
@@ -283,4 +317,45 @@ test("GUARD: speed_limit:0 is INERT (Infinity), it does not FREEZE the role", ()
     angOff(bones.head, restHead) > 0.2,
     "head reached its target despite a 0 speed_limit (was frozen at 0 before the fix)"
   );
+});
+
+test("flexCommand reports the per-layer PASS-1 flex sums; appliedFlex minus it = the ORPHAN residual (the grab's abd0)", () => {
+  // Audit 2026-07-05 round 2, finding 4: the ragdoll grab must fold in only the residual NO layer
+  // owns — the full applied value double-counts a coexisting live layer's hold.
+  const proc = buildProceduralRig(fullBiped(), {
+    // the live speed limit (90 deg/s) so the post-release residual DECAYS over frames instead of
+    // snapping to the remaining sum (no limits -> Infinity -> the orphan would read 0 instantly)
+    bones: {
+      left_arm: {
+        speed_limit: 90,
+        pitch_min: -170,
+        pitch_max: 170,
+        yaw_min: -170,
+        yaw_max: 170,
+        roll_min: -170,
+        roll_max: 170,
+      },
+    },
+  });
+  proc.setLayer("pose", { flex: { left_arm: [0, 0.5] } }); // a persistent AI pose holding the arm out
+  proc.setLayer("grab_follow", { flex: { left_arm: [0, 0.3] } }); // the previous grab, still live
+  for (let i = 0; i < 60; i++) proc.update(1 / 60); // ease onto the 0.8 sum (90 deg/s)
+  let cmd = proc.flexCommand("left_arm");
+  assert.ok(Math.abs(cmd.abd - 0.8) < 1e-9, `full command sum 0.8 (got ${cmd.abd})`);
+  cmd = proc.flexCommand("left_arm", "grab_follow");
+  assert.ok(Math.abs(cmd.abd - 0.5) < 1e-9, `excludeId leaves the pose layer's 0.5 (got ${cmd.abd})`);
+  assert.ok(Math.abs(proc.appliedFlex("left_arm").abd - 0.8) < 1e-6, "applied settled on the sum");
+  // release the grab layer (the re-grab path clears it before reading the residual)
+  proc.clearLayer("grab_follow");
+  proc.update(1 / 60);
+  const orphan = proc.appliedFlex("left_arm").abd - proc.flexCommand("left_arm", "grab_follow").abd;
+  assert.ok(
+    orphan > 0.2 && orphan < 0.3,
+    `one frame after release the orphan residual is the decaying old-grab offset (got ${orphan.toFixed(3)})`
+  );
+  assert.ok(
+    Math.abs(proc.flexCommand("left_arm").abd - 0.5) < 1e-9,
+    "a cleared layer no longer appears in the command sum"
+  );
+  assert.deepEqual(proc.flexCommand("no_such_role"), { ang: 0, abd: 0 }, "unknown role reads as zero command");
 });

@@ -3,8 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../rig.js";
-import { buildDefaultAvatar } from "../default_avatar.js";
+import { resolveRig, roleOfName, resolveBetween, snapshotBones } from "../src/rig/rig.js";
 import {
   fullBiped,
   blenderBiped,
@@ -210,6 +209,79 @@ test("resolveBetween (in isolation): fills the middle joint from a shoulder+fore
   );
 });
 
+test("Daz Genesis naming resolves: leading-l/r sides, Collar/ShldrBend shoulders, abdomen spine", () => {
+  // zhu_yuan lesson (4/19 -> 19/19): Daz tags sides as a BARE lowercase l/r glued to the part.
+  assert.equal(roleOfName("lThighBend_05"), "left_leg");
+  assert.equal(roleOfName("rShin_023"), "right_shin");
+  assert.equal(roleOfName("lFoot_08"), "left_foot");
+  assert.equal(roleOfName("lCollar_063"), "left_shoulder", "Daz Collar = the clavicle");
+  assert.equal(
+    roleOfName("lShldrBend_064"),
+    "left_shoulder",
+    "ShldrBend maps shoulder too — arrives second, so the between-repair promotes it to the ARM"
+  );
+  assert.equal(roleOfName("lShldrTwist_065"), null, "twist bones still never win a role");
+  assert.equal(roleOfName("lForearmBend_066"), "left_forearm");
+  assert.equal(roleOfName("abdomenLower_059"), "spine", "Daz abdomen = spine");
+  assert.equal(roleOfName("lowerBack"), "spine", "leading lowercase l NOT followed by a capital is not a side tag");
+  assert.equal(roleOfName("rib_1"), null, "nor is a leading r");
+});
+
+test("accessory bones never steal a role by substring: ...Pad / ...Jiggle are SKIPPED (FNaF lesson)", () => {
+  // R_ShoulderPad_jnt came BEFORE R_Shoulder_jnt in traversal order and stole right_shoulder.
+  assert.equal(roleOfName("R_ShoulderPad_jnt_045"), null, "armor pad is not the shoulder");
+  assert.equal(roleOfName("L_Shoulder_Jiggle_jnt_043"), null, "secondary-motion aid is not the shoulder");
+  assert.equal(roleOfName("R_Shoulder_jnt_046"), "right_shoulder", "the REAL joint still resolves");
+  assert.equal(roleOfName("L_Elbow_Jiggle_jnt_042"), null, "jiggle elbows are not forearms");
+});
+
+test("Source/GMod bip naming (fnia lesson): sided 'hip' IS the thigh; 'Jig' helpers never win", () => {
+  // fnia_models_gmod_cally3d: legs resolved to ThighJigR/L (jiggle aids, arbitrary axes -> knees
+  // bent sideways) because bip_hip_R (the REAL thigh in Source naming) was rejected as a sided
+  // center bone and /jiggle/ didn't catch the "Jig" spelling.
+  assert.equal(roleOfName("bip_hip_R_083"), "right_leg", "Source thigh joint is named 'hip'");
+  assert.equal(roleOfName("bip_hip_L_091"), "left_leg");
+  assert.equal(roleOfName("ThighJigR_087"), null, "thigh JIGGLE helper is not the leg");
+  assert.equal(roleOfName("ThighJigL_095"), null);
+  assert.equal(roleOfName("bip_pelvis_07"), "hips", "the center pelvis still wins hips");
+  assert.equal(roleOfName("Bip_Pelvis_L"), null, "sided PELVIS stays an auxiliary");
+  assert.equal(roleOfName("shipMast"), null, "'hip' inside a word is not a hip");
+});
+
+test("joint-style promotion: an OUTBOARD 'shoulder' that directly parents the elbow BECOMES the arm", () => {
+  // FNaF-style chain: Shoulder_jnt (head at the arm line) -> Elbow -> Wrist, no upper-arm bone.
+  // The shoulder bone spans the upper-arm segment, so it takes the ARM role (else the whole arm
+  // is undriveable over the bus) and the shoulder role is honestly vacated.
+  const arm = (pfx, sx) =>
+    makeBone(
+      pfx + "_Shoulder_jnt",
+      [sx * 0.3, 0.1, 0],
+      [
+        makeBone(
+          pfx + "_Elbow_jnt",
+          [sx * 0.2, -0.02, 0],
+          [makeBone(pfx + "_Wrist_jnt", [sx * 0.2, -0.02, 0], [makeBone(pfx + "_Wrist_end", [sx * 0.08, 0, 0])])]
+        ),
+      ]
+    );
+  const hips = makeBone(
+    "Hips",
+    [0, 1.0, 0],
+    [
+      makeBone(
+        "Spine",
+        [0, 0.12, 0],
+        [makeBone("Neck", [0, 0.3, 0], [makeBone("Head", [0, 0.12, 0])]), arm("L", -1), arm("R", +1)]
+      ),
+    ]
+  );
+  const r = resolveRig(underArmature(hips));
+  assert.equal(r.roles.left_arm?.name, "L_Shoulder_jnt", "the outboard shoulder bone IS the upper arm");
+  assert.equal(r.roles.right_arm?.name, "R_Shoulder_jnt");
+  assert.ok(!("left_shoulder" in r.roles), "the shoulder role is vacated, never double-driven");
+  assert.equal(r.roles.left_forearm?.name, "L_Elbow_jnt", "elbow/wrist keep their joint-style mapping");
+});
+
 test("between-repair NEVER fabricates a middle bone when prox/dist are directly linked", () => {
   // shoulder → forearm directly (no upper-arm bone): left_arm must stay EMPTY, not alias the forearm
   const arm = (pfx, sx) =>
@@ -272,15 +344,11 @@ test("a VRM gap falls through to the name tier", () => {
   assert.equal(r.source.chest, "name", "chest should be filled by the name tier when VRM lacks it");
 });
 
-// ── No-model marker (user decision 2026-06-26: the self-made character is RETIRED) ──
-// buildDefaultAvatar() now returns an INERT, empty Group — no skeleton, no body bones.
-// When no .glb is loaded, avatar.js raises a DOM "add a model" hint instead of rendering
-// a figure. So the marker MUST resolve to ZERO roles (nothing for the compositor to drive),
-// and rig.js must degrade honestly on a boneless scene rather than throwing.
-test("the retired no-model marker is inert: zero bones resolve, no roles, no crash", () => {
-  const { scene } = buildDefaultAvatar();
-  assert.equal(scene.userData.isNoModelMarker, true, "default build is the inert marker");
+// ── Boneless-scene safety: rig.js must degrade honestly on a scene with no bones (the no-model
+// path renders an empty group + a DOM "add a model" hint), resolving ZERO roles, never throwing.
+test("rig resolution on a boneless scene is inert: zero bones resolve, no roles, no crash", () => {
+  const scene = new THREE.Group();
   const r = resolveRig(scene);
-  assert.deepEqual(r.matched, [], "an empty marker resolves no roles");
+  assert.deepEqual(r.matched, [], "an empty scene resolves no roles");
   assert.deepEqual(r.report.bySource, {}, "no bones matched from any tier");
 });

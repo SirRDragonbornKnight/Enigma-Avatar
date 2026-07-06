@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { installDOM, makeApi } from "./dom.js";
-import { createUI } from "../ui.js";
+import { createUI } from "../src/ui/ui.js";
 
 const grid = () => document.getElementById("avgrid");
 const cardById = (id) => [...grid().children].find((c) => c.dataset && c.dataset.id === id);

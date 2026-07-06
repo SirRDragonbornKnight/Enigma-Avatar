@@ -3,7 +3,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { computeWeightMass, subtreeMass, coincident, findRoleTwins, groupCoincidentRoots } from "../skinweights.js";
+import {
+  computeWeightMass,
+  subtreeMass,
+  coincident,
+  findRoleTwins,
+  groupCoincidentRoots,
+} from "../src/rig/skinweights.js";
 
 const bone = (name, pos) => {
   const b = new THREE.Bone();

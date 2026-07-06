@@ -3,7 +3,7 @@
 // (bell + jumpElevation were removed with the gesture/clip purge, 2026-06-25, and their tests with them.)
 import { test } from "node:test";
 import assert from "node:assert";
-import { easeInOut } from "../motionmath.js";
+import { easeInOut } from "../src/motion/motionmath.js";
 
 test("easeInOut: endpoints + midpoint, monotonic, slow-start/slow-end", () => {
   assert.strictEqual(easeInOut(0), 0);

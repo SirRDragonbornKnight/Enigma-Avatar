@@ -15,9 +15,9 @@
 // state) the very same frame wipes the pose back to rest — so the test fails without #1.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProceduralRig } from "../procedural.js";
+import { buildProceduralRig } from "../src/motion/procedural.js";
 import { fullBiped } from "./fixtures.js";
-import { stepProcVrmFrame } from "../avatar.js";
+import { stepProcVrmFrame } from "../src/avatar.js";
 
 // rotation angle (rad) between a bone's current orientation and a captured rest quaternion.
 const angOff = (q, restQ) => 2 * Math.acos(Math.min(1, Math.abs(q.dot(restQ))));

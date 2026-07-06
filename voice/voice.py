@@ -23,9 +23,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import socket
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -50,6 +50,22 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Wire protocol (raw socket, matches sibling raw-socket mods)
 # ---------------------------------------------------------------------------
+MAX_MSG_BYTES = 32 * 1024 * 1024  # a local client must not demand a multi-GB buffer
+
+
+def _recv_exact(sock, n: int) -> Optional[bytes]:
+    """Read exactly n bytes (TCP recv may legally return short) or None on EOF.
+    The old bare recv(4) crashed struct.unpack on a 1-3 byte read and fed
+    truncated bodies to Message.from_bytes (audit 2026-07-04)."""
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
+
+
 class MessageType(str, Enum):
     COMMAND = "command"
     RESPONSE = "response"
@@ -362,20 +378,33 @@ class SystemTTS:
         return True
 
     def speak(self, text: str) -> bool:
+        # Never build a shell string from `text` (it is caller/LLM-authored): pass it as an
+        # argv element or via stdin so `$(...)`, `;`, backticks etc. are spoken literally, never
+        # executed (no SAPI/PowerShell/shell injection). No `shell=True` anywhere here.
+        text = text or ""
         try:
-            text_safe = (text or "").replace('"', "'")
             if self.platform == "win32":
+                # Read the utterance from STDIN inside PowerShell -> the text is never
+                # interpolated into the script body.
                 ps = (
                     "Add-Type -AssemblyName System.Speech; "
                     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                    f'$s.Speak("{text_safe}")'
+                    "$s.Speak([Console]::In.ReadToEnd())"
                 )
-                os.system(f'powershell -Command "{ps}"')
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps],
+                    input=text,
+                    text=True,
+                    check=False,
+                )
             elif self.platform == "darwin":
-                os.system(f'say "{text_safe}"')
+                subprocess.run(["say", text], check=False)  # list form: no shell
             else:
-                # Linux: try espeak / spd-say if installed; else log.
-                code = os.system(f'espeak "{text_safe}" 2>/dev/null')
+                # Linux: espeak if installed; else honest log.
+                try:
+                    code = subprocess.run(["espeak", text], check=False).returncode
+                except FileNotFoundError:
+                    code = 1
                 if code != 0:
                     logger.warning("SystemTTS: no espeak on Linux; install espeak-ng or use Kokoro provider")
                     return False
@@ -454,37 +483,49 @@ class VoicePipeline:
             "errors": [],
         }
 
-        self.stt = self._make_stt(self.stt_provider)
-        if self.stt is None:
-            result["success"] = False
-            result["errors"].append(
-                f"unknown stt provider '{self.stt_provider}'; supported: ['whisper'] (faster-whisper)"
-            )
-        elif not self.stt.load():
-            result["success"] = False
-            result["errors"].append(
-                f"stt provider '{self.stt_provider}' load failed - "
-                "is faster-whisper installed? (pip install faster-whisper)"
-            )
-        else:
+        # IDEMPOTENT + presence == loaded (audit 2026-07-04): a provider that fails .load() is
+        # set back to None (the old code left the dead instance assigned, so the NEXT request's
+        # gate saw "loaded" and nondeterministically passed), and an already-present provider is
+        # never rebuilt (a reload here used to clobber injected/live providers and re-pay model load).
+        if self.stt is not None:
             result["stt"]["loaded"] = True
-
-        self.tts = self._make_tts(self.tts_provider)
-        if self.tts is None:
-            result["success"] = False
-            result["errors"].append(
-                f"unknown tts provider '{self.tts_provider}'; supported: ['local' (kokoro), 'system']"
-            )
-        elif not self.tts.load():
-            result["success"] = False
-            err = (
-                "kokoro not installed (pip install kokoro)"
-                if self.tts_provider == "local"
-                else "OS-native TTS unavailable"
-            )
-            result["errors"].append(f"tts provider '{self.tts_provider}' load failed - {err}")
         else:
+            self.stt = self._make_stt(self.stt_provider)
+            if self.stt is None:
+                result["success"] = False
+                result["errors"].append(
+                    f"unknown stt provider '{self.stt_provider}'; supported: ['whisper'] (faster-whisper)"
+                )
+            elif not self.stt.load():
+                self.stt = None
+                result["success"] = False
+                result["errors"].append(
+                    f"stt provider '{self.stt_provider}' load failed - "
+                    "is faster-whisper installed? (pip install faster-whisper)"
+                )
+            else:
+                result["stt"]["loaded"] = True
+
+        if self.tts is not None:
             result["tts"]["loaded"] = True
+        else:
+            self.tts = self._make_tts(self.tts_provider)
+            if self.tts is None:
+                result["success"] = False
+                result["errors"].append(
+                    f"unknown tts provider '{self.tts_provider}'; supported: ['local' (kokoro), 'system']"
+                )
+            elif not self.tts.load():
+                self.tts = None
+                result["success"] = False
+                err = (
+                    "kokoro not installed (pip install kokoro)"
+                    if self.tts_provider == "local"
+                    else "OS-native TTS unavailable"
+                )
+                result["errors"].append(f"tts provider '{self.tts_provider}' load failed - {err}")
+            else:
+                result["tts"]["loaded"] = True
 
         self._loaded = result["success"]
         return result
@@ -539,6 +580,7 @@ class Voice:
         self._continuous_listen = False
         self._continuous_thread: Optional[threading.Thread] = None
         self._last_transcript: str = ""
+        self._load_result: Optional[Dict[str, Any]] = None  # last pipeline.load() report (per-half gating)
 
         self._commands = {
             "listen": self._cmd_listen,
@@ -577,7 +619,8 @@ class Voice:
 
     # -- lifecycle commands ------------------------------------------------
     def _cmd_load(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return self.pipeline.load()
+        self._load_result = self.pipeline.load()
+        return self._load_result
 
     def _cmd_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -591,20 +634,26 @@ class Voice:
             "last_transcript": self._last_transcript,
         }
 
-    def _ensure_loaded(self) -> Optional[Dict[str, Any]]:
-        if self.pipeline.stt is None or self.pipeline.tts is None:
-            result = self.pipeline.load()
-            if not result.get("success"):
-                return {
-                    "success": False,
-                    "error": "pipeline load failed",
-                    "details": result,
-                }
+    def _ensure_loaded(self, need: str = "both") -> Optional[Dict[str, Any]]:
+        """Gate on the HALF the command actually needs (pipeline.load() nulls failed providers,
+        so presence == loaded). The old whole-pipeline gate had two bugs (audit 2026-07-04):
+        a missing faster-whisper held TTS hostage, and a failed-but-assigned provider made the
+        SECOND identical request skip the gate — first-call-fails / second-call-passes."""
+        needed = ["stt", "tts"] if need == "both" else [need]
+        if any(getattr(self.pipeline, h) is None for h in needed):
+            self._load_result = self.pipeline.load()
+        bad = [h for h in needed if getattr(self.pipeline, h) is None]
+        if bad:
+            return {
+                "success": False,
+                "error": f"{' and '.join(bad)} provider not available",
+                "details": self._load_result,
+            }
         return None
 
     # -- STT commands ------------------------------------------------------
     def _cmd_listen(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("stt")
         if err is not None:
             return err
         duration = float(params.get("duration", 5.0))
@@ -616,7 +665,7 @@ class Voice:
         return {"success": bool(text), "text": text, "duration": duration}
 
     def _cmd_transcribe(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("stt")
         if err is not None:
             return err
         audio_path = params.get("audio_path") or params.get("file_path")
@@ -636,7 +685,7 @@ class Voice:
 
     # -- TTS commands ------------------------------------------------------
     def _cmd_speak(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         text = params.get("text")
@@ -646,12 +695,20 @@ class Voice:
         return {"success": bool(ok), "text": text}
 
     def _cmd_generate_audio(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         text = params.get("text")
         if not text:
             return {"success": False, "error": "text required"}
+        # Optional per-request voice/speed — change the resident pipeline's settings WITHOUT reloading
+        # the model (Kokoro takes voice/speed per generate call), so one daemon serves every voice.
+        voice = params.get("voice")
+        if voice:
+            self.pipeline.tts.set_voice(voice)  # type: ignore[union-attr]
+        speed = params.get("speed")
+        if speed is not None:
+            self.pipeline.tts.set_rate(float(speed))  # type: ignore[union-attr]
         out_param = params.get("out_path") or params.get("output_path")
         out_path = Path(out_param) if out_param else None
         result = self.pipeline.tts.generate_to_file(text, out_path=out_path)  # type: ignore[union-attr]
@@ -669,7 +726,7 @@ class Voice:
     def _cmd_start_continuous(self, params: Dict[str, Any]) -> Dict[str, Any]:
         if self._continuous_listen:
             return {"success": False, "error": "continuous listen already active"}
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("stt")
         if err is not None:
             return err
         chunk_sec = float(params.get("chunk_sec", 5.0))
@@ -705,7 +762,7 @@ class Voice:
 
     # -- voice/rate/volume --------------------------------------------------
     def _cmd_set_voice(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         voice = params.get("voice")
@@ -715,7 +772,7 @@ class Voice:
         return {"success": bool(ok), "voice": voice}
 
     def _cmd_set_rate(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         rate = params.get("rate")
@@ -725,7 +782,7 @@ class Voice:
         return {"success": bool(ok), "rate": rate}
 
     def _cmd_set_volume(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         volume = params.get("volume")
@@ -735,7 +792,7 @@ class Voice:
         return {"success": bool(ok), "volume": volume}
 
     def _cmd_list_voices(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        err = self._ensure_loaded()
+        err = self._ensure_loaded("tts")
         if err is not None:
             return err
         voices = self.pipeline.tts.get_voices()  # type: ignore[union-attr]
@@ -857,16 +914,16 @@ class Voice:
         self._running = True
         while self._running:
             try:
-                len_data = sock.recv(4)
+                len_data = _recv_exact(sock, 4)
                 if not len_data:
                     break
                 msg_len = struct.unpack(">I", len_data)[0]
-                msg_data = b""
-                while len(msg_data) < msg_len:
-                    chunk = sock.recv(min(4096, msg_len - len(msg_data)))
-                    if not chunk:
-                        break
-                    msg_data += chunk
+                if msg_len > MAX_MSG_BYTES:
+                    logger.error(f"oversized message ({msg_len} bytes) - dropping connection")
+                    break
+                msg_data = _recv_exact(sock, msg_len)
+                if msg_data is None:
+                    break
                 msg = Message.from_bytes(msg_data)
                 if msg.type == MessageType.COMMAND:
                     result = self.handle_command(
@@ -901,16 +958,16 @@ class Voice:
     def _handle_client(self, client: socket.socket) -> None:
         try:
             while self._running:
-                len_data = client.recv(4)
+                len_data = _recv_exact(client, 4)
                 if not len_data:
                     break
                 msg_len = struct.unpack(">I", len_data)[0]
-                msg_data = b""
-                while len(msg_data) < msg_len:
-                    chunk = client.recv(min(4096, msg_len - len(msg_data)))
-                    if not chunk:
-                        break
-                    msg_data += chunk
+                if msg_len > MAX_MSG_BYTES:
+                    logger.error(f"oversized message ({msg_len} bytes) - dropping connection")
+                    break
+                msg_data = _recv_exact(client, msg_len)
+                if msg_data is None:
+                    break
                 msg = Message.from_bytes(msg_data)
                 if msg.type == MessageType.COMMAND:
                     result = self.handle_command(
@@ -918,7 +975,10 @@ class Voice:
                         msg.payload.get("params", {}),
                     )
                     resp = Message(type=MessageType.RESPONSE, payload=result, id=msg.id)
-                    client.sendall(resp.to_bytes())
+                    resp_data = resp.to_bytes()
+                    # length-prefixed, matching the request framing and connect_to_router (was raw
+                    # bytes with no prefix here — a client could not frame the response reliably)
+                    client.sendall(struct.pack(">I", len(resp_data)) + resp_data)
         except Exception as e:
             logger.error(f"Client error: {e}")
         finally:

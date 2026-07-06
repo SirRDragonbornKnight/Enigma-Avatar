@@ -3,7 +3,7 @@
 // is needed. Locks the audit 2026-06-26 gate: a {action:"say",url} must not fetch remote audio.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createVoice } from "../voice.js";
+import { createVoice } from "../src/audio/voice.js";
 
 test("bus gate: voice.speak BLOCKS remote http(s) audio urls (honest status, no fetch)", async () => {
   let status = null;

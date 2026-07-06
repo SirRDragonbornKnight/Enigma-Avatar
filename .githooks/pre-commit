@@ -1,0 +1,5 @@
+#!/bin/sh
+# Pre-commit gate: lint + typecheck + format:check + tests must pass before a commit lands, so the
+# baseline can't rot (the exact drift that left "finalized" prettier-dirty). Enabled by the package.json
+# "prepare" script (git config core.hooksPath .githooks) on npm install. Bypass once with --no-verify.
+exec npm run check

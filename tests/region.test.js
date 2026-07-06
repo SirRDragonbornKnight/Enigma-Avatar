@@ -4,7 +4,7 @@
 // pinned to real-world names (incl. the NSFW Mal0 rig) — not invented ones.
 import { test } from "node:test";
 import assert from "node:assert";
-import { classifyBone, NSFW_REGIONS } from "../region.js";
+import { classifyBone, NSFW_REGIONS } from "../src/rig/region.js";
 
 // (the BREEZE_SCALE NSFW-zero test died with the breeze itself, 2026-06-12 — no ambient wind exists)
 

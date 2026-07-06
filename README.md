@@ -19,9 +19,32 @@ your desktop, like _Desktop Mate_. One codebase, runs in a browser **and** in El
 > `rig_overrides`), with full per-finger control, a true sum-then-cap compositor, an enforced
 > speed limit, working VRM bodies, and strict blink. This README reflects that.
 
-## Files
+## Repo layout
 
-- `index.html` + `avatar.js` -- the engine **orchestrator** (scene, render loop, model lifecycle, float/grab, the `EnigmaAvatar` control surface + bus `handleCommand`).
+The tree groups files by concern (folderized 2026-06-29; see `TODO.md` "Restructure"):
+
+```
+index.html              page shell (importmap + loads src/avatar.js)
+shell/                  Electron MAIN process: main.cjs, preload.cjs, foreground.cjs
+src/
+  avatar.js             the renderer orchestrator (entry; wires everything below)
+  model/                loader.js, library.cjs, default_avatar.js
+  rig/                  rig.js, skinweights.js, region.js, face-geometry.js, mouth-geometry.js
+  motion/               procedural.js, spring.js, conjure.js, physics.js, motionmath.js
+  face/                 facial.js          audio/  voice.js
+  interaction/          hittest.js (SAFETY), placement.js
+  control/              surface.js (EnigmaAvatar facade + connect), bus.js (verb registry),
+                        protocol.js (wire contract), query.js (live queries), control.js (perform-tag parser)
+  ui/                   ui.js              util/   mathutil.js, localurl.js (local refs -> app:// origin)
+python/                 bus.py, say.py, speak.py, import_unitypackage.py
+voice/                  vendored Kokoro TTS (voice.py)
+tools/  tests/  assets/
+bone_limits.json, models.json, mod.json, package.json   (config/data stay at root)
+```
+
+## Files (by role)
+
+- `index.html` + `src/avatar.js` -- the engine **orchestrator** (scene, render loop, model lifecycle, float/grab, the `EnigmaAvatar` control surface + bus `handleCommand`).
 - `rig.js` -- **bone IDENTIFICATION cascade**: VRM humanoid -> name regex -> geometric/topological inference -> structural "between" repair. Generic (no per-model data); maps any rig's bones to 19 canonical roles and degrades gracefully on non-bipeds. Unit-tested.
 - `procedural.js` -- the motion compositor: applies the AI's masked, weighted `pose`/`flex` layers (+ per-finger curl) over the roles `rig.js` resolves. Same-role layers sum, the sum is capped once to the joint limit, and the per-frame delta is rate-limited to `speed_limit`. No idle/emote catalog.
 - `spring.js` -- spring-bone physics (hair/tail/ears sway); name-based + geometric fallback, with role-matched bones excluded so limbs never go floppy; gravity gated on real motion so fallback chains don't sag at rest.
@@ -33,14 +56,14 @@ your desktop, like _Desktop Mate_. One codebase, runs in a browser **and** in El
 - `control.js` -- parses `perform`'s inline speech tags (`[emotion]`/`[conjure:x]`/`[pose:role=val]`/`[look:dir]`) into motion + the clean TTS line.
 - `ui.js` -- the right-click menu + Settings dialog (all the DOM). Numerical inputs (no sliders); capability-driven attach-bone picker.
 - `default_avatar.js` -- the **inert no-model marker** (an empty `NoModelMarker` group, 0 bones / 0 roles); when no model is loaded the overlay shows an ASCII DOM hint to add a `.glb`.
-- `main.js` + `preload.js` + `package.json` -- the Electron shell (transparent, click-through overlay) + model-import dialog.
-- `bus.py` -- local WebSocket relay (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar.
+- `main.cjs` + `preload.cjs` + `package.json` -- the Electron shell (transparent, click-through overlay) + model-import dialog.
+- `bus.py` -- local WebSocket hub (`ws://127.0.0.1:8765`) so Enigma/Odysseus can drive the avatar; commands broadcast, replies route back to their asker (hub-rewritten reqIds).
 - `say.py` -- CLI to drive the avatar (model swap, size, `fingers`, `perform`, `snap`, **say** a WAV, **demo**); fails honestly on bad args, ASCII help.
 - `speak.py` -- **Kokoro TTS -> lip-sync**: synthesize text and have the avatar speak it.
 - `import_unitypackage.py` -- turn a Unity `.unitypackage` (VRChat avatar) into a loadable model folder.
 - `models/` + `models.json` -- model folders + the user-model manifest (built-ins live in `avatar.js`).
 - `bone_limits.json` -- 19-bone humanoid joint limits + speed limits (clamps procedural posing; role names match `rig.js`).
-- `tests/` -- Node unit tests (`npm test`) for the rig cascade, spring detection, compositor sum-then-cap/speed-limit, and `vrm_order` (the VRM pose-order regression); also run under pytest via `tests/test_avatar_rig.py`. `tests/realmodels.test.js` locks the cascade's per-model role counts against the actual assets.
+- `tests/` -- Node unit tests (`npm test`) for the rig cascade, spring detection, compositor sum-then-cap/speed-limit, and `vrm_order` (the VRM pose-order regression); pytest covers the bus origin gate + reply routing, the protocol mirror, bone data, and the voice service. `tests/realmodels.test.js` locks the cascade's per-model role counts against the actual assets.
 - `tools/rig_report.mjs` -- headless cascade inspector: `node tools/rig_report.mjs [model.glb] [--bones]` reads a model's real bones straight from its glTF JSON (no WebGL) and reports which of the 19 roles resolve and by which tier (incl. the tier-3.5 `resolveBetween` step + a blink-channel probe) -- so a cascade change can be measured against the real assets, not guessed.
 
 ## Run it on your desktop (NO admin)
@@ -73,7 +96,7 @@ for everything (models, **Add model...**, size, settings, quit). Launches hidden
   PRIMITIVES: masked, weighted `pose`/`flex` motion layers + per-finger `fingers`, authored over
   the bus or from inline-tagged speech (`perform`). Disjoint layers sum; same-role layers sum-then-cap;
   the per-frame delta is velocity-clamped; timed layers self-expire.
-  Left alone she stands still -- springs, blink (on a drive), and cursor-look are the only reflexes.
+  Left alone she stands still -- springs and blink (on a drive) are the only reflexes.
 - **Facial layer** -- amplitude lip-sync (blendshapes/visemes if present, else a jaw bone) + strict blink (speech-onset / bus only).
 - **Voice** -- Kokoro TTS speaks and the mouth lip-syncs to the audio (no cloud, **no fallback**).
 - **VRM bodies move** -- `autoUpdateHumanBones=false` at load lets the compositor drive `.vrm` humanoids.
@@ -95,7 +118,10 @@ that protocol drives her -- Enigma, Odysseus, or the CLIs below.
 - `EnigmaAvatar.springTune({ stiffness, drag, gravity })` -- hair/tail feel (saved per avatar).
 - `EnigmaAvatar.facialTune({ jawAxis:'x', jawOpen:0.32 })` -- jaw-flap axis/amount (per-rig; needs your eyes).
 - `EnigmaAvatar.say("file:///...wav")` / `EnigmaAvatar.mouth(0.5)` -- speech + manual jaw.
-- `EnigmaAvatar.capabilities()` -- what THIS model can drive (roles, flex-able limbs, finger names, angle + speed limits, units).
+- `EnigmaAvatar.expr({ smile:1, brows:0.5 })` -- expression channels 0..1 down per-channel ladders (VRM preset -> named morph -> face bones -> honest none); the reply's `via` names the tier that answered.
+- `EnigmaAvatar.stretch({ role:'head', pull:[0.1,0,0] })` -- grab a skin region and HOLD it (re-send `{id,pull}` to drag, `{release:true|id}` to let go -- it springs back bit-exact).
+- `EnigmaAvatar.poke({ role:'head', amount:-0.2 })` -- one-shot dent (or bulge, amount>0) along vertex normals; wobbles back on its own.
+- `EnigmaAvatar.capabilities()` -- what THIS model can drive (roles, flex-able limbs, finger names, angle + speed limits, units, expression channels).
 - `EnigmaAvatar.state()` -- debug (size, pos, springBones, facial mode, toggles).
 
 ## Needs your eyes (can't be verified headless)

@@ -5,8 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { popScale, floatBob } from "../motionmath.js";
-import { createConjure } from "../conjure.js";
+import { popScale, floatBob } from "../src/motion/motionmath.js";
+import { createConjure } from "../src/motion/conjure.js";
 
 // ---- the cartoon FEEL math the conjure uses ----
 test("popScale: 0 at p=0, 1 at p=1", () => {

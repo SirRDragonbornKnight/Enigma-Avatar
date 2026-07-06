@@ -1,7 +1,10 @@
 # analyze_rig.py — study a model's SKELETON properly: the bone hierarchy, each bone's world rest
 # position, and the direction it points (parent→child). So motion layers pose the RIGHT bones on the
 # RIGHT axes instead of guessing. Usage: python analyze_rig.py <model.glb>
-import sys, json, struct, re
+import sys
+import json
+import struct
+import re
 import numpy as np
 
 
@@ -40,6 +43,9 @@ def local(n):
     return T @ R @ S
 
 
+if len(sys.argv) < 2:
+    print("usage: python analyze_rig.py <model.glb>", file=sys.stderr)
+    raise SystemExit(2)
 g = load_glb(sys.argv[1])
 nodes = g["nodes"]
 parent = {}
@@ -64,7 +70,8 @@ def wp(i):
 joints = set()
 for sk in g.get("skins", []):
     joints.update(sk.get("joints", []))
-name = lambda i: nodes[i].get("name", "") or f"node{i}"
+def name(i):
+    return nodes[i].get("name", "") or f"node{i}"
 
 
 def report(title, pat):

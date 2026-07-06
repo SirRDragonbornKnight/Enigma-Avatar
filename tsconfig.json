@@ -1,0 +1,19 @@
+{
+  "// note": "Typecheck-only. The app still runs raw from node_modules via the index.html importmap (no build/emit). tsc is a LINT pass: `npm run typecheck`. checkJs is OFF globally so the legacy untyped modules stay silent; a file opts IN by adding `// @ts-check` at the top (do this for every new/rewritten module). JSDoc is the type language.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.js", "**/*.mjs", "**/*.cjs"],
+  "exclude": ["node_modules", "outputs", "tests/__pycache__", "**/__pycache__"]
+}

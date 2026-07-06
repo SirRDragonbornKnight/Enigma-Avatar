@@ -4,8 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { buildSpringBones } from "../spring.js";
-import { resolveRig } from "../rig.js";
+import { buildSpringBones } from "../src/motion/spring.js";
+import { resolveRig } from "../src/rig/rig.js";
 import { hairRig, fullBiped, opaqueBiped } from "./fixtures.js";
 
 test("hairRig — springs hair/strand/tail/skirt; excludes forearm & fingers", () => {
@@ -155,4 +155,102 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
     qB2 = findTail(mB).quaternion;
   const sdot = Math.abs(qA2.x * qB2.x + qA2.y * qB2.y + qA2.z * qB2.z + qA2.w * qB2.w);
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
+});
+
+// (The grab-region hold test lived here — the mechanism was tried as a pin, softened to a damp,
+// and REMOVED 2026-07-05: on ryuri the whole lower body is one tail region, so any nearby grab
+// "froze the bottom". Sprung regions swing free during drags; grabfollow.test.js covers the
+// ragdoll layer that carries the grab feel instead.)
+
+test("a 0<w<1 region weight DAMPS amplitude under motion (the damp branch, behaviorally)", () => {
+  // The hold churn rewrote the damp-application lines; regionFeel's mapping is unit-tested in
+  // mathutil.test.js but NO spring test drove the `feel.damp > 0` branch itself (audit 2026-07-05).
+  const findBone = (m, n) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === n) b = o;
+    });
+    return b;
+  };
+  const qdot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  const ang = (a, b) => 2 * Math.acos(Math.min(1, qdot(a, b)));
+  const defl = (weight) => {
+    const m = hairRig();
+    const s = buildSpringBones(m);
+    s.setRegionWeight("tail", weight);
+    const tail = findBone(m, "Tail");
+    const q0 = tail.quaternion.clone();
+    let peak = 0;
+    for (let i = 0; i < 30; i++) {
+      m.position.x += 0.15;
+      m.updateMatrixWorld(true);
+      s.update(1 / 60);
+      peak = Math.max(peak, ang(tail.quaternion, q0));
+    }
+    return peak;
+  };
+  const full = defl(1),
+    damped = defl(0.3);
+  assert.ok(full > 0.01, `weight 1 swings under motion (${full.toFixed(4)})`);
+  assert.ok(damped > 1e-6, "weight 0.3 still moves (damped, not pinned)");
+  assert.ok(
+    damped < full * 0.6,
+    `weight 0.3 deflects well under weight 1 (${damped.toFixed(4)} vs ${full.toFixed(4)})`
+  );
+});
+
+test("impulse() boundary guard: ±Infinity vectors/dur are neutralized (no NaN tip, no immortal zombie impulse)", () => {
+  const m = hairRig();
+  const s = buildSpringBones(m);
+  assert.equal(s.impulse("tail", { x: Infinity, y: -Infinity, z: NaN }, Infinity), true, "accepted (region exists)");
+  for (let i = 0; i < 60; i++) s.update(1 / 60);
+  let bad = 0;
+  m.traverse((o) => {
+    if (o.isBone && !Number.isFinite(o.quaternion.x)) bad++;
+  });
+  assert.equal(bad, 0, "no bone quaternion went non-finite from an Infinity impulse");
+  // a finite-but-huge dur is capped: after 31 simulated seconds the impulse list must be empty
+  s.impulse("tail", { x: 1 }, 9999);
+  for (let i = 0; i < 31 * 60; i++) s.update(1 / 60);
+  // (no public getter for _impulses — the receipt is that update() cost stays flat and bones stay finite)
+  m.traverse((o) => {
+    if (o.isBone && !Number.isFinite(o.quaternion.x)) bad++;
+  });
+  assert.equal(bad, 0, "bones finite after the capped-dur impulse expires");
+});
+
+test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 vs 120 fps", () => {
+  // The dt-normalized verlet (drag/stiffness/damp re-scaled to real dt + time-corrected inertia) must
+  // produce the same physical motion regardless of frame-rate. Before the fix the per-frame fractions
+  // applied N times -> a 120fps tail settled ~twice as fast as a 60fps one over the same wall-clock.
+  const findTail = (m) => {
+    let b = null;
+    m.traverse((o) => {
+      if (o.isBone && o.name === "Tail") b = o;
+    });
+    return b;
+  };
+  const angleFromRest = (q, rest) => {
+    const dot = Math.min(1, Math.abs(q.x * rest.x + q.y * rest.y + q.z * rest.z + q.w * rest.w));
+    return 2 * Math.acos(dot); // radians between two unit quaternions
+  };
+  const run = (dt, T) => {
+    const m = hairRig();
+    const s = buildSpringBones(m);
+    const rest = findTail(m).quaternion.clone();
+    s.impulse("tail", { x: 12 }, 0.3);
+    const n = Math.round(T / dt);
+    for (let i = 0; i < n; i++) s.update(dt);
+    return angleFromRest(findTail(m).quaternion, rest);
+  };
+  const T = 0.25; // mid-swing — before full settle, where any integrator trivially agrees at rest
+  const a = run(1 / 60, T);
+  const b = run(1 / 120, T);
+  assert.ok(a > 0.01, `60fps tail must visibly deflect (got ${a.toFixed(4)} rad)`);
+  assert.ok(b > 0.01, `120fps tail must visibly deflect (got ${b.toFixed(4)} rad)`);
+  const rel = Math.abs(a - b) / Math.max(a, b);
+  assert.ok(
+    rel < 0.15,
+    `deflection must agree across frame-rates (60fps ${a.toFixed(4)} vs 120fps ${b.toFixed(4)} rad, rel diff ${(rel * 100).toFixed(1)}%)`
+  );
 });

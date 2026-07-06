@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { repairModel, diagnoseModel } from "../tools/fix_model.mjs";
+import { repairModel, diagnoseModel, planSceneJunk, planDupBodies } from "../tools/fix_model.mjs";
 
 const JSON_TYPE = 0x4e4f534a,
   BIN_TYPE = 0x004e4942,
@@ -115,4 +115,43 @@ test("diagnose: counts mojibake vs recoverable vs clean", () => {
   assert.equal(d.nodes, 3);
   assert.equal(d.mojibake, 1);
   assert.equal(d.recoverable, 1);
+});
+
+test("planSceneJunk: unskinned meshes OUTSIDE the skeleton are junk; joint-parented props are kept", () => {
+  const g = {
+    skins: [{ joints: [2, 3] }],
+    nodes: [
+      { name: "SceneRoot", children: [1, 2, 4, 6] },
+      { name: "Body", mesh: 0, skin: 0 },
+      { name: "Hips", children: [3] },
+      { name: "Head", children: [5] },
+      { name: "Shelf", mesh: 1 }, // unskinned, outside the skeleton -> junk (the aveline shelf)
+      { name: "Hat", mesh: 2 }, // rigid prop parented under the Head JOINT -> legit, kept
+      { name: "Logo", mesh: 3 }, // junk (the floating logo)
+    ],
+  };
+  assert.deepEqual(planSceneJunk(g), [4, 6], "shelf + logo detach; body and hat stay");
+  assert.deepEqual(planSceneJunk({ nodes: [{ name: "Statue", mesh: 0 }] }), [], "no skins -> no junk concept");
+});
+
+test("planDupBodies: a disjoint same-name twin skeleton loses its meshes; shared-joint skins never do", () => {
+  // two full skeletons whose bone names match after stripping the exporter counter (the mangle twin)
+  const joints = (start) => Array.from({ length: 8 }, (_, i) => ({ name: `B${i}_jnt_${start + i}` }));
+  const g = {
+    nodes: [...joints(0), ...joints(100), { name: "BodyA", mesh: 0, skin: 0 }, { name: "BodyB", mesh: 1, skin: 1 }],
+    skins: [{ joints: [0, 1, 2, 3, 4, 5, 6, 7] }, { joints: [8, 9, 10, 11, 12, 13, 14, 15] }],
+  };
+  assert.deepEqual(planDupBodies(g), [17], "the twin skeleton's body detaches; the first skeleton keeps its mesh");
+  // NORMAL multi-skin model: two skins SHARING the same joints (per-mesh skins) -> untouched
+  const shared = {
+    nodes: [...joints(0), { name: "Top", mesh: 0, skin: 0 }, { name: "Bottom", mesh: 1, skin: 1 }],
+    skins: [{ joints: [0, 1, 2, 3, 4, 5, 6, 7] }, { joints: [0, 1, 2, 3, 4, 5, 6, 7] }],
+  };
+  assert.deepEqual(planDupBodies(shared), [], "shared-skeleton skins are normal, never deduped");
+  // tiny disjoint prop skins with generic names must not look like duplicate bodies
+  const props = {
+    nodes: [{ name: "Bone_1" }, { name: "Bone_2" }, { name: "P1", mesh: 0, skin: 0 }, { name: "P2", mesh: 1, skin: 1 }],
+    skins: [{ joints: [0] }, { joints: [1] }],
+  };
+  assert.deepEqual(planDupBodies(props), [], "sub-8-joint skins are excluded from grouping");
 });
