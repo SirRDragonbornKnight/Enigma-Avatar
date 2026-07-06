@@ -18,6 +18,7 @@ import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
 import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable setup (headless engine module, carve S1-a)
 import { createMeshStore } from "./engine/meshes.js"; // mesh visibility + outfits (headless engine module, carve S1-b)
+import { createMorphStore } from "./engine/morphs.js"; // morph targets / blendshapes (headless engine module, carve S1-c)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
 import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
@@ -1023,14 +1024,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       // 2026-07-04: the lazy query-path re-scan classified whatever pose she happened to be
       // HOLDING and cached that for the session, in a head-only frame that could disagree with
       // the facial build's — and the second-scale scan ran twice per model).
-      _morphGeo = null;
+      setMorphGeo(null);
       if (roleBones.head && morphMeshes().n) {
         try {
-          _morphGeo = analyzeMorphGeometry(model, {
-            head: roleBones.head,
-            bodyUp: new THREE.Vector3(0, 1, 0),
-            forward: _fwd,
-          });
+          setMorphGeo(
+            analyzeMorphGeometry(model, {
+              head: roleBones.head,
+              bodyUp: new THREE.Vector3(0, 1, 0),
+              forward: _fwd,
+            })
+          );
         } catch (e) {
           console.warn("[avatar] morph classification failed:", e);
         }
@@ -1039,7 +1042,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         headBone: roleBones.head || null,
         bodyUp: new THREE.Vector3(0, 1, 0), // rig-up post-normalization
         forward: _fwd,
-        geo: _morphGeo, // share the load-time analysis — facial's lazy fallback only runs if this is null
+        geo: morphGeoAnalysis(), // share the load-time analysis — facial's lazy fallback only runs if this is null
       });
     }
     if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial); // per-avatar jaw/face tuning
@@ -1755,101 +1758,18 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return v;
   }
 
-  // --- morph targets / blendshapes (the avatar's OWN toggles & expressions) -----------------
-  // A model can ship shape keys (makiro: 19) — facial expressions, body toggles, "show/hide X".
-  // Exporters usually strip the names, so address BY INDEX (0..count-1). We drive only the PRIMARY
-  // morph group — the meshes that share the LARGEST morph count (the face/body carrying the shapes).
-  // For a normal rig (makiro: 4 body meshes × the SAME 19 morphs) that's every morph mesh; for a
-  // divergent rig it's just the main one, so a mesh that reuses an index for a DIFFERENT shape isn't
-  // distorted (audit). Saved per avatar.
-  function morphMeshes() {
-    let maxN = 0;
-    model?.traverse((o) => {
-      if (o.isMesh && o.morphTargetInfluences) maxN = Math.max(maxN, o.morphTargetInfluences.length);
+  // --- morph targets / blendshapes (engine/morphs.js, carve S1-c) --------------
+  // Shape-key drive by index over the PRIMARY morph group + the load-time eye/mouth-band
+  // classification holder live in the headless store; this closure injects the live thunks.
+  const { morphMeshes, allMorphsInfo, setMorphValue, applyMorphs, resetMorphGeo, setMorphGeo, morphGeoAnalysis } =
+    createMorphStore({
+      getModel: () => model,
+      getFacial: () => facial,
+      profileFor,
+      saveProfileSoon,
+      getKey: () => curKey,
+      setStatus,
     });
-    const meshes = [];
-    if (maxN)
-      model?.traverse((o) => {
-        if (o.isMesh && o.morphTargetInfluences && o.morphTargetInfluences.length === maxN) meshes.push(o);
-      });
-    return { meshes, n: maxN };
-  }
-  function morphNameAt(i) {
-    // best-effort name from the primary group's morphTargetDictionary (often absent)
-    for (const o of morphMeshes().meshes) {
-      if (!o.morphTargetDictionary) continue;
-      for (const k in o.morphTargetDictionary) if (o.morphTargetDictionary[k] === i) return k;
-    }
-    return null;
-  }
-  // Per-model morph classification (2026-07-03 audit finding 4): the geometric eye/mouth-band
-  // analysis always existed but was facial.js-private, so a model with 42 unnamed morphs meant 42
-  // blind snap probes. Computed ONCE at load — rest pose, real facing — in the facial build block
-  // (audit 2026-07-04: computing lazily at query time classified the LIVE pose and cached it).
-  let _morphGeo = null;
-  function resetMorphGeo() {
-    _morphGeo = null;
-  }
-  function morphGeoAnalysis() {
-    return _morphGeo; // null = honestly unclassified (no head anchor / no morphs / analysis failed)
-  }
-  function allMorphsInfo() {
-    const { meshes, n } = morphMeshes();
-    if (!n) return [];
-    const cur = meshes[0]?.morphTargetInfluences || [];
-    const owned = new Set(facial?.ownedMorphs || []); // morphs the lip-sync/blink layer auto-drives → a manual set won't hold (flag them so the UI explains it)
-    const g = morphGeoAnalysis();
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const s = g?.byIndex?.get(i);
-      const region = !s
-        ? null
-        : s.mouthScore > s.eyeScore && s.mouthScore > 0.05
-          ? "mouth"
-          : s.eyeScore > 0.05
-            ? "eyes"
-            : null;
-      out.push({
-        index: i,
-        name: morphNameAt(i),
-        value: +(cur[i] || 0),
-        auto: owned.has(i),
-        region, // geometric band guess ("mouth"|"eyes"|null) — a hunting driver starts HERE, not at 42 blind probes
-        score: s ? +Math.max(s.mouthScore, s.eyeScore).toFixed(2) : 0,
-      });
-    }
-    return out;
-  }
-  function setMorphValue(i, v) {
-    const raw = v == null ? 1 : +v;
-    if (!isFinite(raw)) return 0; // Math.max/min are NaN-transparent — a garbage bus value would hit the GPU AND be persisted
-    const amt = Math.max(0, Math.min(1, raw));
-    let nHit = 0;
-    for (const o of morphMeshes().meshes)
-      if (i < o.morphTargetInfluences.length) {
-        o.morphTargetInfluences[i] = amt;
-        nHit++;
-      }
-    const p = profileFor(curKey);
-    p.morphs = p.morphs || {};
-    if (amt <= 0) delete p.morphs[i];
-    else p.morphs[i] = amt; // default (0) → don't persist
-    saveProfileSoon();
-    setStatus(`morph #${i}${morphNameAt(i) ? " (" + morphNameAt(i) + ")" : ""} -> ${amt.toFixed(2)}; ${nHit} mesh`);
-    return nHit;
-  }
-  function applyMorphs() {
-    const m = profileFor(curKey).morphs;
-    if (!m) return;
-    const { meshes } = morphMeshes();
-    for (const k in m) {
-      const i = +k,
-        val = +m[k];
-      if (!isFinite(val)) continue;
-      const amt = val < 0 ? 0 : val > 1 ? 1 : val;
-      for (const o of meshes) if (i < o.morphTargetInfluences.length) o.morphTargetInfluences[i] = amt;
-    } // VALIDATE on read-back: a garbage/legacy profiles.json value must not reach the GPU (the writer guards; the load path must too)
-  }
   // Per-mesh friendly LABEL (parts often have useless names like "Object_107" or duplicates) — the
   // user can rename a part so the Settings list is legible. Stored per avatar, keyed by mesh index.
   function setMeshLabel(i, label) {
