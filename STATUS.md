@@ -27,6 +27,11 @@ _Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smok
   the NaN guard / the race guard -- one test failed each time). avatar.js **3631 -> 3342 lines**.
   **S1 state stores COMPLETE**; next stage is S2 (utilityProcess sim core), planned with the user.
   Suite **353/0/6**, smoke 7/7 after every carve with the carved load path live.
+- **S2-a, same day (approved route):** the SIM TICK is `src/engine/sim.js` -- pose seam -> grab
+  servo -> rapier (epsilon-gated floor, live capsule) -> conjure, the one canonical order,
+  headless + mutation-checked (5 intent tests; swapping servo/pose order fails the suite).
+  `animate()` is now VIEW-only. The S1 milestone was squash-merged to `main` (e2b71c2,
+  tree-identical to the branch). Suite **358/0/6**, smoke 7/7 with MOTION through sim.tick live.
 
 ## 2026-07-05 -- the grab feel: honest bounds, constant size, ragdoll grab, mouse-lock
 

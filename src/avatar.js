@@ -20,6 +20,7 @@ import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable
 import { createMeshStore } from "./engine/meshes.js"; // mesh visibility + outfits (headless engine module, carve S1-b)
 import { createMorphStore } from "./engine/morphs.js"; // morph targets / blendshapes (headless engine module, carve S1-c)
 import { createAttachmentStore } from "./engine/attachments.js"; // bone-attached props (headless engine module, carve S1-d)
+import { createSimTick } from "./engine/sim.js"; // the canonical sim-step order (headless engine module, carve S2-a)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
 import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
@@ -217,7 +218,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   });
   const BALL_URL = "./props/worn_baseball_ball/worn_baseball_ball.glb";
   const CONJURE_ASSETS = { ball: BALL_URL, baseball: BALL_URL }; // friendly conjure names -> bundled prop URLs (stage the .glb on disk; see the audit note)
-  let _floorWY = null;
   let _lastPropN = 0; // brain: # props in the last broadcast (send ONE empty buffer when balls clear → peers drop their ghosts)
   // PEER-side ghost props: a peer can't run physics, so it mirrors the brain's ball transforms onto clones.
   let _ghostProto = null,
@@ -1965,6 +1965,30 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // settle + emotes still look smooth.
   // The animate loop drives the seam (defined at module top) with live module state.
   const stepProcVrm = (dt) => stepProcVrmFrame(dt, { proc, facial, facialOn, spring, springOn, rig, vrm, soft });
+  // The SIM TICK (engine/sim.js, carve S2-a): pose seam -> grab servo -> rapier -> conjure, in the
+  // one canonical order, headless and test-pinned. The view loop below owns everything else
+  // (fps ladder, glide publish, shadow, render, pose broadcast, footprint).
+  const sim = createSimTick({
+    stepPose: (dt) => stepProcVrm(dt),
+    stepGrabServo: () => {
+      stepGrabLock(); // after the skeleton settles: pin the GRABBED PART back under the cursor (live offset retarget)
+      _grabAimRefresh?.(); // post-update aim snapshot — next frame's ragdoll fn measures THIS reality (PASS 1 sees only base pose)
+    },
+    physics,
+    conjurer,
+    wake: (s) => wake(s),
+    isWorldReady: () => _gReady,
+    getFloorY: () => floorWorldY() + 0.02, // the physics floor matches the visible desk line — the same ground the contact shadow rests on
+    getBody: () => ({
+      x: pos.x,
+      y: pos.y,
+      motionY: _motionY,
+      w: modelDims.w,
+      h: modelDims.h,
+      size: sizeScale,
+      baseH: BASE_H,
+    }),
+  });
   const FPS_ACTIVE = 60,
     FPS_IDLE = 30,
     FPS_REST = 15;
@@ -2041,27 +2065,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     pos.set(_bp.x, _bp.y); // derived base (read by look/hit-test math)
     rig.position.set(_bp.x, _bp.y + _motionY, 0); // global-derived base + the local jump hop; bones/springs do the rest
     updateShadow(); // ground-contact patch under the feet (stays grounded through jumps)
-    stepProcVrm(dt); // proc pose → springs → vrm.update, in the ONE order that survives the VRM humanoid copy-back (#1)
-    stepGrabLock(); // after the skeleton settles: pin the GRABBED PART back under the cursor (live offset retarget)
-    _grabAimRefresh?.(); // post-update aim snapshot — next frame's ragdoll fn measures THIS reality (PASS 1 sees only base pose)
-    // rigid-body props (rapier): keep the floor at the bottom of HER current monitor, track her body
-    // as a collision capsule (props bounce off her), step the world.
-    if (physics.count() > 0 && _gReady) {
-      const fy = floorWorldY() + 0.02; // the physics floor matches the visible desk line — the same ground the contact shadow rests on
-      if (_floorWY === null || Math.abs(fy - _floorWY) > 1e-3) {
-        _floorWY = fy;
-        physics.setFloor(fy);
-      }
-      const hW = (modelDims.h || BASE_H) * sizeScale,
-        rr = Math.max(0.1, (modelDims.w || 1.5) * sizeScale * 0.28);
-      physics.setAvatar({ x: pos.x, y: pos.y + hW * 0.5 + _motionY, halfH: Math.max(0.1, hW * 0.5 - rr), r: rr }); // capsule spanning feet→head, centred mid-body
-      if (physics.step(dt)) wake(0.5); // hold full frame rate while something is in flight
-    }
-    // P3: advance conjured props (pop-in / glide / hover / timed-dismiss) UNCONDITIONALLY. This was
-    // wrongly nested in the `physics.count() > 0` guard, so a conjured prop never animated unless a
-    // rapier ball happened to be in flight — it spawned invisible (scale ~0) and stayed frozen.
-    // step() early-outs cheaply when there are no props.
-    if (conjurer.step(dt)) wake(0.5);
+    sim.tick(dt); // pose seam -> grab servo -> rapier -> conjure (engine/sim.js owns the canonical order)
     renderer.render(scene, camera);
     if (_peerCount > 0 && window.avatarIPC?.sendPose) window.avatarIPC.sendPose(serializePose()); // → main → peer windows mirror this exact pose (skip entirely on single-monitor)
     if (_peerCount > 0 && window.avatarIPC?.sendProps) {

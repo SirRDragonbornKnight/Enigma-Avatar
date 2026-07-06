@@ -41,6 +41,12 @@ schema-first protocol generation. Staged order, each stage COMPLETE + gated + sm
      sub-steps planned WITH the user; hit-test/input still moves LAST.
   S2: move the hosted sim to a utilityProcess; demote every window to a peer; bus to main.
      (The relays, the queue, and the closure die together this day.)
+     S2-a DONE 2026-07-06: the SIM TICK (pose seam -> grab servo -> rapier -> conjure) extracted
+     to engine/sim.js -- the canonical order is headless + test-pinned (5 intent tests,
+     mutation-checked: reordering the servo before the pose fails the suite); animate() is now
+     view-only (fps ladder, glide publish, shadow, render, broadcast, footprint). Smoke 7/7 with
+     MOTION flowing through sim.tick live. NEXT: S2-b (utilityProcess host; the big day -- live
+     launches + user click-through spot-checks between sub-steps).
   S3: one state store in main (localStorage + browser fallbacks removed).
   S4: schema-first protocol (one schema -> protocol.js + protocol.py + validator) + MCP server.
   S5: IK + ragdoll on the clean core.
