@@ -280,3 +280,55 @@ test("guards: no aim state / no cursor / NaN dragX -> pendulum-only output, alwa
     assert.ok(Number.isFinite(out.parts.spine[2]), "NaN dragX never poisons the tilt");
   }
 });
+
+// --- pickLockBone: the mouse-lock's RIGID-ONLY bone picker (the runaway-sway fix) ------------
+// A sprung lock bone turned the per-frame servo into a resonant loop (sway pumped until she
+// launched — user repro 2026-07-06). The picker must return the nearest bone the SPRING does
+// NOT own, and fail open (null) when only sprung bones are in reach.
+import * as THREE from "three";
+import { pickLockBone } from "../src/motion/grabfollow.js";
+
+function boneAt(name, x, y) {
+  const b = new THREE.Bone();
+  b.name = name;
+  b.position.set(x, y, 0);
+  return b;
+}
+
+function rigWorld() {
+  // Flat under root so local == world (a parented chain would accumulate transforms into the
+  // distances and the expectations below would read the wrong bones).
+  const root = new THREE.Group();
+  const hips = boneAt("Hips", 0, 1);
+  const tail1 = boneAt("Tail_M_0519", 0.2, 0.6); // sprung — closest to the click below
+  const tail2 = boneAt("Tail_M1_0520", 0.3, 0.3); // sprung
+  root.add(hips, tail1, tail2);
+  root.updateWorldMatrix(true, true);
+  return { root, hips, tail1, tail2 };
+}
+
+test("pickLockBone: the nearest bone wins when nothing is sprung", () => {
+  const { root, tail1 } = rigWorld();
+  const got = pickLockBone(root, 0.2, 0.55, 5, new Set(), new THREE.Vector3());
+  assert.equal(got, tail1);
+});
+
+test("pickLockBone: a sprung nearest is SKIPPED — the rigid carrier wins instead", () => {
+  const { root, hips } = rigWorld();
+  const sprung = new Set(["Tail_M_0519", "Tail_M1_0520"]);
+  const got = pickLockBone(root, 0.2, 0.55, 5, sprung, new THREE.Vector3());
+  assert.equal(got, hips); // never the swinging tail — the servo must have a rigid plant
+});
+
+test("pickLockBone: ALL sprung in reach -> null (fail open to a plain offset drag)", () => {
+  const { root } = rigWorld();
+  const sprung = new Set(["Hips", "Tail_M_0519", "Tail_M1_0520"]);
+  assert.equal(pickLockBone(root, 0.2, 0.55, 5, sprung, new THREE.Vector3()), null);
+});
+
+test("pickLockBone: outside the radius -> null; no root or scratch -> null", () => {
+  const { root } = rigWorld();
+  assert.equal(pickLockBone(root, 50, 50, 1, new Set(), new THREE.Vector3()), null);
+  assert.equal(pickLockBone(null, 0, 0, 5, new Set(), new THREE.Vector3()), null);
+  assert.equal(pickLockBone(root, 0, 0, 5, new Set(), null), null);
+});

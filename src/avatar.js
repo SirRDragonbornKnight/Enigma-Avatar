@@ -36,7 +36,7 @@ import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } f
 //  there is no placeholder model (user ruling 2026-06-30; do not self-author one).)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
-import { createGrabFollowFn } from "./motion/grabfollow.js"; // ragdoll grab: the grabbed limb leads, the body follows (pure factory, unit-tested)
+import { createGrabFollowFn, pickLockBone } from "./motion/grabfollow.js"; // ragdoll grab + the rigid-only mouse-lock bone picker (pure, unit-tested)
 
 // --- the per-frame motion seam (#1 / #24) — defined at module top so it imports WITHOUT the browser
 // bootstrap below (no renderer / DOM needed), letting tests assert the REAL ordering, not a fake.
@@ -2504,9 +2504,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       s = _grabLock.sent =
         gc && isFinite(gc.x) && isFinite(gc.y) ? { x: gc.x - gPos.x, y: gc.y - gPos.y } : { x: rel.x, y: rel.y };
     }
-    // Soft correction with a RATE CAP: the lock through a freely-swinging SPRUNG bone is a servo
-    // through an underdamped plant — the blend alone bounds gain, the per-frame step cap bounds
-    // any residual oscillation's amplitude (60 DIP/frame ≈ 3600 DIP/s, far above any honest need).
+    // Soft correction with a RATE CAP (60 DIP/frame ≈ 3600 DIP/s, far above any honest need).
+    // The lock bone is guaranteed RIGID (pickLockBone excludes sprung bones — a sprung plant
+    // made this servo a resonant loop that pumped the sway until she launched), so the blend
+    // only ever walks a stable baseline onto a rigid part.
     const bx = Math.max(-60, Math.min(60, (rel.x - s.x) * 0.35));
     const by = Math.max(-60, Math.min(60, (rel.y - s.y) * 0.35));
     s.x += bx;
@@ -2515,25 +2516,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function startGrabFollow(wx, wy) {
     if (!proc?.setLayer) return;
-    // lock target: the nearest BONE to the click (any bone — sprung tail link, hand, torso), with
-    // the click point captured in ITS local frame so the exact grabbed spot is what tracks the mouse
+    // lock target: the nearest RIGID bone to the click — NEVER a sprung one (a sprung lock turns
+    // the per-frame servo into a resonant loop: the sway pumps until release launches her; see
+    // pickLockBone). The click point is captured in the carrier's local frame so the exact
+    // grabbed spot tracks the mouse while the sprung chain swings free around it.
     _grabLock = null;
     {
       const bv = new THREE.Vector3();
       const lockR = (modelDims.h || 2) * sizeScale * 0.5; // generous: the click was on her silhouette
-      let bb = null,
-        bdd = lockR * lockR;
-      model?.traverse((o) => {
-        if (!o.isBone) return;
-        o.getWorldPosition(bv);
-        const dx = bv.x - wx,
-          dy = bv.y - wy,
-          d2 = dx * dx + dy * dy;
-        if (d2 < bdd) {
-          bdd = d2;
-          bb = o;
-        }
-      });
+      const bb = pickLockBone(model, wx, wy, lockR, new Set(spring?.names || []), bv);
       if (bb) {
         bb.updateWorldMatrix(true, false);
         const local = bb.worldToLocal(new THREE.Vector3(wx, wy, bb.getWorldPosition(bv).z)); // click at the bone's depth

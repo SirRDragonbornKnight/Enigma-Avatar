@@ -126,3 +126,32 @@ export function createGrabFollowFn(deps) {
     return out;
   };
 }
+
+// The mouse-lock's bone picker: the nearest RIGID bone to the click, never a sprung one.
+// The lock is a per-frame servo (measure the part -> steer main's grab offset), and a servo
+// through a freely-swinging SPRUNG bone is a RESONANT loop: each correction pumps the swing,
+// the swing moves the next measurement, and the sway GROWS until release dumps the stored
+// spring energy as a launch (user repro 2026-07-06: grab near a sprung region -> she sways
+// faster and faster -> goes flying). The per-step blend/rate caps bound step SIZE, not loop
+// gain — so the spring must simply never be the plant. Locking the nearest rigid carrier
+// keeps the exact grabbed spot tracking (the click is captured in the carrier's local frame)
+// while the sprung chain swings free around it ("sprung regions swing FREE during drags").
+// All sprung -> null: the drag falls open to a plain offset-follow, never a servo.
+// tmp: a caller-supplied Vector3 scratch (this module stays THREE-import-free).
+export function pickLockBone(root, wx, wy, maxR, exclude, tmp) {
+  if (!root || !tmp) return null;
+  let best = null,
+    bd = maxR * maxR;
+  root.traverse((o) => {
+    if (!o.isBone || (exclude && exclude.has(o.name))) return;
+    const p = o.getWorldPosition(tmp);
+    const dx = p.x - wx,
+      dy = p.y - wy,
+      d2 = dx * dx + dy * dy;
+    if (d2 < bd) {
+      bd = d2;
+      best = o;
+    }
+  });
+  return best;
+}
