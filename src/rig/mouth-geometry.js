@@ -36,8 +36,8 @@ export function detectMouthMorph(model, opts = {}) {
   // Head region cut along world-up. World is Y-up in three.js (the loader/node hierarchy already
   // rotated a Z-up source), so default up = +Y; honor a caller bodyUp only if it's a real vector.
   // ONE frame throughout: the cut, the head filter, and the jaw-drop score all project onto this
-  // same axis (the cut used to be along `up` while the loop compared raw world Y — a latent
-  // mismatch for any non-Y bodyUp).
+  // same axis (mixing frames — a cut along `up` against comparisons in raw world Y — is a latent
+  // mismatch for any non-Y bodyUp; keep every projection on this ONE axis).
   const up = opts.bodyUp && opts.bodyUp.isVector3 ? opts.bodyUp.clone().normalize() : new THREE.Vector3(0, 1, 0);
   const box = new THREE.Box3().setFromObject(model);
   let hiTop = -Infinity,

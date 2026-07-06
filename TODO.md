@@ -32,6 +32,13 @@ schema-first protocol generation. Staged order, each stage COMPLETE + gated + sm
      NUMERIC receipts (boot / limits / strict wire / elbow bend+release / snap). 6/6 on first run.
   S1: extract the sim modules from the avatar.js closure into headless `src/engine/` with explicit
      state (several sessions; per-subsystem, gate + smoke after each carve).
+     S1-a DONE 2026-07-02: profiles -> engine/profiles.js. S1-b DONE 2026-07-06: mesh visibility +
+     outfits -> engine/meshes.js (10 intent tests). S1-c DONE 2026-07-06: morphs/blendshapes +
+     the morph-geo holder -> engine/morphs.js (7 intent tests). S1-d DONE 2026-07-06: attachments
+     -> engine/attachments.js (10 intent tests incl. the headless swap-race; mutation-checked).
+     avatar.js 3631 -> 3342. **S1 state stores COMPLETE** (decided route 2026-07-06: skip
+     recolor/hue/rotation/labels as separate carves -- they become view code under S2). NEXT = S2,
+     sub-steps planned WITH the user; hit-test/input still moves LAST.
   S2: move the hosted sim to a utilityProcess; demote every window to a peer; bus to main.
      (The relays, the queue, and the closure die together this day.)
   S3: one state store in main (localStorage + browser fallbacks removed).

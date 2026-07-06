@@ -13,9 +13,9 @@ export function createUI(api) {
   // 0..360 stored rotation -> signed (-180,180] for the Settings fields, so the user can dial the
   // OTHER direction (negative = left/down), not just climb 0..360. Identity fallback if not provided.
   const signed180 = api.signed180 || ((v) => v);
-  // Body emotes + the gesture/motion catalog were PURGED 2026-06-25 ("purge means purge") — the AI now
-  // authors ALL motion via the compositor (pose/flex/perform). The only menu actions left are the rapier
-  // ball-physics toys (NOT gestures): throw / drop / clear.
+  // There is deliberately NO body-emote / gesture / motion catalog (user ruling 2026-06-25 "purge means
+  // purge" — do not re-add): the AI authors ALL motion via the compositor (pose/flex/perform). The only
+  // menu actions here are the rapier ball-physics toys (NOT gestures): throw / drop / clear.
   const BALL_ACTIONS = [
     { name: "throwball", label: "Throw ball" },
     { name: "dropball", label: "Drop ball on her" },
@@ -455,8 +455,8 @@ export function createUI(api) {
     if (open() && onOpen) onOpen(box);
     return box;
   }
-  // Make a floating panel draggable by its header (the Settings / model gallery open centered and
-  // used to be pinned there — now you can move them out of the way). Header buttons still work.
+  // Make a floating panel draggable by its header (the Settings / model gallery open centered but
+  // can be moved out of the way). Header buttons still work.
   function dragByHeader(panel, handle, onMove) {
     handle.style.cursor = "move";
     handle.style.touchAction = "none";

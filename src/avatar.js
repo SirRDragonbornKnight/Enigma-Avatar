@@ -17,6 +17,9 @@ import { parseControlTags, parseTagArg, resolvePropName } from "./control/contro
 import { createControlSurface } from "./control/surface.js"; // the EnigmaAvatar control surface (facade the bus/query/devtools drive)
 import { createBusRegistry } from "./control/bus.js"; // AI bus command table (action -> handler), wired after the deps exist
 import { createProfileStore } from "./engine/profiles.js"; // per-avatar durable setup (headless engine module, carve S1-a)
+import { createMeshStore } from "./engine/meshes.js"; // mesh visibility + outfits (headless engine module, carve S1-b)
+import { createMorphStore } from "./engine/morphs.js"; // morph targets / blendshapes (headless engine module, carve S1-c)
+import { createAttachmentStore } from "./engine/attachments.js"; // bone-attached props (headless engine module, carve S1-d)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
 import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
@@ -27,9 +30,9 @@ import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./int
 import { resolveRig, ROLES } from "./rig/rig.js";
 import { analyzeMorphGeometry } from "./rig/face-geometry.js"; // morph region classification, exposed via query morphs (2026-07-03 audit)
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
-// clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
-// (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character. The old
-//  default_avatar.js procedural-placeholder was deleted 2026-06-30 — there is no placeholder model.)
+// There is deliberately NO clip retargeting: the AI authors motion via the compositor, not authored clips (user ruling 2026-06-25 — do not re-add).
+// (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character — by design
+//  there is no placeholder model (user ruling 2026-06-30; do not self-author one).)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
 import { createGrabFollowFn } from "./motion/grabfollow.js"; // ragdoll grab: the grabbed limb leads, the body follows (pure factory, unit-tested)
@@ -343,8 +346,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // glide/nudge stay on her current screen (only a DRAG crosses bezels).
     // WALLS v2 (user 2026-06-12: the body-scaled walls MOVED when she was resized — wrong): FIXED
     // slim margins, independent of her size. The BOTTOM is PERMEABLE — she can be sent to / through the
-    // screen bottom (recover via tray / goTo); the screen-bottom floor SNAP was removed 2026-06-25, so
-    // she no longer auto-rests on the desk line. The clamp only stops her from being lost entirely.
+    // screen bottom (recover via tray / goTo); by design she does NOT auto-rest on the desk line
+    // (no screen-bottom floor snap, user ruling 2026-06-25). The clamp only stops her from being lost entirely.
     const d = curDisp,
       m = 16;
     return {
@@ -642,7 +645,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     vrm = null;
     proc = null;
     spring = null;
-    _meshList = null;
+    clearMeshList();
   }
 
   // #13: the NO-MODEL state. We do NOT run the model pipeline (resolve / compositor / spring / facial)
@@ -758,10 +761,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (o.isMesh) o.frustumCulled = false;
     });
     rig.add(model);
-    _meshList = [];
-    model.traverse((o) => {
-      if (o.isMesh) _meshList.push({ mesh: o, name: o.name || null });
-    }); // INDEX AUTHORITY: pristine file order, captured before any surgery/adoption can reshuffle traversal
+    cacheMeshList(); // INDEX AUTHORITY: pristine file order, captured before any surgery/adoption can reshuffle traversal
     modelDims = { w: _box.max.x - _box.min.x, h: _box.max.y - _box.min.y };
     // pose-broadcast layout (brain serializes → peers mirror): ordered bones + morph meshes. Both windows
     // load the SAME model → identical traversal order, so the flat buffer is self-describing by length.
@@ -792,8 +792,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // no canned clips — purged). This is the uniform substrate the AI composes motion on top of.
     // Identify bones ONCE via the generic cascade (VRM -> name -> geometry), then feed BOTH the
     // procedural pose and the spring physics the same resolved map.
-    // (Rigify parallel-skeleton "reparent" surgery was REMOVED 2026-06-25 with the per-model override
-    // system — it only ever ran for hand-written rig_overrides entries, which no longer exist.)
+    // (No Rigify parallel-skeleton "reparent" surgery and no per-model overrides here — the cascade
+    // is purely generic, user ruling 2026-06-25.)
     const resolved = resolveRig(model, vrm);
     roleBones = resolved.roles || {}; // expose role→bone for attach-by-role (structural; trust no names)
     resetMorphGeo(); // new model, new head anchor -> re-classify morphs lazily on next query
@@ -1025,14 +1025,16 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       // 2026-07-04: the lazy query-path re-scan classified whatever pose she happened to be
       // HOLDING and cached that for the session, in a head-only frame that could disagree with
       // the facial build's — and the second-scale scan ran twice per model).
-      _morphGeo = null;
+      setMorphGeo(null);
       if (roleBones.head && morphMeshes().n) {
         try {
-          _morphGeo = analyzeMorphGeometry(model, {
-            head: roleBones.head,
-            bodyUp: new THREE.Vector3(0, 1, 0),
-            forward: _fwd,
-          });
+          setMorphGeo(
+            analyzeMorphGeometry(model, {
+              head: roleBones.head,
+              bodyUp: new THREE.Vector3(0, 1, 0),
+              forward: _fwd,
+            })
+          );
         } catch (e) {
           console.warn("[avatar] morph classification failed:", e);
         }
@@ -1041,7 +1043,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         headBone: roleBones.head || null,
         bodyUp: new THREE.Vector3(0, 1, 0), // rig-up post-normalization
         forward: _fwd,
-        geo: _morphGeo, // share the load-time analysis — facial's lazy fallback only runs if this is null
+        geo: morphGeoAnalysis(), // share the load-time analysis — facial's lazy fallback only runs if this is null
       });
     }
     if (facial && profileFor(curKey).facial) facial.setParams(profileFor(curKey).facial); // per-avatar jaw/face tuning
@@ -1159,8 +1161,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   let _loadSeq = 0;
   const _peerRetries = {}; // url -> failed mirror-load attempts (peer only)
-  // Bus 'load' completion signal (2026-07-03): load used to be fire-and-forget, so a driver had to
-  // GUESS settle time with sleeps (8-15s per model this session). One waiter slot: the newest load
+  // Bus 'load' replies on COMPLETION (2026-07-03), so a driver awaits the real swap instead of
+  // guessing settle time with sleeps. One waiter slot: the newest load
   // owns it; a superseded asker gets {superseded:true}, a failed build an honest {error}.
   let _loadNotify = null,
     _loadNotifyKey = null; // the url the armed waiter asked for (audit 2026-07-04: unkeyed, ANY load path's build resolved a pending bus reqId with the WRONG model's success)
@@ -1261,178 +1263,26 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       } catch {}
     },
     getKey: () => curKey,
-    getAttachments: () => attachObjs,
+    getAttachments: () => getAttachments(), // → the attachment store's live list (created just below; called at runtime only)
   });
-  let attachObjs = []; // live for the current model: [{id,category,url,bone,pos,rot,scale,obj,attachedTo}]
-  let _attachSeq = 0;
-  const D2R = Math.PI / 180;
-  const BONE_ALIAS = {
-    righthand: "right.*(hand|wrist)",
-    lefthand: "left.*(hand|wrist)",
-    rightfoot: "right.*(foot|ankle|toe)",
-    leftfoot: "left.*(foot|ankle|toe)",
-    head: "head",
-    neck: "neck",
-    hips: "hips|pelvis",
-    back: "chest|spine",
-    tail: "tail",
-  };
-  // attach-friendly aliases → canonical RIG ROLE (resolved STRUCTURALLY by rig.js). These win
-  // over name matching, so a prop lands on the REAL hand/head even when the bone is named
-  // "Bip_R_Wrist_023" or is corrupted — trust no names. Falls back to a name regex only for
-  // non-role targets (tail, or any arbitrary bone the AI names explicitly).
-  const ROLE_ALIAS = {
-    righthand: "right_hand",
-    lefthand: "left_hand",
-    rightfoot: "right_foot",
-    leftfoot: "left_foot",
-    head: "head",
-    neck: "neck",
-    hips: "hips",
-    back: "chest",
-    chest: "chest",
-    spine: "spine",
-  };
-  const ROLES_SET = new Set(ROLES);
-  function findBone(query) {
-    if (!model || !query) return null;
-    const q = String(query).toLowerCase();
-    const role = ROLE_ALIAS[q] || (ROLES_SET.has(q) ? q : null); // a canonical role, or an alias for one?
-    if (role && roleBones[role]) return roleBones[role]; // → the STRUCTURALLY resolved bone (name-agnostic)
-    let re;
-    try {
-      re = new RegExp(BONE_ALIAS[q] || q, "i");
-    } catch {
-      re = new RegExp(q.replace(/[^a-z0-9]+/gi, ".*"), "i");
-    } // else a name match (tail / arbitrary bone)
-    let best = null;
-    model.traverse((o) => {
-      if (!best && o.isBone && re.test(o.name)) best = o;
+  // Attachments (engine/attachments.js, carve S1-d): bone-attached props with the swap-race guard,
+  // role-alias bone finding, auto-size, and sanitized numerics — headless; this closure wires thunks.
+  const { getAttachments, attachMesh, detachAttachment, clearAttachments, reapplyAttachments, tuneAttachment } =
+    createAttachmentStore({
+      loadAsset,
+      kindOf,
+      baseName,
+      getModel: () => model,
+      getRig: () => rig,
+      getRoleBones: () => roleBones,
+      getKey: () => curKey,
+      getAvatarWorldHeight: () => BASE_H * (rig.scale.x || 1),
+      dispose: disposeMeshTree, // incl. textures — see util/dispose.js
+      profileFor,
+      saveProfileSoon,
+      commitAttachments,
+      setStatus,
     });
-    return best;
-  }
-  function _placeAttachment(a) {
-    a.obj.position.fromArray(a.pos);
-    a.obj.rotation.set(a.rot[0] * D2R, a.rot[1] * D2R, a.rot[2] * D2R);
-    a.obj.scale.setScalar(a.scale);
-  }
-  function saveAttachments() {
-    commitAttachments();
-    saveProfileSoon();
-  } // snapshot + persist
-  // Bus attach/tune numerics are stringly-typed — one garbage triplet would NaN the prop's matrix
-  // (invisible prop) AND be persisted to the profile. Sanitize at the entry.
-  const _v3 = (v, d) => (Array.isArray(v) && v.length === 3 && v.every((n) => isFinite(+n)) ? v.map(Number) : d);
-  const _num = (v, d) => (isFinite(+v) ? +v : d);
-  function attachMesh(url, opts = {}) {
-    const category = opts.category || "prop";
-    const defBone = category === "furniture" ? "" : category === "clothes" ? "back" : "righthand";
-    const a = {
-      id: opts.id || "a" + ++_attachSeq,
-      category,
-      url,
-      bone: opts.bone ?? defBone,
-      pos: _v3(opts.pos, [0, 0, 0]),
-      rot: _v3(opts.rot, [0, 0, 0]),
-      scale: opts.scale != null ? _num(opts.scale, 1) : 1,
-    };
-    const forKey = curKey; // the model this attach was aimed at — a swap mid-load must not
-    // attach the prop to the NEW model and durably write it into the WRONG profile
-    loadAsset(
-      url,
-      (asset) => {
-        if (!asset.scene) {
-          setStatus("attach failed: no mesh");
-          return;
-        }
-        if (curKey !== forKey) {
-          disposeMeshTree(asset.scene);
-          setStatus(`attach dropped: model changed while ${baseName(url)} loaded`);
-          return;
-        }
-        a.obj = asset.scene;
-        const bone = a.bone ? findBone(a.bone) : null; // furniture (no bone) → rides the rig root (floats with her)
-        a.attachedTo = bone ? bone.name : "(rig root)";
-        a.obj.traverse((o) => {
-          if (o.isMesh) o.frustumCulled = false;
-        });
-        (bone || rig).add(a.obj);
-        _placeAttachment(a);
-        // Auto-size a FRESH prop to a sane fraction of the avatar — a separate mesh has
-        // its own units, so scale:1 can render giant/tiny (avatar audit #1). Avatar
-        // height uses BASE_H×size (skinned-mesh bboxes are unreliable); prop uses its
-        // own bbox. Skipped when a scale was given or when restoring a saved one.
-        if (opts.scale == null && !opts._restore && model) {
-          a.obj.updateWorldMatrix(true, true);
-          const pb = new THREE.Box3().setFromObject(a.obj);
-          const pMax = Math.max(pb.max.x - pb.min.x, pb.max.y - pb.min.y, pb.max.z - pb.min.z) || 1;
-          const aH = BASE_H * (rig.scale.x || 1) || 1;
-          const frac = category === "furniture" ? 0.9 : category === "clothes" ? 1.0 : 0.45;
-          const s = (aH * frac) / pMax;
-          if (isFinite(s) && s > 0) {
-            a.scale = +s.toFixed(4);
-            _placeAttachment(a);
-          }
-        }
-        attachObjs.push(a);
-        if (!opts._restore) saveAttachments();
-        console.log("[avatar] attached", baseName(url), "->", a.attachedTo);
-        setStatus(`attached ${baseName(url)} -> ${a.attachedTo}`);
-      },
-      (err) => setStatus(`attach failed: ${err?.message || err}`),
-      { kind: opts.kind || kindOf(url) }
-    );
-    return a.id;
-  }
-  function disposeObj(root) {
-    disposeMeshTree(root); // incl. textures — see util/dispose.js
-  }
-  function detachAttachment(id) {
-    const i = attachObjs.findIndex((a) => a.id === id);
-    if (i < 0) return false;
-    const a = attachObjs[i];
-    a.obj?.parent?.remove(a.obj);
-    disposeObj(a.obj);
-    attachObjs.splice(i, 1);
-    saveAttachments();
-    return true;
-  }
-  function clearAttachments() {
-    for (const a of attachObjs) {
-      a.obj?.parent?.remove(a.obj);
-      disposeObj(a.obj);
-    }
-    attachObjs = [];
-    saveAttachments();
-  }
-  function reapplyAttachments() {
-    // Furniture rides the RIG root (not the disposed model subtree) — explicitly remove what's
-    // still parented there, or every model switch leaves a ghost chair with no remaining handle.
-    for (const a of attachObjs)
-      if (a.obj && a.obj.parent === rig) {
-        rig.remove(a.obj);
-        disposeObj(a.obj);
-      }
-    attachObjs = []; // bone-parented props died with the disposed model subtree
-    for (const cfg of profileFor(curKey).attachments || []) attachMesh(cfg.url, { ...cfg, _restore: true });
-  }
-  function tuneAttachment(id, opts = {}) {
-    const a = attachObjs.find((x) => x.id === id);
-    if (!a || !a.obj) return null;
-    if (opts.pos) a.pos = _v3(opts.pos, a.pos);
-    if (opts.rot) a.rot = _v3(opts.rot, a.rot);
-    if (opts.scale != null) a.scale = _num(opts.scale, a.scale);
-    if (opts.bone && opts.bone !== a.bone) {
-      a.bone = opts.bone;
-      const bone = findBone(a.bone);
-      a.obj.parent?.remove(a.obj);
-      (bone || rig).add(a.obj);
-      a.attachedTo = bone ? bone.name : "(rig root)";
-    }
-    _placeAttachment(a);
-    saveAttachments();
-    return { id: a.id, bone: a.bone, attachedTo: a.attachedTo, pos: a.pos, rot: a.rot, scale: a.scale };
-  }
   // Per-avatar physics / face tuning — applied live and saved into the profile.
   // Keep only FINITE numeric entries from a tune-params object — the bus is stringly-typed, and one
   // garbage value ({stiffness:"abc"}) would NaN-poison every spring tip AND be PERSISTED to the profile
@@ -1570,45 +1420,32 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     setStatus("colors reset to original");
   }
 
-  // --- meshes (sub-objects: clothing variants, hide-able body parts) ----------
-  // A model bundles multiple meshes (e.g. 2 shirts / shorts / a nude body). Address them by INDEX in
-  // traversal order — names are unreliable — and toggle visibility to pick a variant. Hidden set saved.
-  // Mesh list in PRISTINE FILE ORDER, cached at load BEFORE any hierarchy surgery/adoption.
-  // hiddenMeshes/meshLabels/colors are keyed by INDEX — live traversal order CHANGES when bones are
-  // reparented (battery 2026-06-12: aveline's hidden floor planes came back because the skin-weight
-  // adoption shifted traversal and her saved [0..4] started hiding five robot parts instead).
-  let _meshList = null;
-  function allMeshesInfo() {
-    if (_meshList) return _meshList.filter((e) => e.mesh && e.mesh.parent !== null); // drop disposed strays, keep order
-    const out = [];
-    model?.traverse((o) => {
-      if (o.isMesh) out.push({ mesh: o, name: o.name || null });
-    });
-    return out;
-  }
-  function setMeshVisible(i, on) {
-    const arr = allMeshesInfo();
-    const it = arr[i];
-    if (!it) return 0;
-    it.mesh.visible = !!on;
-    const p = profileFor(curKey);
-    const hid = new Set(p.hiddenMeshes || []);
-    if (on) hid.delete(i);
-    else hid.add(i);
-    p.hiddenMeshes = [...hid].sort((a, b) => a - b);
-    saveProfileSoon();
-    hitMask = null;
-    computeFootprint();
-    refreshDims(); // silhouette changed → re-scan the grab footprint + the dims (shadow/walls/capsule)
-    setStatus(`mesh #${i}${it.name ? " (" + it.name + ")" : ""} -> ${on ? "shown" : "hidden"}`);
-    return 1;
-  }
-  function applyMeshVisibility() {
-    const hid = profileFor(curKey).hiddenMeshes;
-    if (!hid || !hid.length) return;
-    const arr = allMeshesInfo();
-    for (const i of hid) if (arr[i]) arr[i].mesh.visible = false;
-  }
+  // --- meshes + outfits (engine/meshes.js, carve S1-b) -------------------------
+  // Mesh show/hide by pristine-order INDEX + named outfit presets live in the headless store;
+  // this closure injects the live thunks. onSilhouetteChange: a visibility toggle changes what
+  // RENDERS → drop the hit mask and re-measure footprint + dims (shadow/walls/capsule/grab box).
+  const {
+    cacheMeshList,
+    clearMeshList,
+    allMeshesInfo,
+    setMeshVisible,
+    applyMeshVisibility,
+    outfitNames,
+    saveOutfit,
+    wearOutfit,
+    deleteOutfit,
+  } = createMeshStore({
+    getModel: () => model,
+    profileFor,
+    saveProfileSoon,
+    getKey: () => curKey,
+    onSilhouetteChange: () => {
+      hitMask = null;
+      computeFootprint();
+      refreshDims();
+    },
+    setStatus,
+  });
   // Bounds over VISIBLE meshes, SKINNING-AWARE: expandByObject reads the UNSKINNED geometry box,
   // which lies for models whose parts are authored side-by-side and assembled by skinning (aveline:
   // a 15-unit-wide geometry box on a 1-unit-wide robot → giant shadow + crushed scale). SkinnedMesh
@@ -1706,49 +1543,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     rig.updateWorldMatrix(true, true);
   }
 
-  // --- OUTFITS — named mesh-visibility presets per model ("can i put clothes on avatars", 2026-06-12):
-  // one-click looks built from the parts a model SHIPS (dressed / undressed / armor-off …). A preset
-  // is just the hidden-mesh index list under a name, saved in the profile; wearing one shows
-  // EVERYTHING first then hides the preset's set (applyMeshVisibility only hides — a wear must also
-  // restore parts the previous look had off).
-  function outfitNames() {
-    return Object.keys(profileFor(curKey).outfits || {});
-  }
-  function saveOutfit(name) {
-    const s = String(name || "").trim();
-    if (!s) return null;
-    const p = profileFor(curKey);
-    p.outfits = p.outfits || {};
-    p.outfits[s] = [...(p.hiddenMeshes || [])];
-    saveProfileSoon();
-    setStatus(`outfit saved: ${s}`);
-    return outfitNames();
-  }
-  function wearOutfit(name) {
-    const p = profileFor(curKey),
-      o = (p.outfits || {})[String(name || "").trim()];
-    if (!o) {
-      setStatus(`no outfit "${name}"`);
-      return false;
-    }
-    const hid = new Set(o.map((i) => +i).filter((i) => Number.isInteger(i) && i >= 0));
-    const arr = allMeshesInfo();
-    for (let i = 0; i < arr.length; i++) arr[i].mesh.visible = !hid.has(i);
-    p.hiddenMeshes = [...hid].sort((a, b) => a - b);
-    saveProfileSoon();
-    hitMask = null;
-    computeFootprint();
-    refreshDims(); // silhouette changed
-    setStatus(`outfit: ${name}`);
-    return true;
-  }
-  function deleteOutfit(name) {
-    const p = profileFor(curKey);
-    if (p.outfits) delete p.outfits[String(name || "").trim()];
-    saveProfileSoon();
-    return outfitNames();
-  }
-
   // --- rotation: turn the avatar on ALL THREE axes (pitch X / yaw Y / roll Z); persisted per model.
   // Stored as profile.rot = {x,y,z} in degrees. Migrates the legacy single-axis profile.yaw → rot.y.
   const _norm360 = norm360; // alias — the pure impl lives in mathutil.js (unit-tested)
@@ -1813,101 +1607,18 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return v;
   }
 
-  // --- morph targets / blendshapes (the avatar's OWN toggles & expressions) -----------------
-  // A model can ship shape keys (makiro: 19) — facial expressions, body toggles, "show/hide X".
-  // Exporters usually strip the names, so address BY INDEX (0..count-1). We drive only the PRIMARY
-  // morph group — the meshes that share the LARGEST morph count (the face/body carrying the shapes).
-  // For a normal rig (makiro: 4 body meshes × the SAME 19 morphs) that's every morph mesh; for a
-  // divergent rig it's just the main one, so a mesh that reuses an index for a DIFFERENT shape isn't
-  // distorted (audit). Saved per avatar.
-  function morphMeshes() {
-    let maxN = 0;
-    model?.traverse((o) => {
-      if (o.isMesh && o.morphTargetInfluences) maxN = Math.max(maxN, o.morphTargetInfluences.length);
+  // --- morph targets / blendshapes (engine/morphs.js, carve S1-c) --------------
+  // Shape-key drive by index over the PRIMARY morph group + the load-time eye/mouth-band
+  // classification holder live in the headless store; this closure injects the live thunks.
+  const { morphMeshes, allMorphsInfo, setMorphValue, applyMorphs, resetMorphGeo, setMorphGeo, morphGeoAnalysis } =
+    createMorphStore({
+      getModel: () => model,
+      getFacial: () => facial,
+      profileFor,
+      saveProfileSoon,
+      getKey: () => curKey,
+      setStatus,
     });
-    const meshes = [];
-    if (maxN)
-      model?.traverse((o) => {
-        if (o.isMesh && o.morphTargetInfluences && o.morphTargetInfluences.length === maxN) meshes.push(o);
-      });
-    return { meshes, n: maxN };
-  }
-  function morphNameAt(i) {
-    // best-effort name from the primary group's morphTargetDictionary (often absent)
-    for (const o of morphMeshes().meshes) {
-      if (!o.morphTargetDictionary) continue;
-      for (const k in o.morphTargetDictionary) if (o.morphTargetDictionary[k] === i) return k;
-    }
-    return null;
-  }
-  // Per-model morph classification (2026-07-03 audit finding 4): the geometric eye/mouth-band
-  // analysis always existed but was facial.js-private, so a model with 42 unnamed morphs meant 42
-  // blind snap probes. Computed ONCE at load — rest pose, real facing — in the facial build block
-  // (audit 2026-07-04: computing lazily at query time classified the LIVE pose and cached it).
-  let _morphGeo = null;
-  function resetMorphGeo() {
-    _morphGeo = null;
-  }
-  function morphGeoAnalysis() {
-    return _morphGeo; // null = honestly unclassified (no head anchor / no morphs / analysis failed)
-  }
-  function allMorphsInfo() {
-    const { meshes, n } = morphMeshes();
-    if (!n) return [];
-    const cur = meshes[0]?.morphTargetInfluences || [];
-    const owned = new Set(facial?.ownedMorphs || []); // morphs the lip-sync/blink layer auto-drives → a manual set won't hold (flag them so the UI explains it)
-    const g = morphGeoAnalysis();
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const s = g?.byIndex?.get(i);
-      const region = !s
-        ? null
-        : s.mouthScore > s.eyeScore && s.mouthScore > 0.05
-          ? "mouth"
-          : s.eyeScore > 0.05
-            ? "eyes"
-            : null;
-      out.push({
-        index: i,
-        name: morphNameAt(i),
-        value: +(cur[i] || 0),
-        auto: owned.has(i),
-        region, // geometric band guess ("mouth"|"eyes"|null) — a hunting driver starts HERE, not at 42 blind probes
-        score: s ? +Math.max(s.mouthScore, s.eyeScore).toFixed(2) : 0,
-      });
-    }
-    return out;
-  }
-  function setMorphValue(i, v) {
-    const raw = v == null ? 1 : +v;
-    if (!isFinite(raw)) return 0; // Math.max/min are NaN-transparent — a garbage bus value would hit the GPU AND be persisted
-    const amt = Math.max(0, Math.min(1, raw));
-    let nHit = 0;
-    for (const o of morphMeshes().meshes)
-      if (i < o.morphTargetInfluences.length) {
-        o.morphTargetInfluences[i] = amt;
-        nHit++;
-      }
-    const p = profileFor(curKey);
-    p.morphs = p.morphs || {};
-    if (amt <= 0) delete p.morphs[i];
-    else p.morphs[i] = amt; // default (0) → don't persist
-    saveProfileSoon();
-    setStatus(`morph #${i}${morphNameAt(i) ? " (" + morphNameAt(i) + ")" : ""} -> ${amt.toFixed(2)}; ${nHit} mesh`);
-    return nHit;
-  }
-  function applyMorphs() {
-    const m = profileFor(curKey).morphs;
-    if (!m) return;
-    const { meshes } = morphMeshes();
-    for (const k in m) {
-      const i = +k,
-        val = +m[k];
-      if (!isFinite(val)) continue;
-      const amt = val < 0 ? 0 : val > 1 ? 1 : val;
-      for (const o of meshes) if (i < o.morphTargetInfluences.length) o.morphTargetInfluences[i] = amt;
-    } // VALIDATE on read-back: a garbage/legacy profiles.json value must not reach the GPU (the writer guards; the load path must too)
-  }
   // Per-mesh friendly LABEL (parts often have useless names like "Object_107" or duplicates) — the
   // user can rename a part so the Settings list is legible. Stored per avatar, keyed by mesh index.
   function setMeshLabel(i, label) {
@@ -2489,7 +2200,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       facial?.blink?.();
       if (proc?.setLayer) proc.setLayer("cospeech", { fn: (t) => coSpeechPose(t, _speechRms) });
       wake((+dur > 0 ? +dur : 2) + 0.5);
-    }, // #22/#8: blink on speech ONSET (facial no longer free-runs blinks); P2: co-speech BODY layer from the live envelope
+    }, // #22/#8: blink fires on speech ONSET only (strict driven blink, never free-running); P2: co-speech BODY layer from the live envelope
     onEnvelope: (rms) => {
       _speechRms += (rms - _speechRms) * 0.3;
     }, // smooth the RMS so the body emphasis doesn't twitch frame-to-frame
@@ -2640,7 +2351,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       curKey: () => curKey,
       weightMass: () => _weightMass,
       springNeverExtra: () => _springNeverExtra,
-      attachObjs: () => attachObjs,
+      attachObjs: () => getAttachments(),
       roleBones: () => roleBones,
       platforms: () => platforms,
       curDisp: () => curDisp,
@@ -3206,7 +2917,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     flags: relayFlags,
     builtinModels: BUILTIN_MODELS,
     getCurKey: () => curKey,
-    getAttachObjs: () => attachObjs,
+    getAttachObjs: () => getAttachments(),
     getBonesShown: () => bonesShown,
     getShadowOn: () => shadowOn,
     setShadowOn: relayed("setShadowOn"), // ground-contact shadow toggle (Settings)
@@ -3220,7 +2931,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     ball: relayed("ball"), // rapier ball-physics toys (throw/drop/clear) for the right-click "Ball" menu
     conjureIds: () => conjurer.ids(), // live conjured props (brain window; peers honestly list none)
     conjureDismiss: uiConjureDismiss,
-    conjureClear: uiConjureClear, // manual escape hatch — a stranded prop is no longer bus-only
+    conjureClear: uiConjureClear, // manual escape hatch — a stranded prop is reachable from the menu, not only the bus
     showSkeleton: uiShowSkeleton,
     recolor: uiRecolor,
     hueShift: uiHueShift,
@@ -3444,7 +3155,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   addEventListener("pointercancel", _abortInput);
   addEventListener("blur", _abortInput);
   // Arrow nudge from ANY window: the brain glides locally (eased); a peer can't run the glide step,
-  // so it routes through main's immediate nudge (the previously-orphaned avatar:nudge channel).
+  // so it routes through main's immediate nudge (the avatar:nudge channel).
   const kNudge = (dx, dy) => {
     if (_isBrain) nudge(dx, dy);
     else window.avatarIPC?.nudge?.(dx, dy);

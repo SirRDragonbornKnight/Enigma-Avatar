@@ -12,9 +12,9 @@
 
 import * as THREE from "three";
 import { resolveRig } from "../rig/rig.js";
-// bell / jumpElevation (gesture + clip shaping) were removed with the gesture/clip PURGE (2026-06-25);
-// the AI composes ALL motion as additive layers via the compositor now — nothing here shapes a clip.
-// (easeInOut survives in motionmath.js for conjure timing; it's just no longer imported here.)
+// There is deliberately NO gesture/clip shaping here (no bell / jumpElevation; user ruling 2026-06-25):
+// the AI composes ALL motion as additive layers via the compositor — nothing here shapes a clip.
+// (easeInOut lives in motionmath.js for conjure timing.)
 
 const DEG = Math.PI / 180;
 
@@ -159,7 +159,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     rest[armRole] = adjust.multiply(rest[armRole]);
     a.quaternion.copy(rest[armRole]); // apply immediately so frame 0 isn't a T-pose
     // NO noteAdjust here (audit 2026-06-11): arm aims fire on MOST T-pose rigs — counter-rotating
-    // sprung sleeve/ribbon chains against them regressed previously-good models AND mixed arm+trunk
+    // sprung sleeve/ribbon chains against them regressed known-good models AND mixed arm+trunk
     // ancestry breaks the composition order. Gravity preservation is for TRUNK/HEAD/LEG normalization
     // (the squat-bind case) only; under-arm chains keep inheriting the arm drop as they always did.
   };
@@ -806,8 +806,9 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // ===== THE FRAME LOOP. She stands bit-still at REST; the ONLY things that move her are the AI's
   // own additive motion LAYERS (pose/flex over the bus, P1) + the reactive
   // finger grip while carried. No idle, no canned gestures/expressions, no clip playback — every
-  // deliberate move is AI-authored through the compositor (the gesture catalog / root-motion / clip
-  // playback / body expressions were PURGED 2026-06-25, user order "purge means purge"). =====
+  // deliberate move is AI-authored through the compositor. There is deliberately NO gesture catalog /
+  // root-motion / clip playback / body-expression set (user ruling 2026-06-25 "purge means purge" —
+  // do not re-add). =====
   function update(dt, _walk = false, opts = {}) {
     _additive = !!opts.additive;
 
