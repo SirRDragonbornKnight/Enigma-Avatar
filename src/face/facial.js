@@ -99,6 +99,11 @@ export function buildFacial(model, vrm = null, opts = {}) {
       ownedMorphs: [], // VRM drives expressions, not raw morph indices
       params: P,
       setParams: (p) => mergeParams(P, p),
+      exprState: () => ({
+        smile: +exprCur.smile.toFixed(2),
+        brows: +exprCur.brows.toFixed(2),
+        lidHold: manualBlink >= 0 ? +(+manualBlink).toFixed(2) : null,
+      }), // live DRIVEN values (what the face is doing right now) + the held lid (null = auto)
       setMouth: (a) => {
         const n = +a;
         if (isFinite(n)) mouthTgt = clamp01(n);
@@ -467,6 +472,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
       ownedMorphs: [],
       params: {},
       setParams() {},
+      exprState: () => null, // no face channels — honest absence, not a fake zero-face
       setMouth() {},
       setExpr() {
         return { applied: {}, via: { smile: "none", brows: "none" } }; // honest: no face to express with
@@ -500,7 +506,12 @@ export function buildFacial(model, vrm = null, opts = {}) {
       ]),
     ], // auto-driven morphs (a manual UI set won't stick)
     params: P,
-    setParams: (p) => Object.assign(P, p),
+    setParams: (p) => mergeParams(P, p),
+    exprState: () => ({
+      smile: +exprCur.smile.toFixed(2),
+      brows: +exprCur.brows.toFixed(2),
+      lidHold: manualBlink >= 0 ? +(+manualBlink).toFixed(2) : null,
+    }), // live DRIVEN values (what the face is doing right now) + the held lid (null = auto)
     setMouth: (a) => {
       const n = +a;
       if (isFinite(n)) mouthTgt = clamp01(n);

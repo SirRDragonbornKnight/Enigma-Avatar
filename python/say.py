@@ -28,7 +28,8 @@ from urllib.parse import quote
 
 import websockets
 
-URI = "ws://127.0.0.1:8765"
+from protocol import BUS_URI as URI  # the ONE endpoint truth (protocol.py)
+
 HERE = Path(__file__).resolve().parent
 
 # The models/ FOLDER is the library (same rule as src/model/library.cjs) - no name table to

@@ -124,12 +124,14 @@ export function createControlSurface(engine, services) {
         layers: proc && proc.layerIds ? proc.layerIds() : [],
         springBones: spring ? spring.names : [],
         facial: facial ? { mode: facial.mode, info: facial.info } : null,
+        speaking: !!voice?.isSpeaking?.(), // is speech audio playing right now — a driver's "is she done talking"
         attachments: engine.attachObjs.map((a) => ({ id: a.id, category: a.category, attachedTo: a.attachedTo })),
         toggles: {
           spring: engine.springOn,
           facial: engine.facialOn,
           locked: engine.locked,
           rotateMode: engine.rotateMode,
+          bones: engine.bonesShown,
           menu: engine.ui.isOpen(),
         },
       };

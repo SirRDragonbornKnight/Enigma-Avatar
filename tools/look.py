@@ -22,7 +22,8 @@ import sys
 import tempfile
 import websockets
 
-URI = "ws://127.0.0.1:8765"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
+from protocol import BUS_URI as URI  # the ONE endpoint truth (python/protocol.py)
 
 
 async def _req(ws, cmd, rid, timeout=2.0):
@@ -42,10 +43,14 @@ async def _req(ws, cmd, rid, timeout=2.0):
     return None
 
 
-async def _snap(ws, name):
-    await ws.send(json.dumps({"action": "snap", "name": name}))
-    await asyncio.sleep(0.9)  # let the capture write
-    return os.path.join(tempfile.gettempdir(), os.path.basename(name))
+async def _snap(ws, name, rid):
+    """Snap via the reqId reply: the overlay answers {ok, path} only when the PNG is WRITTEN.
+    Returns (path, verified) - verified=False means no reply came back, so an existing file at
+    the guessed path may be a stale leftover from an earlier run (never label it [OK])."""
+    res = await _req(ws, {"action": "snap", "name": name}, rid, timeout=6.0)
+    if isinstance(res, dict) and res.get("path"):
+        return res["path"], True
+    return os.path.join(tempfile.gettempdir(), os.path.basename(name)), False
 
 
 def _asc(s):
@@ -79,7 +84,7 @@ async def go(args):
         base, _, ext = args.name.rpartition(".")
         base = base or args.name
         ext = ext or "png"
-        paths.append(await _snap(ws, f"{base}.{ext}"))
+        paths.append(await _snap(ws, f"{base}.{ext}", "snap0"))
         if args.angles:
             r0 = await _req(ws, {"action": "query", "what": "rotation"}, "r0", timeout=1.5)
             saved = (r0 or {}).get("saved") if isinstance(r0, dict) else None
@@ -90,14 +95,19 @@ async def go(args):
                     json.dumps({"action": "rotate", "x": gx, "y": gy + yaw, "z": gz})
                 )  # add yaw, keep her pitch/roll
                 await asyncio.sleep(0.5)
-                paths.append(await _snap(ws, f"{base}_{label}.{ext}"))
+                paths.append(await _snap(ws, f"{base}_{label}.{ext}", f"snap_{label}"))
             await ws.send(
                 json.dumps({"action": "rotate", "x": gx, "y": gy, "z": gz})
             )  # restore her ORIGINAL facing (rotate persists, so do not assume front)
             await asyncio.sleep(0.3)
     print("SNAPS (read these):")
-    for p in paths:
-        print("  " + p + ("  [OK]" if os.path.exists(p) else "  [MISSING]"))
+    for p, verified in paths:
+        if not os.path.exists(p):
+            print("  " + p + "  [MISSING]")
+        elif verified:
+            print("  " + p + "  [OK]")
+        else:
+            print("  " + p + "  [UNVERIFIED - no snap reply; the file may be a stale leftover]")
     print("POSE BY NUMBERS:")
     print(_summary(state))
     if stance:

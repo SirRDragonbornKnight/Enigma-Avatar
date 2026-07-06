@@ -20,11 +20,18 @@ ACTIONS: tuple[str, ...] = (
     "stop", "stretch", "tuneAttachment",
 )
 
+# The ONE bus endpoint every python client/server shares. (The renderer keeps literal copies in
+# src/control/surface.js connect()'s default and index.html's CSP connect-src - platform
+# constraints; change all three together.)
+BUS_HOST = "127.0.0.1"
+BUS_PORT = 8765
+BUS_URI = f"ws://{BUS_HOST}:{BUS_PORT}"
+
 # The `what` values the `query` verb accepts (plus "actions", handled by the registry itself).
 QUERY_KINDS: tuple[str, ...] = (
     "materials", "meshes", "regions", "bones", "morphs", "rotation", "facial", "model", "where",
-    "capabilities", "caps", "roles", "pose", "joints", "stance", "grip", "outfits", "platforms",
-    "bounds", "weights", "state",
+    "capabilities", "caps", "roles", "pose", "props", "attachments", "joints", "stance", "grip",
+    "outfits", "platforms", "bounds", "weights", "state",
 )
 
 # Verbs whose listed field must be present to be actionable (mirrors protocol.js REQUIRED_FIELDS).

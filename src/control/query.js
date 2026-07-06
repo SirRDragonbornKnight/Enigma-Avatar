@@ -14,7 +14,7 @@
 import * as THREE from "three";
 
 export function createQueryReporter(engine, services) {
-  const { EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo, bonePoints } = services;
+  const { EnigmaAvatar, _norm360, getRot, outfitNames, profileFor, allMeshesInfo, bonePoints, propPoints } = services;
 
   return function answerQuery(what) {
     const facial = engine.facial,
@@ -47,8 +47,9 @@ export function createQueryReporter(engine, services) {
             info: facial.info,
             lipSync: facial.mode !== "none",
             exprMode: facial.exprMode || { smile: "none", brows: "none" }, // which ladder tier answers each expr channel
+            expr: facial.exprState ? facial.exprState() : null, // live driven smile/brows + held lid — read back what `expr`/`blink` set
           }
-        : { mode: "none", lipSync: false, exprMode: { smile: "none", brows: "none" } };
+        : { mode: "none", lipSync: false, exprMode: { smile: "none", brows: "none" }, expr: null };
     if (what === "model") return { url: curKey, size: +sizeScale.toFixed(2) };
     if (what === "where") return EnigmaAvatar.where(); // screen-px position + screen size + cursor (AI movement)
     if (what === "capabilities" || what === "caps") {
@@ -60,6 +61,8 @@ export function createQueryReporter(engine, services) {
     }
     if (what === "roles") return proc ? { bones: proc.roleBones(), flex: proc.flexAxes() } : null; // DIAGNOSTIC: role → actual bone name + flex axes
     if (what === "pose") return bonePoints(); // PROPRIOCEPTION: each role bone's LIVE monitor-px landing spot — verify a pose by numbers, not a snap (null when no rig resolved)
+    if (what === "props") return propPoints(); // each conjured prop's id + live monitor-px position (verify a conjure/moveTo by numbers)
+    if (what === "attachments") return EnigmaAvatar.attachments(); // [{id,category,url,bone,attachedTo,pos,rot,scale}] — the full placement truth attach/tuneAttachment wrote
     if (what === "joints") return proc ? proc.jointAngles() : null; // DIAGNOSTIC: live knee/elbow angles
     if (what === "stance") return proc?.stance ? proc.stance() : null; // DIAGNOSTIC: leg stance truth — knee angles, toe headings, kneecap-vs-toes drift on squat-normalized rigs
     if (what === "grip") return proc?.gripState ? proc.gripState() : null; // DIAGNOSTIC: the reactive finger grip

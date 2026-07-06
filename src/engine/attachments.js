@@ -73,6 +73,22 @@ export function createAttachmentStore({
 }) {
   let attachObjs = []; // live for the current model: [{id,category,url,bone,pos,rot,scale,obj,attachedTo}]
   let _attachSeq = 0;
+  // attach is async (the prop's asset loads in flight) but a reqId driver deserves the BUILT
+  // truth, not a hopeful id — whenBuilt(id) resolves {attached,to} on success or {error} on any
+  // failure path, the same reply-when-built contract the `load` verb keeps. Entries survive the
+  // settle so a whenBuilt that arrives after a fast (or test-synchronous) load still reads truth.
+  const _built = new Map(); // id -> { promise, resolve }
+  function _track(id) {
+    let resolve;
+    const promise = new Promise((r) => (resolve = r));
+    _built.set(id, { promise, resolve });
+  }
+  function _settle(id, result) {
+    _built.get(id)?.resolve(result);
+  }
+  function whenBuilt(id) {
+    return _built.get(id)?.promise ?? Promise.resolve({ error: `unknown attach id '${id}'` });
+  }
   const getAttachments = () => attachObjs;
 
   function findBone(query) {
@@ -119,16 +135,19 @@ export function createAttachmentStore({
     };
     const forKey = getKey(); // the model this attach was aimed at — a swap mid-load must not
     // attach the prop to the NEW model and durably write it into the WRONG profile
+    _track(a.id);
     loadAsset(
       url,
       (asset) => {
         if (!asset.scene) {
           setStatus("attach failed: no mesh");
+          _settle(a.id, { error: "no mesh in asset" });
           return;
         }
         if (getKey() !== forKey) {
           dispose(asset.scene);
           setStatus(`attach dropped: model changed while ${baseName(url)} loaded`);
+          _settle(a.id, { error: "model changed while the prop loaded" });
           return;
         }
         a.obj = asset.scene;
@@ -159,8 +178,12 @@ export function createAttachmentStore({
         if (!opts._restore) saveAttachments();
         console.log("[avatar] attached", baseName(url), "->", a.attachedTo);
         setStatus(`attached ${baseName(url)} -> ${a.attachedTo}`);
+        _settle(a.id, { attached: a.id, to: a.attachedTo });
       },
-      (err) => setStatus(`attach failed: ${err?.message || err}`),
+      (err) => {
+        setStatus(`attach failed: ${err?.message || err}`);
+        _settle(a.id, { error: String((err && err.message) || err) });
+      },
       { kind: opts.kind || kindOf(url) }
     );
     return a.id;
@@ -221,6 +244,7 @@ export function createAttachmentStore({
     getAttachments,
     findBone,
     attachMesh,
+    whenBuilt,
     detachAttachment,
     clearAttachments,
     reapplyAttachments,

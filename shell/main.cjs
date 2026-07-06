@@ -278,7 +278,18 @@ function publishPos() {
     // it detect the replacement and re-capture at the NEW grab point instead of steering the new
     // drag back to the OLD part.
     dragSeq: _drag ? _drag.seq : 0,
-    disp: { id: d.id, x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
+    // i/n: which display she is on + how many exist — the renderer's `where` reports them so a
+    // driver can aim `monitor {index}` without a human reading the menu.
+    disp: {
+      id: d.id,
+      i: displays().findIndex((x) => x.id === d.id),
+      n: displays().length,
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+      wb: wa.y + wa.height,
+    },
   }); // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
 // NO positional limits: the base can sit anywhere — hanging off the outer rim,
@@ -450,7 +461,16 @@ function makeWindow(display, isBrain, peerCount) {
       win.webContents.send("avatar:pos", {
         gx: gPos.x,
         gy: gPos.y,
-        disp: { x: dHere.x, y: dHere.y, width: dHere.width, height: dHere.height, wb: wah.y + wah.height },
+        disp: {
+          id: dh.id,
+          i: displays().findIndex((x) => x.id === dh.id),
+          n: displays().length,
+          x: dHere.x,
+          y: dHere.y,
+          width: dHere.width,
+          height: dHere.height,
+          wb: wah.y + wah.height,
+        },
       });
       if (!isBrain && peerModelUrl) win.webContents.send("avatar:model", peerModelUrl); // a late-created / reloaded peer catches up to the last url it can resolve
     } catch {}

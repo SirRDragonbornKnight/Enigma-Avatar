@@ -127,7 +127,9 @@ export function loadAsset(url, onOk, onErr, opts = {}) {
         // FBX has no embedded textures — bind them from materials.json. Surface ANY binding
         // problem (missing sidecar, per-texture load failure) instead of black-holing it.
         try {
-          const probs = await applyFbxMaterials(obj, dir, mgr);
+          // onWarn also rides in as the LATE sink: per-texture load failures fire after the
+          // problems array has been returned and consumed, so they must go straight out.
+          const probs = await applyFbxMaterials(obj, dir, mgr, onWarn);
           for (const p of probs) onWarn(p);
         } catch (e) {
           onWarn(e);
@@ -167,7 +169,7 @@ export function loadAsset(url, onOk, onErr, opts = {}) {
 // Returns an array of Error problems (empty = clean). Does NOT throw for the common
 // "untextured FBX, no sidecar" case — that's reported as a single honest warning so the
 // caller can surface it instead of silently claiming a clean load.
-export async function applyFbxMaterials(root, dir, mgr) {
+export async function applyFbxMaterials(root, dir, mgr, onLate) {
   const problems = [];
   // Does this FBX actually carry materials that WANT textures? An untextured prop legitimately
   // has none → no sidecar needed. A textured one with no materials.json is a real binding gap.
@@ -208,7 +210,13 @@ export async function applyFbxMaterials(root, dir, mgr) {
         dir + file,
         undefined,
         undefined,
-        (err) => problems.push(new Error(`texture '${file}' failed to load: ${(err && err.message) || err}`)) // load() error callback — surface, don't swallow
+        // load() errors fire AFTER this function returned (image fetch is async) — the returned
+        // problems array has already been consumed by then, so route them to the live sink.
+        (err) => {
+          const e = new Error(`texture '${file}' failed to load: ${(err && err.message) || err}`);
+          if (onLate) onLate(e);
+          else problems.push(e);
+        }
       );
       if (t && "colorSpace" in t) t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
       cache[key] = t;

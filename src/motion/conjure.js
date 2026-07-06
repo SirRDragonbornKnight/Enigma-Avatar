@@ -149,5 +149,22 @@ export function createConjure({ scene, loadAsset, getBoneWorld, onMiss } = {}) {
     return alive;
   }
 
-  return { spawn, moveTo, dismiss, clear, step, count: () => items.size, ids: () => [...items.keys()] };
+  return {
+    spawn,
+    moveTo,
+    dismiss,
+    clear,
+    step,
+    count: () => items.size,
+    ids: () => [...items.keys()],
+    // live truth for query "props": per-prop world x/y + follow state (loaded=false = the asset
+    // is still in flight; the position is where it will pop)
+    report: () =>
+      [...items.entries()].map(([id, r]) => ({
+        id,
+        loaded: !!r.obj,
+        bone: r.bone,
+        world: r.obj ? [r.obj.position.x, r.obj.position.y] : [r.home.x, r.home.y],
+      })),
+  };
 }

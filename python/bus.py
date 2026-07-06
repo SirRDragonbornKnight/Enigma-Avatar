@@ -29,7 +29,7 @@ import sys
 
 import websockets
 
-HOST, PORT = "127.0.0.1", 8765
+from protocol import BUS_HOST as HOST, BUS_PORT as PORT  # the ONE endpoint truth (protocol.py)
 CLIENTS: set = set()
 _CLOSING: set = set()  # hold refs to in-flight close() tasks so the event loop can't GC them mid-close
 

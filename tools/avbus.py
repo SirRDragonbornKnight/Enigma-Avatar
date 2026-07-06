@@ -14,6 +14,9 @@ import os
 import sys
 import websockets
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
+from protocol import BUS_URI  # the ONE endpoint truth (python/protocol.py)
+
 
 async def main():
     if len(sys.argv) < 2:
@@ -36,7 +39,7 @@ async def main():
     want = {c["reqId"] for c in cmds if isinstance(c, dict) and "reqId" in c}
     results = {}
     try:
-        ws = await asyncio.wait_for(websockets.connect("ws://127.0.0.1:8765"), timeout=5)
+        ws = await asyncio.wait_for(websockets.connect(BUS_URI), timeout=5)
     except Exception as e:
         print("CONNECT FAILED:", repr(e))
         return

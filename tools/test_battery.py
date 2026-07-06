@@ -18,6 +18,9 @@ from pathlib import Path
 import websockets
 
 AV = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AV / "python"))
+from protocol import BUS_URI  # the ONE endpoint truth (python/protocol.py)
+
 TMP = Path(tempfile.gettempdir())
 MESH_EXT = {".glb", ".gltf", ".vrm", ".fbx"}
 
@@ -38,7 +41,7 @@ class Bus:
         self.rid = 100
 
     async def connect(self):
-        self.ws = await asyncio.wait_for(websockets.connect("ws://127.0.0.1:8765"), timeout=5)
+        self.ws = await asyncio.wait_for(websockets.connect(BUS_URI), timeout=5)
 
     async def cmd(self, c):  # fire-and-forget
         await self.ws.send(json.dumps(c))

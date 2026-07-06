@@ -50,7 +50,8 @@ from pathlib import Path
 import websockets
 
 REPO = Path(__file__).resolve().parents[1]
-URI = "ws://127.0.0.1:8765"
+sys.path.insert(0, str(REPO / "python"))
+from protocol import BUS_HOST, BUS_PORT, BUS_URI as URI  # the ONE endpoint truth (python/protocol.py)
 ELECTRON = REPO / "node_modules" / "electron" / "dist" / "electron.exe"
 TMP = Path(os.environ.get("TEMP", "/tmp"))
 
@@ -63,10 +64,10 @@ def _rid() -> str:
     return f"smoke:{_seq}"
 
 
-def port_listening(port: int = 8765) -> bool:
+def port_listening(port: int = BUS_PORT) -> bool:
     with socket.socket() as s:
         s.settimeout(0.4)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        return s.connect_ex((BUS_HOST, port)) == 0
 
 
 async def rpc(ws, cmd: dict, timeout: float = 8.0):

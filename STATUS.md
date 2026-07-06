@@ -26,11 +26,26 @@ _Last updated 2026-07-06 (review + tidy round; suite 370/0/6, smoke 7/7)._
   cursor-look/gesture/eyegaze systems).
 - Receipts: node --test **370/0/6**, pytest **21/21**, live smoke **7/7**, `query pose`
   bit-identical before/after the projection refactor.
+- **Backlog burn-down (same day, round 3) -- the set-not-read class is CLOSED**: `query
+"attachments"` (full placement truth) and `query "props"` (conjured props at monitor-px) are
+  wire kinds in both protocol mirrors; `state()` reports `speaking` + the `bones` toggle;
+  `where` reports `display`/`displays` (index + count, fed by main's pos broadcast); `query
+"facial"` reads back the LIVE driven expr values + the held lid; say/stop/springTune/
+  facialTune/showBones all reply truth instead of silence. Fail-honest: `attach` replies when
+  BUILT ({attached,to} or {error} -- live receipt: a 404 prop finally reports as an error);
+  `recolor` validates the color and never persists a miss; FBX late texture errors reach
+  onWarn (they used to land in an already-consumed array); look.py labels snaps [OK] only on
+  a real snap reply. One-truth: `saneDim`/`padClampRect` helpers collapse the duplicated
+  measurement gate + capture crop; the platform default width lives only in placement.js;
+  `BUS_URI` lives once in python/protocol.py (all python clients import it). New
+  tests/contract.test.js mechanically pins the 19-role canon to bone_limits.json and the CSP
+  hash to the live importmap bytes (its first draft "corrected" a hash that was already right
+  -- the naive regex matched the tag text inside the CSP explainer comment; strip comments
+  before extracting). Receipts: suite **372/0/6**, pytest 21/21, smoke 7/7, live
+  expr/lid/display/attach-error read-backs.
 - Still open (decisions, not bugs): softmesh/stretch shipped while the spec parks "squish"
   (spec REV or unsanctioned -- the user's call); the external MCP `avatar_command` forwarder
-  still lists 4 dead verbs (fix lives outside this repo). The audit backlog (set-not-read gaps:
-  speech state, display identity, attachment transforms, conjured-prop positions) stays
-  catalogued for triage.
+  still lists 4 dead verbs (fix lives outside this repo).
 
 ## 2026-07-06 -- fresh-out-of-the-box cleanup
 

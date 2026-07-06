@@ -79,6 +79,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
 
   const VIEW_H = 10; // world units spanning screen height (ortho)
   const BASE_H = 6; // avatar world height at sizeScale 1
+  const saneDim = (v) => v > 0.01 && v < BASE_H * 2.5; // a measured dim outside this is a poisoned box (normalized models are ~BASE_H) — every measurement gate shares THIS test
   const statusEl = document.getElementById("status");
   const setStatus = (m) => {
     if (statusEl) statusEl.textContent = m;
@@ -504,6 +505,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       pos: [Math.round(gPos.x), Math.round(gPos.y)],
       size: +sizeScale.toFixed(2),
       gliding,
+      display: curDisp.i ?? null, // which monitor she is on (index into the layout main reports)
+      displays: curDisp.n ?? null, // how many monitors exist — `monitor {index}` targets one of these
     };
   }
   const _bpV = new THREE.Vector3();
@@ -524,6 +527,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       bones[role] = globalToMonitorPx(g.x, g.y);
     }
     return { screen: [curDisp.width, curDisp.height], screenPos: posScreen(), bones };
+  }
+  function propPoints() {
+    // query "props": each conjured prop's id + live monitor-px position (the pose/where
+    // convention) — a driver verifies a conjure/moveTo landed by numbers, not a snap.
+    if (!_gReady) return null;
+    return conjurer.report().map((p) => {
+      const g = worldToGlobalPx(p.world[0], p.world[1]);
+      return { id: p.id, loaded: p.loaded, bone: p.bone, px: globalToMonitorPx(g.x, g.y) };
+    });
   }
   // There is NO root-motion (jump / flip / lay-down / get-up); _motionY (the live vertical hop,
   // still carried in the pose buffer) stays 0. _cancelMotion just zeroes it so a model switch / manual
@@ -1028,14 +1040,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       const bw = (_box.max.x - _box.min.x) / s,
         bh2 = (_box.max.y - _box.min.y) / s;
       let shifted = false;
-      if (
-        isFinite(_box.min.y) &&
-        _box.max.y > _box.min.y &&
-        bw > 0.01 &&
-        bh2 > 0.01 &&
-        bw < BASE_H * 2.5 &&
-        bh2 < BASE_H * 2.5
-      ) {
+      if (isFinite(_box.min.y) && _box.max.y > _box.min.y && saneDim(bw) && saneDim(bh2)) {
         const c = _box.getCenter(new THREE.Vector3());
         model.position.x -= (c.x - rig.position.x) / s;
         model.position.z -= c.z / s;
@@ -1170,7 +1175,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     } catch {}
     updateBoneHelper();
     setStatus("skeleton " + (bonesShown ? "on" : "off"));
-    return bonesShown;
+    return bonesShown; // the resulting state — a blind toggle deserves a readable answer
   }
   // --- NO-MODEL overlay (#13: the self-made character is retired — no model loaded shows a MESSAGE) ---
   // When no .glb is loaded we render nothing (no placeholder model) and put
@@ -1326,22 +1331,29 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   });
   // Attachments (engine/attachments.js, carve S1-d): bone-attached props with the swap-race guard,
   // role-alias bone finding, auto-size, and sanitized numerics — headless; this closure wires thunks.
-  const { getAttachments, attachMesh, detachAttachment, clearAttachments, reapplyAttachments, tuneAttachment } =
-    createAttachmentStore({
-      loadAsset,
-      kindOf,
-      baseName,
-      getModel: () => model,
-      getRig: () => rig,
-      getRoleBones: () => roleBones,
-      getKey: () => curKey,
-      getAvatarWorldHeight: () => BASE_H * (rig.scale.x || 1),
-      dispose: disposeMeshTree, // incl. textures — see util/dispose.js
-      profileFor,
-      saveProfileSoon,
-      commitAttachments,
-      setStatus,
-    });
+  const {
+    getAttachments,
+    attachMesh,
+    whenBuilt: attachBuilt,
+    detachAttachment,
+    clearAttachments,
+    reapplyAttachments,
+    tuneAttachment,
+  } = createAttachmentStore({
+    loadAsset,
+    kindOf,
+    baseName,
+    getModel: () => model,
+    getRig: () => rig,
+    getRoleBones: () => roleBones,
+    getKey: () => curKey,
+    getAvatarWorldHeight: () => BASE_H * (rig.scale.x || 1),
+    dispose: disposeMeshTree, // incl. textures — see util/dispose.js
+    profileFor,
+    saveProfileSoon,
+    commitAttachments,
+    setStatus,
+  });
   // Per-avatar physics / face tuning — applied live and saved into the profile.
   // Keep only FINITE numeric entries from a tune-params object — the bus is stringly-typed, and one
   // garbage value ({stiffness:"abc"}) would NaN-poison every spring tip AND be PERSISTED to the profile
@@ -1430,7 +1442,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return n;
   }
   function recolor(target, hex) {
+    if (!CSS.supports("color", String(hex))) return 0; // not a color the renderer can parse — nothing tinted, nothing persisted (three's Color.set would warn and leave the material unchanged while n still counted it)
     const n = _setColor(target, hex);
+    if (!n) return 0; // no material matched — a miss must not write the profile
     // persist keyed by the material's NAME (re-applies on reload even if the index shifts);
     // an unnamed material falls back to a synthetic key.
     const m = typeof target === "number" ? allMaterials()[target] : null;
@@ -1452,6 +1466,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const c = profileFor(curKey).colors;
     if (!c) return;
     for (const k in c) {
+      if (!CSS.supports("color", String(c[k]))) continue; // read-back guard: a legacy/hand-edited value the renderer can't parse must not reach the materials
       const mi = /^#(\d+)$/.exec(k);
       _setColor(mi ? +mi[1] : k, c[k]);
     }
@@ -1587,8 +1602,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       const s = rig.scale.x || 1;
       const w = (_box.max.x - _box.min.x) / s,
         h = (_box.max.y - _box.min.y) / s;
-      if (w > 0.01 && h > 0.01 && w < BASE_H * 2.5 && h < BASE_H * 2.5)
-        modelDims = { w, h }; // same sanity gate as the load re-anchor — never trust a poisoned measurement
+      if (saneDim(w) && saneDim(h))
+        modelDims = { w, h }; // never trust a poisoned measurement
       else {
         const m = `[avatar] POISONED dims refresh skipped: ${w.toFixed(1)}x${h.toFixed(1)}`;
         console.warn(m);
@@ -2318,22 +2333,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         } else regionMiss = `region '${key}' is off-screen`;
       }
     }
-    if (
-      !rect &&
-      !opts.full &&
-      model &&
-      onMyDisplay() &&
-      hitRect &&
-      hitRect[2] > hitRect[0] &&
-      hitRect[3] > hitRect[1]
-    ) {
-      const pad = opts.pad ?? 48;
-      const x = Math.max(0, Math.floor(hitRect[0] - pad));
-      const y = Math.max(0, Math.floor(hitRect[1] - pad));
-      const w = Math.min(Math.round(innerWidth) - x, Math.ceil(hitRect[2] - hitRect[0] + pad * 2));
-      const h = Math.min(Math.round(innerHeight) - y, Math.ceil(hitRect[3] - hitRect[1] + pad * 2));
-      if (w > 8 && h > 8) rect = { x, y, width: w, height: h };
-    }
+    if (!rect && !opts.full && model && onMyDisplay()) rect = padClampRect(opts.pad ?? 48) || rect;
     const r = await window.avatarIPC.capture({ rect, name: opts.name });
     if (r && typeof r === "object") {
       if (regionUsed) r.region = regionUsed; // the crop the caller asked for was honored
@@ -2350,15 +2350,17 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // a PICTURE (recognise by look, not by a cryptic folder name). Skips transient drag-drops and the
   // zero-asset placeholder (no models/ id), debounces, and bails if a newer model switch supersedes.
   let _thumbTimer = 0;
-  function thumbRect() {
+  // Pad the live silhouette hitRect and clamp it to the window — THE capture crop every consumer
+  // (snap region, gallery thumbnail) shares; null = no usable silhouette / degenerate crop.
+  function padClampRect(pad) {
     if (!hitRect || !(hitRect[2] > hitRect[0] && hitRect[3] > hitRect[1])) return null;
-    const pad = 24;
     const x = Math.max(0, Math.floor(hitRect[0] - pad));
     const y = Math.max(0, Math.floor(hitRect[1] - pad));
     const w = Math.min(Math.round(innerWidth) - x, Math.ceil(hitRect[2] - hitRect[0] + pad * 2));
     const h = Math.min(Math.round(innerHeight) - y, Math.ceil(hitRect[3] - hitRect[1] + pad * 2));
     return w > 8 && h > 8 ? { x, y, width: w, height: h } : null;
   }
+  const thumbRect = () => padClampRect(24);
   function scheduleThumb() {
     const id = (/\/models\/([^/]+)\//.exec(curKey) || [])[1];
     if (!id || !window.avatarIPC?.saveThumb) return; // transient / placeholder → no thumb
@@ -2485,6 +2487,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     profileFor,
     allMeshesInfo,
     bonePoints,
+    propPoints,
   });
   window.EnigmaAvatar = EnigmaAvatar;
   window.__AV = { THREE, scene, camera, rig, getModel: () => model };
@@ -3053,6 +3056,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     EnigmaAvatar,
     ui,
     wake,
+    attachBuilt, // reply-when-BUILT for the attach verb (the store's whenBuilt; local — the brain's build IS the truth)
     getRot,
     answerQuery,
     uiAttach,

@@ -54,19 +54,25 @@ test("query('model') reports the current model + size, and reads it LIVE", () =>
   assert.equal(aq("model").url, "model-B", "a later model swap is reflected on the next query");
 });
 
-test("query('facial') is honest when there is no face rig — and always reports exprMode", () => {
+test("query('facial') is honest when there is no face rig — and always reports exprMode + expr", () => {
   const NONE = { smile: "none", brows: "none" };
   const { aq, live } = makeReporter({ facial: null });
   assert.deepEqual(
     aq("facial"),
-    { mode: "none", lipSync: false, exprMode: NONE },
+    { mode: "none", lipSync: false, exprMode: NONE, expr: null },
     "no facial -> honest 'none', not a throw"
   );
   live.facial = { mode: "jaw", info: { axis: "x" }, exprMode: { smile: "bones", brows: "none" } };
   assert.deepEqual(
     aq("facial"),
-    { mode: "jaw", info: { axis: "x" }, lipSync: true, exprMode: { smile: "bones", brows: "none" } },
-    "a real mode reports lipSync=true and the live expression tiers"
+    { mode: "jaw", info: { axis: "x" }, lipSync: true, exprMode: { smile: "bones", brows: "none" }, expr: null },
+    "a real mode reports lipSync=true and the live expression tiers (no exprState accessor -> honest null)"
+  );
+  live.facial.exprState = () => ({ smile: 0.7, brows: 0, lidHold: 0.5 });
+  assert.deepEqual(
+    aq("facial").expr,
+    { smile: 0.7, brows: 0, lidHold: 0.5 },
+    "the LIVE driven expression values + held lid ride the facial report — set-then-read-back works"
   );
 });
 

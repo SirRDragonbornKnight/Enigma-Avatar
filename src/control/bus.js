@@ -23,6 +23,7 @@ export function createBusRegistry(engine, services) {
     EnigmaAvatar,
     ui,
     wake,
+    attachBuilt,
     getRot,
     answerQuery,
     uiAttach,
@@ -73,10 +74,13 @@ export function createBusRegistry(engine, services) {
 
     // --- VOICE -------------------------------------------------------------------------------------
     say: (c) => {
-      if (c.url) EnigmaAvatar.say(c.url, c); // play speech wav + lip-sync (+talk body language)
+      if (!c.url) return;
+      EnigmaAvatar.say(c.url, c); // play speech wav + lip-sync (+talk body language)
+      return { saying: c.url }; // accepted-for-playback truth; poll query state's `speaking` for done
     },
     stop: () => {
       EnigmaAvatar.stopSpeak();
+      return { stopped: true };
     },
     mouth: (c) => {
       EnigmaAvatar.mouth(c.value); // manual jaw drive (testing) — coerced+guarded inside
@@ -129,7 +133,7 @@ export function createBusRegistry(engine, services) {
       const platforms = engine.platforms;
       if (isFinite(+c.px) && isFinite(+c.py)) {
         const curDisp = engine.curDisp;
-        return uiSetPlatforms([...platforms, { gx: curDisp.x + +c.px, gy: curDisp.y + +c.py, w: +c.w || 220 }]);
+        return uiSetPlatforms([...platforms, { gx: curDisp.x + +c.px, gy: curDisp.y + +c.py, w: +c.w }]); // a missing/garbage width falls to sanitizePlatforms' ONE default
       }
       return platforms.length;
     },
@@ -162,18 +166,19 @@ export function createBusRegistry(engine, services) {
     },
     springTune: (c) => {
       const { action, reqId, ...p } = c;
-      uiSpringTune(p); // live hair tuning (saved)
+      return uiSpringTune(p); // live hair tuning (saved) — replies the full saved tune
     },
     facialTune: (c) => {
       const { action, reqId, ...p } = c;
-      uiFacialTune(p);
+      return uiFacialTune(p); // replies {mode, info, params} — the applied face truth
     },
 
     // --- PROPS (attachments to bones) --------------------------------------------------------------
     attach: (c) => {
       if (!c.url) return;
       const { action, reqId, ...o } = c;
-      return uiAttach(c.url, o); // prop/accessory -> bone — RELAYED to every monitor's copy
+      const id = uiAttach(c.url, o); // prop/accessory -> bone — RELAYED to every monitor's copy
+      return attachBuilt ? attachBuilt(id) : id; // reply when BUILT ({attached,to} or {error}), like `load` — the bus awaits thenables
     },
     detach: (c) => {
       if (c.id) uiDetach(c.id);
