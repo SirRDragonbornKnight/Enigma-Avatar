@@ -19,8 +19,6 @@ export function signed180(v) {
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-// (ambientAmp — the ambient-idle depth→amplitude curve — was deleted with the idle system, 2026-06-12.)
-
 // Read a per-avatar profile's rotation as {x,y,z}° — migrating the legacy single-axis `yaw` into the
 // Y axis. Pure: takes the profile object, returns a fresh normalized rotation.
 export function rotFromProfile(p) {

@@ -7,7 +7,7 @@
 // live INSIDE the handler as an early return. Unknown/garbage action -> silent no-op (honest absence).
 //
 // VOCABULARY (2026-06-29 redesign — no backward-compat aliases): one name per concept. Four pairs
-// that used to be two verbs for near-the-same thing were merged so a driver never has to guess which:
+// of near-duplicate verbs each route through ONE name, so a driver never has to guess which:
 //   move   (was moveTo + goTo)      — {px,py} exact OR {to:"center"|"cursor"|...} by name
 //   morph  (was morph + setMorph)   — drives+SAVES by default; {save:false} = transient probe
 //   pose   (was pose + layer)       — set a compositor layer; {clear:"id"} one, {clear:true} all

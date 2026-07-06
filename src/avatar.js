@@ -27,9 +27,9 @@ import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./int
 import { resolveRig, ROLES } from "./rig/rig.js";
 import { analyzeMorphGeometry } from "./rig/face-geometry.js"; // morph region classification, exposed via query morphs (2026-07-03 audit)
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
-// clip retargeting (retarget.js) was removed with the clip-library PURGE (2026-06-25) — the AI authors motion via the compositor, not authored clips.
-// (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character. The old
-//  default_avatar.js procedural-placeholder was deleted 2026-06-30 — there is no placeholder model.)
+// There is deliberately NO clip retargeting: the AI authors motion via the compositor, not authored clips (user ruling 2026-06-25 — do not re-add).
+// (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character — by design
+//  there is no placeholder model (user ruling 2026-06-30; do not self-author one).)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
 import { createGrabFollowFn } from "./motion/grabfollow.js"; // ragdoll grab: the grabbed limb leads, the body follows (pure factory, unit-tested)
@@ -343,8 +343,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // glide/nudge stay on her current screen (only a DRAG crosses bezels).
     // WALLS v2 (user 2026-06-12: the body-scaled walls MOVED when she was resized — wrong): FIXED
     // slim margins, independent of her size. The BOTTOM is PERMEABLE — she can be sent to / through the
-    // screen bottom (recover via tray / goTo); the screen-bottom floor SNAP was removed 2026-06-25, so
-    // she no longer auto-rests on the desk line. The clamp only stops her from being lost entirely.
+    // screen bottom (recover via tray / goTo); by design she does NOT auto-rest on the desk line
+    // (no screen-bottom floor snap, user ruling 2026-06-25). The clamp only stops her from being lost entirely.
     const d = curDisp,
       m = 16;
     return {
@@ -792,8 +792,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // no canned clips — purged). This is the uniform substrate the AI composes motion on top of.
     // Identify bones ONCE via the generic cascade (VRM -> name -> geometry), then feed BOTH the
     // procedural pose and the spring physics the same resolved map.
-    // (Rigify parallel-skeleton "reparent" surgery was REMOVED 2026-06-25 with the per-model override
-    // system — it only ever ran for hand-written rig_overrides entries, which no longer exist.)
+    // (No Rigify parallel-skeleton "reparent" surgery and no per-model overrides here — the cascade
+    // is purely generic, user ruling 2026-06-25.)
     const resolved = resolveRig(model, vrm);
     roleBones = resolved.roles || {}; // expose role→bone for attach-by-role (structural; trust no names)
     resetMorphGeo(); // new model, new head anchor -> re-classify morphs lazily on next query
@@ -1159,8 +1159,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   let _loadSeq = 0;
   const _peerRetries = {}; // url -> failed mirror-load attempts (peer only)
-  // Bus 'load' completion signal (2026-07-03): load used to be fire-and-forget, so a driver had to
-  // GUESS settle time with sleeps (8-15s per model this session). One waiter slot: the newest load
+  // Bus 'load' replies on COMPLETION (2026-07-03), so a driver awaits the real swap instead of
+  // guessing settle time with sleeps. One waiter slot: the newest load
   // owns it; a superseded asker gets {superseded:true}, a failed build an honest {error}.
   let _loadNotify = null,
     _loadNotifyKey = null; // the url the armed waiter asked for (audit 2026-07-04: unkeyed, ANY load path's build resolved a pending bus reqId with the WRONG model's success)
@@ -2489,7 +2489,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       facial?.blink?.();
       if (proc?.setLayer) proc.setLayer("cospeech", { fn: (t) => coSpeechPose(t, _speechRms) });
       wake((+dur > 0 ? +dur : 2) + 0.5);
-    }, // #22/#8: blink on speech ONSET (facial no longer free-runs blinks); P2: co-speech BODY layer from the live envelope
+    }, // #22/#8: blink fires on speech ONSET only (strict driven blink, never free-running); P2: co-speech BODY layer from the live envelope
     onEnvelope: (rms) => {
       _speechRms += (rms - _speechRms) * 0.3;
     }, // smooth the RMS so the body emphasis doesn't twitch frame-to-frame
@@ -3220,7 +3220,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     ball: relayed("ball"), // rapier ball-physics toys (throw/drop/clear) for the right-click "Ball" menu
     conjureIds: () => conjurer.ids(), // live conjured props (brain window; peers honestly list none)
     conjureDismiss: uiConjureDismiss,
-    conjureClear: uiConjureClear, // manual escape hatch — a stranded prop is no longer bus-only
+    conjureClear: uiConjureClear, // manual escape hatch — a stranded prop is reachable from the menu, not only the bus
     showSkeleton: uiShowSkeleton,
     recolor: uiRecolor,
     hueShift: uiHueShift,
@@ -3444,7 +3444,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   addEventListener("pointercancel", _abortInput);
   addEventListener("blur", _abortInput);
   // Arrow nudge from ANY window: the brain glides locally (eased); a peer can't run the glide step,
-  // so it routes through main's immediate nudge (the previously-orphaned avatar:nudge channel).
+  // so it routes through main's immediate nudge (the avatar:nudge channel).
   const kNudge = (dx, dy) => {
     if (_isBrain) nudge(dx, dy);
     else window.avatarIPC?.nudge?.(dx, dy);

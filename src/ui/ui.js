@@ -455,8 +455,8 @@ export function createUI(api) {
     if (open() && onOpen) onOpen(box);
     return box;
   }
-  // Make a floating panel draggable by its header (the Settings / model gallery open centered and
-  // used to be pinned there — now you can move them out of the way). Header buttons still work.
+  // Make a floating panel draggable by its header (the Settings / model gallery open centered but
+  // can be moved out of the way). Header buttons still work.
   function dragByHeader(panel, handle, onMove) {
     handle.style.cursor = "move";
     handle.style.touchAction = "none";

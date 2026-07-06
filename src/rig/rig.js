@@ -8,10 +8,10 @@
 //   3) geometry      — topology + symmetry inference (opaque rigs: every bone "Bone037")
 //   3.5) between     — structural middle-joint repair (a "shoulder"-named upper arm, etc.)
 //
-// Every tier is GENERIC — no per-model data. (The old per-model rig_overrides.json
-// force/exclude tier was removed 2026-06-25, user: "nothing made specifically for any
-// avatar"; a mis-identified rig is now fixed by improving a tier or repairing the model
-// file, not by a hand-written map.) The pure tiers (resolveNames / resolveGeometry /
+// Every tier is GENERIC — no per-model data, no rig_overrides, no force/exclude maps
+// (user ruling 2026-06-25: "nothing made specifically for any avatar"; do not re-add).
+// A mis-identified rig is fixed by improving a tier or repairing the model
+// file, never by a hand-written map. The pure tiers (resolveNames / resolveGeometry /
 // roleOfName) run on a plain BoneSnapshot — no WebGL — so they're unit-testable with
 // synthetic skeletons (see tests/).
 import * as THREE from "three";
@@ -456,8 +456,6 @@ export function resolveRig(model, vrm = null) {
     }
   };
 
-  // (the per-model override force/exclude tier was removed 2026-06-25 — the excludeIds hook the
-  // tiers used to thread through was dead scaffolding and is gone with it)
   if (vrm?.humanoid?.getRawBoneNode) {
     // tier 1
     for (const [vrmName, role] of VRM_TO_ROLE) {
