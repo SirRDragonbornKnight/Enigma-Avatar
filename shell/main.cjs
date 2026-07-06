@@ -105,7 +105,8 @@ let _dragTimer = null;
 let _overByWin = new Map(); // winId -> bool (this window's silhouette hit-test result)
 let _lastReportByWin = new Map(); // winId -> ms timestamp of its last hit-test report (liveness)
 const REPORT_STALE_MS = 2500; // a window 'over' but silent longer than this is treated as a HUNG renderer -> forced click-through (fail-open). Healthy renderers heartbeat ~1x/s from their render loop, so an idle-but-legit hover stays fresh.
-let currentModelUrl = null; // last model the brain loaded → peers mirror it
+let currentModelUrl = null; // the model the brain has loaded RIGHT NOW (sim-host truth; may be a bare blob filename)
+let peerModelUrl = null; // the last url a PEER can resolve — what late-created/reloaded peers catch up to (a peer can't fetch another window's blob)
 
 // main.js lives in shell/; the runtime data dirs (models/, props/, assets/), the JSON
 // manifests, and index.html all stay at the REPO ROOT, so resolve them off ROOT, not __dirname.
@@ -451,7 +452,7 @@ function makeWindow(display, isBrain, peerCount) {
         gy: gPos.y,
         disp: { x: dHere.x, y: dHere.y, width: dHere.width, height: dHere.height, wb: wah.y + wah.height },
       });
-      if (!isBrain && currentModelUrl) win.webContents.send("avatar:model", currentModelUrl); // a late-created / reloaded peer catches up to the live model
+      if (!isBrain && peerModelUrl) win.webContents.send("avatar:model", peerModelUrl); // a late-created / reloaded peer catches up to the last url it can resolve
     } catch {}
     if (isBrain)
       console.error(
@@ -531,6 +532,7 @@ function rebuildWindowSet() {
   _rebuilding = true;
   endDrag(); // the grabbing window is about to die — a drag left active would chase the cursor forever with EVERY window click-through (unrescuable)
   const savedModel = currentModelUrl,
+    savedPeerModel = peerModelUrl,
     saved = { x: gPos.x, y: gPos.y };
   destroyWindowSet();
   setTimeout(() => {
@@ -538,7 +540,8 @@ function rebuildWindowSet() {
       createWindowSet();
       const c = clampToUnion(saved.x, saved.y, { solid: true });
       gPos = c;
-      if (savedModel) currentModelUrl = savedModel; // peers will pick it up via did-finish-load; the brain re-resolves on its own startup
+      if (savedModel) currentModelUrl = savedModel; // the brain re-resolves on its own startup
+      if (savedPeerModel) peerModelUrl = savedPeerModel; // peers pick THIS up via did-finish-load (always a resolvable url)
       refreshTrayMenu();
     } catch (err) {
       console.error("[main] rebuild failed:", String(err));
@@ -1018,6 +1021,7 @@ function init() {
       // peers keep the previous model instead of bricking on a phantom; the sim host still
       // hears about it (build or honest DROP), so it can never ship a stale skeleton.
       if (url === "__default__" || /^(\.\/|app:\/\/|[a-zA-Z]:[\\/]|\/)/.test(url)) {
+        peerModelUrl = url;
         console.error("[main] brain loaded " + url + " -> relaying to " + (liveWindows().length - 1) + " peer(s)");
         toPeers("avatar:model", url);
       } else console.error("[main] brain loaded " + url + " (transient blob load -- peers keep the previous model)");
