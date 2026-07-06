@@ -66,7 +66,7 @@ test("query('facial') is honest when there is no face rig — and always reports
   assert.deepEqual(
     aq("facial"),
     { mode: "jaw", info: { axis: "x" }, lipSync: true, exprMode: { smile: "bones", brows: "none" } },
-    "a real mode reports lipSync=true and the live expression tiers (audit 2026-07-04: exprMode was dropped)"
+    "a real mode reports lipSync=true and the live expression tiers"
   );
 });
 

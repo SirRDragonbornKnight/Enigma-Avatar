@@ -85,7 +85,7 @@ test("GEOMETRIC-fallback chain does NOT sag under gravity at rest (no self-gener
   }
 });
 
-test("constructor regionWeight from a saved blob is CLAMPED to 0..2 (audit 2026-06-26)", () => {
+test("constructor regionWeight from a saved blob is CLAMPED to 0..2", () => {
   // setParams clamps per-region weights, but a saved/hand-edited profiles.json blob reaches the
   // CONSTRUCTOR spread directly — an out-of-range weight there would bypass the 0..2 slider clamp
   // and drive a verlet instability (near-zero stiffness = permanently floppy). clampParams covers it.

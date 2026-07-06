@@ -166,7 +166,7 @@ test("squat normalization fixes the leg TWIST: kneecaps track the toes, toes kee
   }
 });
 
-test("she is BIT-STILL by default — the idle machinery is DELETED (user order 2026-06-12)", () => {
+test("she is BIT-STILL by default — there is no idle machinery", () => {
   // Not "idle tuned to zero" — the breath/sway/shift/arm/ambient/fidget code no longer exists.
   // One update applies the static base pose; thereafter NOTHING may move any bone, ever, with no
   // input. Any future re-added self-motion fails this on frame two.
