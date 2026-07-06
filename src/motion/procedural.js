@@ -908,8 +908,8 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     layerIds: () => Array.from(layers.keys()),
     // The APPLIED (eased) flex offsets currently on a role — what the rig is actually doing right
     // now, regardless of what any layer commands. The ragdoll grab reads abd at grab time (abd0):
-    // a re-grab mid ease-back starts displaced, and a servo that assumed at-rest locked the wrong
-    // sign and launched her (2026-07-05).
+    // a grab can start with the limb displaced (mid ease-back), and a servo that assumes at-rest
+    // locks the wrong sign.
     appliedFlex: (role) => {
       const v = _vstate.get(role);
       return v ? { ang: v.ang, abd: v.abd } : { ang: 0, abd: 0 };
@@ -917,7 +917,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     // What live layers COMMANDED on a role last frame (weight-scaled PASS-1 sum), optionally
     // excluding one layer id. appliedFlex - flexCommand(role, "grab_follow") = the ORPHAN residual
     // nobody owns — the only part the ragdoll grab may fold into its own command; folding the full
-    // applied value double-counted a coexisting layer's hold (audit 2026-07-05 round 2, finding 4).
+    // applied value would double-count a coexisting layer's hold.
     flexCommand: (role, excludeId) => {
       const lm = _lastFlexCmd.get(role);
       let ang = 0,

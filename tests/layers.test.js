@@ -294,8 +294,8 @@ test("GUARD: an fn returning a stringly/NaN part never bricks a bone (additive m
 });
 
 test("GUARD: speed_limit:0 is INERT (Infinity), it does not FREEZE the role", () => {
-  // limits ride under boneLimits.bones — the old flat shape here never reached the compositor,
-  // so this guard passed vacuously (audit 2026-07-05 round 2)
+  // limits ride under boneLimits.bones — a flat map is silently ignored and would make this
+  // guard pass vacuously
   const proc = buildProceduralRig(fullBiped(), {
     bones: {
       head: {
@@ -320,8 +320,8 @@ test("GUARD: speed_limit:0 is INERT (Infinity), it does not FREEZE the role", ()
 });
 
 test("flexCommand reports the per-layer PASS-1 flex sums; appliedFlex minus it = the ORPHAN residual (the grab's abd0)", () => {
-  // Audit 2026-07-05 round 2, finding 4: the ragdoll grab must fold in only the residual NO layer
-  // owns — the full applied value double-counts a coexisting live layer's hold.
+  // The ragdoll grab must fold in only the residual NO layer owns — the full applied value
+  // double-counts a coexisting live layer's hold.
   const proc = buildProceduralRig(fullBiped(), {
     // the live speed limit (90 deg/s) so the post-release residual DECAYS over frames instead of
     // snapping to the remaining sum (no limits -> Infinity -> the orphan would read 0 instantly)

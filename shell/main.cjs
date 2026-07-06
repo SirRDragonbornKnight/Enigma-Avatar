@@ -276,7 +276,7 @@ function publishPos() {
     // dragSeq: a NEW grab while one is live OVERWRITES it with no drag:false edge (latest grab
     // wins, deliberate). The brain's grab-lock/ragdoll capture is edge-triggered — the seq lets
     // it detect the replacement and re-capture at the NEW grab point instead of steering the new
-    // drag back to the OLD part (audit 2026-07-05).
+    // drag back to the OLD part.
     dragSeq: _drag ? _drag.seq : 0,
     disp: { id: d.id, x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
   }); // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
@@ -959,8 +959,8 @@ function init() {
     if (!bw || bw.isDestroyed() || e.sender.id !== bw.webContents.id) return;
     if (!p || !isFinite(p.gx) || !isFinite(p.gy)) return;
     // seq echo: on a latest-grab-wins replacement, 1-2 adjusts computed for the OLD grab are still
-    // in flight before the brain sees the new dragSeq — applying them snapped her so the OLD grab
-    // point sat under the cursor, then back (a double-flick spaz; audit 2026-07-05 round 2).
+    // in flight before the brain sees the new dragSeq — applying them would snap her so the OLD
+    // grab point sits under the cursor, then back.
     if (p.seq != null && p.seq !== _drag.seq) return;
     _drag.grabX = Math.max(-4000, Math.min(4000, p.gx));
     _drag.grabY = Math.max(-4000, Math.min(4000, p.gy));

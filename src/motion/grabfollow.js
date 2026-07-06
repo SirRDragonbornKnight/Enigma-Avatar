@@ -1,7 +1,6 @@
-// grabfollow.js — the RAGDOLL GRAB layer (user 2026-07-05: "if I grab from the arm it will
-// move, then the body"): while the user drags her, the grabbed limb LEADS (a servo aims it
-// at the cursor each frame) and the torso PENDULUMS after the drag velocity, trailing and
-// settling like a carried body.
+// grabfollow.js — the RAGDOLL GRAB layer: while the user drags her, the grabbed limb LEADS
+// (a servo aims it at the cursor each frame) and the torso PENDULUMS after the drag velocity,
+// trailing and settling like a carried body.
 //
 // Authored as a compositor fn() LAYER on purpose: the per-role joint limits and speed clamps
 // shape everything (velocity-continuous, can never crank a joint past its table), and clearing
@@ -14,9 +13,9 @@
 //
 // ALL aim geometry lives in the PARENT frame (st.pa de-rotates the world readings): the abd
 // joint physically operates there, and the world frame is moved by things that are NOT the
-// servo — the pendulum's own spine/chest roll easing back after a release rotates the limb's
-// world direction faster than the servo can respond (0.052 vs 0.026 rad/frame, audit
-// 2026-07-05 round 2), which poisoned the sign votes below and mis-referenced restDir.
+// servo — the pendulum's own spine/chest roll (easing back after a release) rotates the limb's
+// world direction faster than the servo can respond, which would poison the sign votes below
+// and mis-reference restDir.
 //
 // deps:
 //   aimRole    string|null   the flex role to aim (left_arm/right_arm/left_leg/right_leg)
@@ -26,18 +25,18 @@
 //   cursorWorld() => {x,y}|null           the cursor in world coords (screen plane)
 //   dragX      () => number               her global x — the pendulum reads drag velocity off it
 //   now        () => ms                   clock (injectable for tests)
-//   abd0       number                     the ORPHAN abd residual on aimRole at grab time:
-//                                         compositor applied offset MINUS what live layers still
+//   abd0       number                     the ORPHAN abd residual on aimRole at grab time: the
+//                                         compositor's applied offset MINUS what live layers still
 //                                         command there (appliedFlex - flexCommand, avatar.js).
-//                                         A re-grab mid ease-back starts displaced, NOT at rest —
-//                                         commanding sign*th from true rest made the rig's first
-//                                         motion oppose the command, the sign discovery locked the
-//                                         wrong sign, and the limb whipped to the cap (the
-//                                         "re-grab launch", 2026-07-05). Commands are
+//                                         A grab can start with the limb DISPLACED (mid ease-back
+//                                         from a previous grab) — commanding sign*th from true
+//                                         rest would move the rig opposite the command first,
+//                                         misleading the sign discovery into locking the wrong
+//                                         sign and whipping the limb to the cap. Commands are
 //                                         abd0 + sign*th so the eased response always starts
-//                                         toward the command. Full applied (not orphan) would
-//                                         DOUBLE-count a coexisting live layer's hold (audit
-//                                         2026-07-05 round 2, finding 4).
+//                                         toward the command. The orphan (not the full applied
+//                                         value) keeps a coexisting live layer's hold from being
+//                                         counted twice.
 export function createGrabFollowFn(deps) {
   const { aimRole, aimState, cursorWorld, dragX, now } = deps;
   const abd0 = Number.isFinite(+deps.abd0) ? +deps.abd0 : 0;
@@ -86,8 +85,8 @@ export function createGrabFollowFn(deps) {
         tl = Math.hypot(twx, twy);
       // near-base deadband: with the mouse-lock pinning the grabbed part under the cursor, a grab
       // near the limb BASE makes the target direction self-referential noise — hold the last aim
-      // instead of jittering (lastCmd is re-emitted below; an ABSENT flex would make the
-      // compositor EASE the role back to 0, not hold — audit 2026-07-05 round 2, finding 3).
+      // instead of jittering (lastCmd is re-emitted below; an ABSENT flex entry would make the
+      // compositor EASE the role back to 0, not hold).
       if (rl > 1e-6 && tl > rl * 0.25) {
         const cx = (st.dx * cpa + st.dy * spa) / rl,
           cy = (-st.dx * spa + st.dy * cpa) / rl; // current limb direction (unit, parent frame)
@@ -98,10 +97,10 @@ export function createGrabFollowFn(deps) {
         const m = angle(restDir.x, restDir.y, cx, cy); // the swing the rig actually performed
         // Sign discovery, measured not guessed ("trust no axes") — decided ONCE per grab, then
         // LOCKED. The live compositor eases at the role's speed limit (~90 deg/s), so a re-voting
-        // detector limit-cycled on reversed rigs: mismatch frames accrue for the WHOLE slow
-        // traverse, not just while wrong (audit 2026-07-05). Here: watch the response's initial
-        // DIRECTION (dm) over consecutive frames; once it clearly moves and agrees/disagrees with
-        // the command 3 frames running, set the sign and never revisit it this grab.
+        // detector limit-cycles on reversed rigs: mismatch frames accrue for the WHOLE slow
+        // traverse, not just while wrong. Here: watch the response's initial DIRECTION (dm) over
+        // consecutive frames; once it clearly moves and agrees/disagrees with the command 3 frames
+        // running, set the sign and never revisit it this grab.
         if (!signLocked && Math.abs(th) > 0.08) {
           if (prevM != null) {
             const dm = m - prevM;
@@ -131,8 +130,7 @@ export function createGrabFollowFn(deps) {
 // The lock is a per-frame servo (measure the part -> steer main's grab offset), and a servo
 // through a freely-swinging SPRUNG bone is a RESONANT loop: each correction pumps the swing,
 // the swing moves the next measurement, and the sway GROWS until release dumps the stored
-// spring energy as a launch (user repro 2026-07-06: grab near a sprung region -> she sways
-// faster and faster -> goes flying). The per-step blend/rate caps bound step SIZE, not loop
+// spring energy as a launch. The per-step blend/rate caps bound step SIZE, not loop
 // gain — so the spring must simply never be the plant. Locking the nearest rigid carrier
 // keeps the exact grabbed spot tracking (the click is captured in the carrier's local frame)
 // while the sprung chain swings free around it ("sprung regions swing FREE during drags").

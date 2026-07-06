@@ -55,10 +55,9 @@ export function buildSpringBones(model, opts = {}) {
 
   // LOAD-BEARING guard: a bone whose SUBTREE contains a role-claimed bone CARRIES the body —
   // springing it swings everything above it like a tail. Springs are for TERMINAL dangly chains
-  // only. (zhu_yuan 2026-07-06: Daz names its spine "abdomenLower/abdomenUpper"; abdomenUpper
-  // missed the spine role, classified as the "belly" jiggle region, and put her ENTIRE top half
-  // -- chest, arms, head -- on a spring: every grab read as a spasm. True belly/chest jiggle
-  // leaves have no role bones beneath them and keep their regions.)
+  // only. (A trunk bone that misses its role but name-matches a jiggle region — e.g. a Daz
+  // "abdomenUpper" reading as "belly" — would otherwise put the entire top half on a spring.
+  // True belly/chest jiggle leaves have no role bones beneath them and keep their regions.)
   const carriesRole = new Set();
   if (exclude.size) {
     for (const rb of exclude) {
@@ -268,10 +267,10 @@ export function buildSpringBones(model, opts = {}) {
     return v;
   }
 
-  // (The grab-region hold — pin, then damp, of the sprung region under a drag — was built and
-  // REMOVED 2026-07-05: on ryuri the whole lower body is ONE tail region, so any nearby grab
-  // "froze the bottom". Sprung regions swing free during drags; the ragdoll layer
-  // (grabfollow.js) carries the grab feel instead. Don't re-add.)
+  // (A grab-region hold — pin, then damp, of the sprung region under a drag — is rejected by
+  // design: on a rig whose whole lower body is ONE region (ryuri's tail) any nearby grab freezes
+  // the bottom. Sprung regions swing free during drags; the ragdoll layer (grabfollow.js)
+  // carries the grab feel instead. Don't re-add.)
 
   return {
     count: items.length,

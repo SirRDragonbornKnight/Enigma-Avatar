@@ -2464,7 +2464,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     { pick: ["left_foot", "left_shin", "left_leg"], aim: "left_leg" },
     { pick: ["right_foot", "right_shin", "right_leg"], aim: "right_leg" },
   ];
-  // MOUSE-LOCK on the grabbed part (user 2026-07-05 "my mouse does not lock the part I grab"):
+  // MOUSE-LOCK on the grabbed part:
   // main follows cursor-minus-offset, but the grabbed part MOVES within the rig (springs, the
   // ragdoll aim, the pendulum) — a frozen click offset lets the mouse slide off it. The brain
   // captures the grabbed point bone-locally at grab time, then every frame measures where that
@@ -2496,10 +2496,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     let s = _grabLock.sent;
     if (!s) {
       // BASELINE = main's LIVE offset (cursor − anchor; main is following cursor−grabX right now),
-      // not the part's offset: seeding with rel replaced main's pointerdown grabX in ONE uncapped
-      // step, landing everything that drifted since pointerdown (stale peer cursor, mid-ease limb)
-      // as an instant jump (audit 2026-07-05 round 2, finding 3). From here the capped correction
-      // below walks the baseline onto the part smoothly.
+      // not the part's offset: seeding with rel would replace main's pointerdown grabX in ONE
+      // uncapped step, landing everything that drifted since pointerdown (stale peer cursor,
+      // mid-ease limb) as an instant jump. From here the capped correction below walks the
+      // baseline onto the part smoothly.
       const gc = cursor.seen ? localPxToGlobal(cursor.x, cursor.y) : null;
       s = _grabLock.sent =
         gc && isFinite(gc.x) && isFinite(gc.y) ? { x: gc.x - gPos.x, y: gc.y - gPos.y } : { x: rel.x, y: rel.y };
@@ -2563,11 +2563,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     };
     // The layer fn runs inside applyLayers PASS 1, where every bone has just been RESET to the
     // static base pose and this frame's offsets are not applied yet — reading bones from inside
-    // the fn shows a FROZEN base pose, so the measuring servo was blind in vivo (its sign
-    // discovery never voted; audit 2026-07-05 round 2, proven by probe). aimState therefore reads
-    // a SNAPSHOT taken post-update — at grab time (the IPC handler runs between frames, bones
-    // carry the real applied pose) and once per rendered frame via _grabAimRefresh. Real,
-    // one frame stale: exactly what a measuring servo wants.
+    // the fn shows a FROZEN base pose and blinds the measuring servo (its sign discovery never
+    // gets a real response to vote on). aimState therefore reads a SNAPSHOT taken post-update —
+    // at grab time (the IPC handler runs between frames, bones carry the real applied pose) and
+    // once per rendered frame via _grabAimRefresh. Real, one frame stale: exactly what a
+    // measuring servo wants.
     const aimSnap = { sx: 0, sy: 0, dx: 0, dy: 0, pa: 0, ok: false };
     const refreshAim = aimRole
       ? () => {
@@ -2581,8 +2581,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
           c.getWorldPosition(C);
           // pa: the PARENT's screen-plane angle — the servo measures in the parent frame so
           // ancestor motion (the pendulum's spine/chest roll easing back) can't poison the
-          // sign votes or the aim reference (audit 2026-07-05 round 2, findings 1+2). Robust
-          // continuous extraction: polar angle of the world-rotation's screen-plane 2x2 block.
+          // sign votes or the aim reference. Robust continuous extraction: polar angle of the
+          // world-rotation's screen-plane 2x2 block.
           let pa = 0;
           const par = b.parent;
           if (par?.getWorldQuaternion) {
@@ -2609,9 +2609,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         dragX: () => gPos.x,
         now: () => performance.now(),
         // grab-time ORPHAN residual: applied offset minus what live layers still command there.
-        // A re-grab mid ease-back is NOT at rest — without the residual the sign discovery locked
-        // backwards and the wrong-way whip launched her; folding in the FULL applied value
-        // double-counted a coexisting AI pose layer's hold (audit 2026-07-05 rounds 1+2).
+        // A re-grab mid ease-back is NOT at rest — without the residual the rig's first motion
+        // opposes the command and the sign discovery locks backwards; folding in the FULL
+        // applied value would double-count a coexisting AI pose layer's hold.
         abd0: aimRole
           ? (proc.appliedFlex?.(aimRole)?.abd ?? 0) - (proc.flexCommand?.(aimRole, "grab_follow")?.abd ?? 0)
           : 0,
@@ -2632,8 +2632,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const df = !!p.drag;
     _dragActive = df;
     // A NEW grab while one is live OVERWRITES it in main (latest grab wins — no drag:false
-    // edge). The seq detects that replacement: without it the stale mouse-lock kept steering
-    // the NEW drag back to the OLD grab point (audit 2026-07-05).
+    // edge). The seq detects that replacement: without it a stale mouse-lock keeps steering
+    // the NEW drag back to the OLD grab point.
     const seqChanged = df && p.dragSeq != null && p.dragSeq !== _dragSeqSeen;
     if (df && p.dragSeq != null) _dragSeqSeen = p.dragSeq;
     if (_isBrain && (df !== _wasDragFlag || seqChanged)) {
@@ -2642,10 +2642,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (df) {
         // RAGDOLL FOLLOW — the grabbed limb aims at the cursor and the torso pendulums after the
         // drag (grabfollow.js); sprung regions (tail/hair) swing free under their own physics —
-        // that lag IS the alive feel. (A hold that pinned/damped the grabbed sprung region was
-        // tried twice and rejected: on ryuri the whole lower body is ONE tail region, so any
-        // nearby grab "froze the bottom" — user 2026-07-05, removed for good.) The brain's cursor
-        // is live for its own display and ~30Hz-relayed from peers, so a grab on any monitor works.
+        // that lag IS the alive feel. (A hold that pins/damps the grabbed sprung region is
+        // rejected by design: on a rig whose whole lower body is ONE region — ryuri's tail — any
+        // nearby grab freezes the bottom. Don't re-add.) The brain's cursor is live for its own
+        // display and ~30Hz-relayed from peers, so a grab on any monitor works.
         proc?.clearLayer?.("grab_follow"); // a replacement grab starts a FRESH capture
         _grabLock = null;
         if (cursor.seen) {
@@ -3096,8 +3096,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     if (cursor.over) {
       ui.hideGallery();
       if (!locked && e.button === 0) {
-        // primary button only: a right-click used to START A GRAB alongside the context menu —
-        // every right-click became a full grab/release cycle (audit 2026-07-05 round 2)
+        // primary button only: a right-click must not start a grab underneath its context menu
         if (e.altKey || rotateMode) {
           // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.
           spinning = true;

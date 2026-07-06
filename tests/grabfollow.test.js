@@ -8,12 +8,11 @@ import { createGrabFollowFn } from "../src/motion/grabfollow.js";
 
 // A fake limb: hangs straight down at rest; the servo's flex[1] (abd) rotates it in the screen
 // plane by trueSign * applied. CRITICALLY it does NOT teleport: the applied offset EASES toward
-// the command at the compositor's real speed limit (90 deg/s — bone_limits.json), because a
-// re-voting sign detector passed the teleporting harness and limit-cycled on the REAL, slow rig
-// (audit 2026-07-05: mismatch frames accrue for the whole eased traverse, not just while wrong).
-// And it models the real RELEASE path: a frame with no flex command eases applied back toward
-// the other layers' sum, NOT a hold (the old holding harness masked the deadband sag — audit
-// 2026-07-05 round 2, finding 3).
+// the command at the compositor's real speed limit (90 deg/s — bone_limits.json); a teleporting
+// harness hides limit-cycles that only appear on the real, slow rig (mismatch frames accrue for
+// the whole eased traverse, not just while wrong). And it models the real RELEASE path: a frame
+// with no flex command eases applied back toward the other layers' sum, NOT a hold (a holding
+// harness masks the deadband sag).
 // opts:
 //   other    a coexisting live layer's constant abd command on the same role (compositor SUMS)
 //   pa       () => rad — the parent frame's screen angle (ancestor roll contamination); the
@@ -116,13 +115,12 @@ test("near-base grabs HOLD the last aim by re-commanding it (an absent flex is a
 });
 
 test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges onto the cursor — no wrong-sign lock, no wrong-way whip", () => {
-  // The launch bug (user 2026-07-05 "move her, re-grab a part -> spaz + launched"): after a release
-  // the compositor eases the old applied offset back over ~1s. A re-grab in that window used to
-  // capture restDir mid-displacement and command sign*th FROM TRUE REST — so the rig's first motion
-  // (easing DOWN toward the smaller absolute command) opposed the command, the one-shot sign
-  // discovery voted "reversed rig" 3 frames running, locked the wrong sign, and drove the limb to
-  // the ±2.2 cap — the mouse-lock then dragged the whole body after the runaway part. The layer now
-  // takes abd0 (the ORPHAN residual at grab time) and commands abd0 + sign*th.
+  // After a release the compositor eases the old applied offset back over ~1s; a re-grab in that
+  // window starts DISPLACED. Commanding sign*th from true rest makes the rig's first motion
+  // (easing DOWN toward the smaller absolute command) oppose the command — the one-shot sign
+  // discovery votes "reversed rig" 3 frames running, locks the wrong sign, and drives the limb to
+  // the ±2.2 cap, with the mouse-lock dragging the whole body after the runaway part. The layer
+  // takes abd0 (the ORPHAN residual at grab time) and commands abd0 + sign*th instead.
   for (const trueSign of [1, -1]) {
     const clock = { t: 0 };
     const limb = makeLimb(trueSign);
@@ -153,10 +151,10 @@ test("RE-GRAB mid ease-back: a limb still displaced from the LAST grab converges
 });
 
 test("re-grab during the PENDULUM's roll ease-back: ancestor motion can't poison the sign or the aim (parent-frame measurement)", () => {
-  // Audit 2026-07-05 round 2, findings 1+2: the spine+chest roll residual eases back at up to
-  // 0.052 rad/frame — twice the limb servo's own 0.026 — so a world-measured dm voted the wrong
-  // sign and restDir was captured in a frame that then rotated away (~20deg permanent miss).
-  // aimState now reports pa (the parent's screen angle) and the servo measures in that frame.
+  // The spine+chest roll residual eases back at up to 0.052 rad/frame — twice the limb servo's
+  // own 0.026 — so a world-measured dm votes the wrong sign, and a restDir captured in that
+  // frame rotates away with it (~20deg permanent miss). aimState reports pa (the parent's
+  // screen angle) and the servo measures in that frame instead.
   for (const trueSign of [1, -1]) {
     const clock = { t: 0 };
     let baseRoll = 0.35 * trueSign; // spine 0.22 + chest 0.13, both still unwinding
@@ -205,10 +203,10 @@ test("#guard: the SAME pendulum scenario with a world-blind aimState (pa unrepor
 });
 
 test("a coexisting live layer's hold is NOT double-counted: abd0 carries only the ORPHAN residual", () => {
-  // Audit 2026-07-05 round 2, finding 4: appliedFlex is the eased SUM of all layers. Folding the
-  // full applied value into the grab command while an AI pose layer still holds the arm at A made
-  // the compositor sum 2A + sign*th — moving the limb OPPOSITE the command for near-side targets
-  // (wrong-sign lock, launch phenotype) and overshooting by A otherwise. The wiring passes
+  // appliedFlex is the eased SUM of all layers. Folding the full applied value into the grab
+  // command while an AI pose layer still holds the arm at A makes the compositor sum
+  // 2A + sign*th — moving the limb OPPOSITE the command for near-side targets (wrong-sign lock)
+  // and overshooting by A otherwise. The wiring passes
   // applied - flexCommand(role, "grab_follow") instead; here that orphan residual is 0.
   const clock = { t: 0 };
   const A = 0.6; // a persistent AI pose layer holding the arm out
@@ -281,10 +279,10 @@ test("guards: no aim state / no cursor / NaN dragX -> pendulum-only output, alwa
   }
 });
 
-// --- pickLockBone: the mouse-lock's RIGID-ONLY bone picker (the runaway-sway fix) ------------
-// A sprung lock bone turned the per-frame servo into a resonant loop (sway pumped until she
-// launched — user repro 2026-07-06). The picker must return the nearest bone the SPRING does
-// NOT own, and fail open (null) when only sprung bones are in reach.
+// --- pickLockBone: the mouse-lock's RIGID-ONLY bone picker ----------------------------------
+// A sprung lock bone turns the per-frame servo into a resonant loop (the sway pumps until she
+// launches). The picker must return the nearest bone the SPRING does NOT own, and fail open
+// (null) when only sprung bones are in reach.
 import * as THREE from "three";
 import { pickLockBone } from "../src/motion/grabfollow.js";
 
