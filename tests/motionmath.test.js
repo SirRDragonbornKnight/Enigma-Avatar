@@ -1,6 +1,5 @@
 // motionmath.test.js — unit tests for the SHAPE of the motion math (the ease curve). This tests the REAL
 // function avatar.js / conjure.js import (not a copy). Pure / no three.js / no renderer.
-// (bell + jumpElevation were removed with the gesture/clip purge, 2026-06-25, and their tests with them.)
 import { test } from "node:test";
 import assert from "node:assert";
 import { easeInOut } from "../src/motion/motionmath.js";

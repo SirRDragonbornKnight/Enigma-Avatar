@@ -1,9 +1,9 @@
 // loader.test.js — honest format coverage + FBX bind surfacing for the asset loader.
-// Locks two audit findings:
-//   #6  an unsupported format (.obj/.dae) fails with an HONEST 'unsupported format' message,
-//       NOT a misleading GLTFLoader 'not valid JSON' parse error (there is no OBJ/Collada loader).
-//   #12 an FBX material-bind problem is SURFACED (a warning fires) instead of being swallowed by
-//       'catch{}' while loadAsset still reports a clean success.
+// Locks two guarantees:
+//   - an unsupported format (.obj/.dae) fails with an HONEST 'unsupported format' message,
+//     NOT a misleading GLTFLoader 'not valid JSON' parse error (there is no OBJ/Collada loader).
+//   - an FBX material-bind problem is SURFACED (a warning fires) instead of being swallowed by
+//     'catch{}' while loadAsset still reports a clean success.
 import { test } from "node:test";
 import assert from "node:assert";
 import { kindOf, loadAsset, applyFbxMaterials } from "../src/model/loader.js";
@@ -94,7 +94,7 @@ test("#12 loadAsset routes an FBX bind problem to onWarn (not black-holed)", asy
   assert.match(String(warned[0].message || warned[0]), /textures|bind|resource dir/i, "honest warning text");
 });
 
-// BUS GATE (audit 2026-06-26): the bus is the driver; a {action:"load",url} must not make the overlay
+// BUS GATE: the bus is the driver; a {action:"load",url} must not make the overlay
 // fetch an arbitrary REMOTE url. Local/file/blob/data must still load (the external Avatars dir). We
 // assert the GATE decision synchronously (real loading is async) using an unsupported ext so no real
 // loader is constructed — a LOCAL path reaches the 'unsupported format' check (proving it passed the gate).
@@ -145,9 +145,9 @@ test("bus gate: allowRemote:true is an explicit opt-in that bypasses the gate", 
   assert.ok(!blocked, "allowRemote:true bypasses the remote gate");
 });
 
-// AUDIT 2026-06-26: the raw-string regex check was bypassable. The browser URL parser STRIPS ASCII
-// tab/newline/CR from anywhere in a URL and TRIMS leading control+space before fetching, so " https://"
-// or "ht\ttps://" passed the guard yet still got FETCHED. loadAsset now normalizes first.
+// A raw-string regex check is bypassable: the browser URL parser STRIPS ASCII tab/newline/CR
+// from anywhere in a URL and TRIMS leading control+space before fetching, so " https://" or
+// "ht\ttps://" would pass such a guard yet still get FETCHED. loadAsset normalizes first.
 test("bus gate: remote urls smuggled via leading whitespace / embedded tab|newline are STILL blocked", () => {
   for (const u of [
     " https://evil.test/x.glb",

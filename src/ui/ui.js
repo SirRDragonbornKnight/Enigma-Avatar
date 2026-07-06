@@ -13,8 +13,8 @@ export function createUI(api) {
   // 0..360 stored rotation -> signed (-180,180] for the Settings fields, so the user can dial the
   // OTHER direction (negative = left/down), not just climb 0..360. Identity fallback if not provided.
   const signed180 = api.signed180 || ((v) => v);
-  // There is deliberately NO body-emote / gesture / motion catalog (user ruling 2026-06-25 "purge means
-  // purge" — do not re-add): the AI authors ALL motion via the compositor (pose/flex/perform). The only
+  // There is deliberately NO body-emote / gesture / motion catalog (do not re-add): the AI
+  // authors ALL motion via the compositor (pose/flex/perform). The only
   // menu actions here are the rapier ball-physics toys (NOT gestures): throw / drop / clear.
   const BALL_ACTIONS = [
     { name: "throwball", label: "Throw ball" },
@@ -154,7 +154,7 @@ export function createUI(api) {
       await refreshModelList();
       // if the removed model was on screen, switch to whatever's LEFT (or the procedural placeholder
       // if the library is now empty — built-ins can be deleted, so don't assume one exists), THEN
-      // rebuild the open gallery so the "current" highlight tracks the new model (audit #5 H3).
+      // rebuild the open gallery so the "current" highlight tracks the new model.
       if (wasCurrent) {
         const next = MODEL_LIST[0];
         api.loadModel(next ? next.url : "__default__", next ? next.label : "Default");
@@ -322,7 +322,7 @@ export function createUI(api) {
     _advOpen = false,
     _morphsOpen = false,
     _repairOpen = false,
-    _bonesOpen = false; // remember each section's expand state across re-opens; Parts starts OPEN (audit: `= false` made `open0 = _partsOpen !== false` ship collapsed — the exact "can't find the body-suit toggle" regression)
+    _bonesOpen = false; // remember each section's expand state across re-opens; Parts starts OPEN (a `= false` init would make `open0 = _partsOpen !== false` ship it collapsed)
   // Friendly names for the jiggle regions the spring reports (trust-no-names: these label a
   // structural region tag, not a bone name). Cloth is split into its own Settings box.
   const REGION_LABEL = {
@@ -399,8 +399,7 @@ export function createUI(api) {
   };
   // Collapsible Settings section: a divider, a clickable caret+label header, and a box that
   // `fill(box)` populates (or `onOpen(box)` renders lazily, for the IPC-backed repair panel). ONE
-  // source of truth for the ~6 sections that each hand-rolled this boilerplate -- one such copy
-  // drifted into a shipped "can't find the body-suit toggle" regression (see the _partsOpen note).
+  // source of truth for the ~6 sections -- hand-rolled copies drift (see the _partsOpen note).
   // open()/set() read+persist the section's expand flag across panel re-opens. `right` is an optional
   // header control (e.g. the Colors "Reset" button) that must NOT toggle the section when clicked.
   function collapsible(parent, opts) {
@@ -544,7 +543,7 @@ export function createUI(api) {
     body.appendChild(sRow("Model", sel));
     // The cascade's VERDICT for this model, at a glance — how much of her is driveable, what's
     // missing, how the face resolved, how many spring bones. Answers "is a model repair worth it?"
-    // without opening devtools. (model-zoo follow-up 2026-07-02)
+    // without opening devtools.
     if (api.rigVerdict) {
       const v = api.rigVerdict();
       if (v) {
@@ -593,11 +592,10 @@ export function createUI(api) {
       };
       rotWrap.appendChild(rst);
       body.appendChild(sRow("Rotate °", rotWrap));
-      // Rotate-by-drag TOGGLE (user request 2026-06-30: "make rotate a toggle instead of the Alt
-      // button"). Arm it and a drag on her body spins her instead of moving the window. SAFE because
-      // hideSettings() auto-disarms it (line ~1314) — the armed mode can never outlive the panel and
-      // hijack a later move-drag, which was the 2026-06-11 "can't move her, can rotate" failure that
-      // demoted it to Alt-only. Alt+drag still works too, for a quick spin without arming.
+      // Rotate-by-drag TOGGLE. Arm it and a drag on her body spins her instead of moving the
+      // window. SAFE because hideSettings() auto-disarms it — the armed mode can never outlive
+      // the panel and hijack a later move-drag ("can't move her, can rotate").
+      // Alt+drag still works too, for a quick spin without arming.
       if (api.setRotateMode && api.getRotateMode)
         body.appendChild(sCheck("Rotate by dragging her", api.getRotateMode(), (on) => api.setRotateMode(on)));
       const rotHint = document.createElement("div");
@@ -606,9 +604,8 @@ export function createUI(api) {
       body.appendChild(rotHint);
     }
 
-    // (The "Idle — this avatar's own behavior" section lived here — DELETED with the whole idle
-    //  system, user order 2026-06-12: "delete the idle animation everywhere and anything that has
-    //  to do with it". There is nothing to tune: she only moves when something real drives her.)
+    // (There is deliberately NO "Idle — this avatar's own behavior" section: the idle system
+    //  does not exist. There is nothing to tune: she only moves when something real drives her.)
 
     // Size is scroll-only (hover the avatar + wheel; +/- and 0 on the keyboard; AI bus `size`).
 
@@ -660,7 +657,7 @@ export function createUI(api) {
           springNum("Hair stiffness", "stiffness", "0.04", "0.5", "0.01", 0.14);
           springNum("Hair damping", "drag", "0.1", "0.95", "0.01", 0.5);
           springNum("Hair gravity", "gravity", "-6", "0", "0.1", -3.0);
-          // (the "Hair breeze" knob died with the idle system, 2026-06-12 — ambient wind was self-generated motion)
+          // (there is deliberately no "Hair breeze" knob — ambient wind would be self-generated motion)
           // Object toys (the Ball menu's thrown/dropped balls) — rapier feel, saved per avatar like
           // the hair tune. Gravity applies live to balls in flight; bounce applies to the next throw.
           if (api.physicsTune) {
@@ -764,7 +761,7 @@ export function createUI(api) {
         caretSize: "10px",
         brighten: true,
         fill: (box) => {
-          // OUTFITS (2026-06-12): one-click looks — a named snapshot of which parts are hidden. Tick the
+          // OUTFITS: one-click looks — a named snapshot of which parts are hidden. Tick the
           // parts into a look below, type a name, Enter; "Wear" swaps the whole look at once. Saved per avatar.
           if (api.outfits) {
             const bar = document.createElement("div");
@@ -865,7 +862,7 @@ export function createUI(api) {
     // in plain words ("the ahoge"). Big rigs: filter + capped list (a Rigify export has 593).
     const bones = api.bones ? api.bones() : [];
     if (bones.length) {
-      // The bone SYSTEM presents 593 rows of Rigify soup on some rigs ("seems bad"; user 2026-06-12)
+      // The bone SYSTEM presents 593 rows of Rigify soup on some rigs
       // — but the skin weights know which ~170 actually move mesh. Default view = real bones only
       // (deforming / role-resolved / already named), sorted roles-first then by influence; a
       // checkbox reveals the helper soup when it's genuinely needed.
@@ -886,10 +883,9 @@ export function createUI(api) {
           filt.style.cssText =
             "width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;font:12px system-ui;margin:2px 0 4px;";
           filt.onkeydown = (e) => e.stopPropagation(); // typing must not trigger global hotkeys
-          // IDENTIFY bones — a checkbox per row (user 2026-07-03: "i do not like the click the bone
-          // idea — just make it a checkbox to see the bone"): ✓ = a marker rides that bone until
-          // unchecked; several can be on at once to compare. Replaced the click-her-to-pick button
-          // + hover-to-flash rows. `marked` mirrors the engine so ✓s survive filter re-renders.
+          // IDENTIFY bones — a checkbox per row: ✓ = a marker rides that bone until
+          // unchecked; several can be on at once to compare.
+          // `marked` mirrors the engine so ✓s survive filter re-renders.
           const marked = new Set(api.boneMarks ? api.boneMarks() : []);
           let showAll = false;
           const list = document.createElement("div");
@@ -1312,7 +1308,7 @@ export function createUI(api) {
     settings.style.display = "none";
     settingsShown = false;
     // Drag-to-spin is a SETTINGS-session tool: leaving it armed after the panel closes turns every later
-    // drag into an accidental rotate (user request 2026-06-09: "rotate toggles off when settings close").
+    // drag into an accidental rotate, so it disarms when the panel closes.
     if (api.setRotateMode && api.getRotateMode && api.getRotateMode()) api.setRotateMode(false);
     api.syncInteractive();
   }
@@ -1527,7 +1523,7 @@ export function createUI(api) {
       const empty = document.createElement("div");
       empty.style.cssText =
         "grid-column:1/-1;text-align:center;opacity:.7;font-size:12px;line-height:1.5;padding:8px 4px;";
-      empty.textContent = "No models yet — drop a .glb / .vrm / .fbx onto the overlay, or use “Add model…”."; // no placeholder avatar exists (retired 2026-06-30); the overlay shows the no-model hint
+      empty.textContent = "No models yet — drop a .glb / .vrm / .fbx onto the overlay, or use “Add model…”."; // no placeholder avatar exists; the overlay shows the no-model hint
       grid.appendChild(empty);
     }
     for (const m of MODEL_LIST) grid.appendChild(cardFor(m));
@@ -1621,9 +1617,9 @@ export function createUI(api) {
           "Ball",
           BALL_ACTIONS.map((m) => ({ label: m.label, onClick: () => api.ball(m.name) }))
         )
-      ); // rapier ball-physics toys (the Express emotes + gesture catalog were purged 2026-06-25 — motion is AI-authored)
-    // Conjured props — the manual escape hatch (user 2026-07-02: an AI-conjured chair sat stranded
-    // mid-screen with no way to remove it by hand). Lists each live prop + a clear-all; the menu is
+      ); // rapier ball-physics toys (deliberately no emote/gesture catalog — motion is AI-authored)
+    // Conjured props — the manual escape hatch (an AI-conjured prop can sit stranded mid-screen
+    // with no way to remove it by hand). Lists each live prop + a clear-all; the menu is
     // rebuilt on every open so the list is always current.
     if (api.conjureClear) {
       const cids = api.conjureIds ? api.conjureIds() : [];
@@ -1665,8 +1661,7 @@ export function createUI(api) {
       menu.appendChild(menuSep());
       menu.appendChild(
         // accel label MUST match the real registration in shell/main.cjs (Ctrl+SHIFT+Alt — plain
-        // Ctrl+Alt IS AltGr on EU layouts, the 2026-06-12 fix). The menu said "Ctrl+Alt+Q" for
-        // three weeks; caught in a model-zoo snap 2026-07-02.
+        // Ctrl+Alt IS AltGr on EU layouts).
         menuRow("Quit avatar", { accel: "Ctrl+Shift+Alt+Q", danger: true, onClick: () => avatarIPC.quit() })
       );
     }

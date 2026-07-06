@@ -17,8 +17,8 @@ import { classifyBone, NSFW_REGIONS } from "../rig/region.js";
 import { regionFeel } from "../util/mathutil.js"; // pure weight→physics mapping (unit-tested)
 export { classifyBone, NSFW_REGIONS } from "../rig/region.js"; // re-export so existing importers keep working
 
-// (The ambient BREEZE — wind-at-rest swaying every dangly chain — was DELETED with the whole idle
-// system, user order 2026-06-12: it was SELF-GENERATED motion. Springs react to real movement only.)
+// (There is deliberately NO ambient breeze — wind-at-rest swaying of dangly chains would be
+// SELF-GENERATED motion. Springs react to real movement only; do not re-add.)
 
 export function buildSpringBones(model, opts = {}) {
   // opts carries physics params (stiffness/drag/gravity), per-region weights, AND rig hooks:

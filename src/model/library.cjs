@@ -5,7 +5,7 @@
 //
 //   const lib = createLibrary({ modelsDir, manifestPath, runPython, scriptDir });
 //
-// Invariants enforced here (audit #4):
+// Invariants enforced here:
 //   • NO bundled/built-in models (copyright) — models/ is the whole library; with no models present
 //     the overlay shows a no-model message (no placeholder). Any model is deletable.
 //   • an import never clobbers an existing folder — it disambiguates the slug instead
@@ -187,7 +187,7 @@ function createLibrary({ modelsDir, manifestPath, runPython = null, scriptDir = 
     // sources ONLY after EVERY file is confirmed copied to dest (matching size) AND no two sources share
     // a basename (they'd collide on copy → one lost) AND the source isn't already under models/. Else
     // keep ALL sources — a partial delete could orphan a .gltf's .bin/textures and break the model with
-    // NO recovery (audit 2026-06-09). opts.move===false keeps originals (dialog pick / shared library).
+    // NO recovery. opts.move===false keeps originals (dialog pick / shared library).
     let moved = false;
     if (opts.move !== false) {
       const home = path.resolve(modelsDir).toLowerCase();

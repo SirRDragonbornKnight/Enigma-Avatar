@@ -6,8 +6,6 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { classifyBone, NSFW_REGIONS } from "../src/rig/region.js";
 
-// (the BREEZE_SCALE NSFW-zero test died with the breeze itself, 2026-06-12 — no ambient wind exists)
-
 test("innocent real-word bones don't classify as NSFW (audit false positives)", () => {
   assert.notStrictEqual(classifyBone("TopKnot_01"), "dick", "a samurai hair bun is not anatomy");
   assert.notStrictEqual(classifyBone("Top_Knot"), "dick");

@@ -122,14 +122,14 @@ export function fallbackGrabHandle(a) {
   let mny = Math.min(a.topY, a.cyp),
     mxy = Math.max(a.topY, a.cyp + 30);
   // never taller than 60% of the window — and keep the BASE-side segment: a giant avatar's top
-  // projects far above the window, and capping from the top used to leave the whole handle
+  // projects far above the window, and capping from the top would leave the whole handle
   // off-screen (over-coverage fail-safe -> no mask -> handle off-glass = totally unclickable)
   if (mxy - mny > ih * 0.6) mny = mxy - ih * 0.6;
   const mnx = a.cxp - halfW,
     mxx = a.cxp + halfW;
   // A handle fully OFF-WINDOW must never test over: with cxp in the [-margin, -minHalfW) strip
   // the whole rect sits left of the glass, yet a peer-relayed cursor (legitimately negative
-  // coords) could land inside it — capture where nothing is rendered (audit 2026-07-05).
+  // coords) could land inside it — capture where nothing is rendered.
   if (mxx < 0 || mnx > iw || mxy < 0 || mny > ih) return { over: false, rect: [0, 0, 0, 0] };
   const over = a.cursorX >= mnx && a.cursorX <= mxx && a.cursorY >= mny && a.cursorY <= mxy;
   return { over, rect: [mnx, mny, mxx, mxy] };

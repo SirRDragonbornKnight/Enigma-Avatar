@@ -1,11 +1,11 @@
 // skinspace.js — vertex positions and morph deltas in TRUE world space for the load-time
 // geometry passes (face/mouth classification).
 //
-// The classifiers used `position x mesh.matrixWorld`, which is correct for plain meshes but
+// `position x mesh.matrixWorld` is correct for plain meshes but
 // WRONG for skinned ones whose placement lives in the armature: Sketchfab rips routinely bind
-// a centimeter-scale mesh to a meter-scale skeleton. Ryuri's raw verts sit BELOW her own head
-// bone that way, so the head-anchored band classifier measured span<=0 and bailed while she
-// rendered full-size on screen (2026-07-03 audit). Linear-blend skinning is AFFINE per vertex,
+// a centimeter-scale mesh to a meter-scale skeleton — the raw verts can sit BELOW the model's
+// own head bone, so the head-anchored band classifier measures span<=0 and bails while she
+// renders full-size on screen. Linear-blend skinning is AFFINE per vertex,
 // so the exact world displacement of a morph is skin(base+delta) - skin(base) through the SAME
 // vertex weights. applyBoneTransform reads the bones' matrixWorld directly (not the
 // renderer-updated boneMatrices), so this is valid BEFORE the first frame — the load-time
@@ -24,8 +24,8 @@ export function isSkinnable(o) {
  * applyBoneTransform ends with x bindMatrixInverse, and for bindMode "attached" three only
  * re-syncs that inside updateMatrixWorld() — the RENDER LOOP's walk. Object3D.updateWorldMatrix()
  * (what a load-time pass calls) computes matrixWorld inline WITHOUT that hook, so before the
- * first frame bindMatrixInverse is stale and skinned positions come out garbage — the classifiers
- * worked at query time but returned zero records during the facial build (2026-07-03). Call this
+ * first frame bindMatrixInverse is stale and skinned positions come out garbage — fine at query
+ * time, zero records from a load-time pass like the facial build. Call this
  * after updateWorldMatrix and before any vertexWorld/morphDeltaWorld pass.
  */
 export function syncSkinnedBind(model) {

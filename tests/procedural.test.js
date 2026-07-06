@@ -82,7 +82,7 @@ test("squat-bound legs are normalized to standing at build; straight rigs untouc
   buildProceduralRig(sq, {});
   const after = ang(sq, NAMES);
   assert.ok(after > 165, `legs stood up at build (knee ${folded.toFixed(0)} -> ${after.toFixed(0)} deg)`);
-  // …and the thigh must end pointing DOWN — "knee straight" alone would pass a leg aimed forward (audit)
+  // …and the thigh must end pointing DOWN — "knee straight" alone would pass a leg aimed forward
   let th = null,
     sh = null;
   sq.traverse((o) => {

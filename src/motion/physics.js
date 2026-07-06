@@ -43,7 +43,7 @@ export function createPhysics({ scene, loadAsset }) {
     if (floorBody) floorBody.setTranslation({ x: 0, y: floorY - 0.5, z: 0 }, true);
   }
 
-  // AI-PLACEABLE PLATFORMS (user design 2026-06-12): static slabs anywhere on screen — balls roll
+  // AI-PLACEABLE PLATFORMS: static slabs anywhere on screen — balls roll
   // on them; the avatar's release-snap treats their tops as floor lines (avatar.js side). Replaced
   // wholesale on every set; lazy like everything else (queued until the world exists).
   let platBodies = [],

@@ -63,7 +63,7 @@ async def main():
                         results[msg["reqId"]] = msg.get("result")
                         want.discard(msg["reqId"])
             except Exception as e:
-                print(f"READER DIED: {type(e).__name__}: {e}")  # loud, never a silent pass (audit 2026-07-04)
+                print(f"READER DIED: {type(e).__name__}: {e}")  # loud, never a silent pass
 
         rt = asyncio.create_task(reader())
         for c in cmds:
@@ -86,8 +86,8 @@ async def main():
             if len(body) <= 2400:
                 print(body)
             else:
-                # NEVER truncate silently -- a mass-sorted bones reply once lost every small face
-                # bone below the cut and produced a false "no lip bones" conclusion (2026-07-03).
+                # NEVER truncate silently -- a silently cut mass-sorted bones reply loses every small
+                # face bone below the cut and produces a false "no lip bones" conclusion.
                 import tempfile
 
                 fd, path = tempfile.mkstemp(prefix=f"avbus_reply_{c['reqId']}_", suffix=".json")

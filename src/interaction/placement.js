@@ -45,7 +45,7 @@ export function resolveAnchor(name, disp, cursorGlobal, opts = {}) {
 /**
  * The top (gy) of the nearest AI-placed platform under `gx`, within the snap `band`, or null.
  * Only platforms horizontally spanning `gx` are candidates; among those the closest in y within
- * the band wins. (Platforms are the ONLY snap targets — no screen-bottom floor snap, by design 2026-06-25.)
+ * the band wins. (Platforms are the ONLY snap targets — no screen-bottom floor snap, by design.)
  *
  * @param {number} gx
  * @param {number} gy

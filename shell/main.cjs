@@ -9,8 +9,8 @@
 // "brain" (runs the renderer animation, the Settings/menu UI, and the AI bus); the others
 // are "peers" that mirror the brain's broadcast pose and only support grab.
 //
-// Hotkeys (global) — Ctrl+SHIFT+Alt deliberately (2026-06-12): plain Ctrl+Alt IS AltGr on EU
-// keyboard layouts, so e.g. typing "@" on QWERTZ used to QUIT her system-wide.
+// Hotkeys (global) — Ctrl+SHIFT+Alt deliberately: plain Ctrl+Alt IS AltGr on EU keyboard
+// layouts, so e.g. typing "@" on QWERTZ would QUIT her system-wide.
 //   Ctrl+Shift+Alt+A    force full-interactive on/off (e.g. to reach the panel)
 //   Ctrl+Shift+Alt+ + / -   resize the avatar
 //   Ctrl+Shift+Alt+Q    quit
@@ -34,9 +34,9 @@ const os = require("os");
 const { pathToFileURL } = require("url");
 const { spawnSync } = require("child_process");
 
-// The renderer is served from app://enigma, NOT file:// (cutover 2026-07-02). file:// pages have a
-// broken platform: fetch() rejects the scheme outright (the bone_limits/profiles reads silently
-// failed on EVERY live launch until 9427d64), the CSP needs file:/blob:/data: carve-outs in every
+// The renderer is served from app://enigma, NOT file://. file:// pages have a broken
+// platform: fetch() rejects the scheme outright (so the bone_limits/profiles reads would
+// silently fail), the CSP needs file:/blob:/data: carve-outs in every
 // directive, and the WebSocket Origin is the opaque "null". One custom standard scheme gives the
 // page a real origin: 'self' means something, fetch works, and the bus gate matches one string.
 //   app://enigma/<path>        -> <repo root>/<path>   (the bundle: index.html, src/, node_modules/,
@@ -69,7 +69,7 @@ app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 let windows = []; // [{ displayId, win, bounds, isBrain }] — bounds in DIP
 let tray = null;
 let forceInteractive = false;
-// AI-control kill-switch AUTHORITY (moved from renderer localStorage 2026-07-02): main owns the
+// AI-control kill-switch AUTHORITY: main owns the
 // state, persists it in window-state.json, and pushes changes to every window ("avatar:aiControl:changed").
 // Renderers only mirror it (the bus gate reads the mirror) and request changes ("avatar:aiControl:set").
 // One owner: a hung/compromised renderer can't hold safety state hostage, and tray + Settings can't drift.
@@ -91,10 +91,10 @@ const foreground = require("./foreground.cjs");
 let gPos = { x: 0, y: 0 };
 // Drag is owned by main: while a grab is active we follow the OS cursor (which works across
 // every monitor, unlike a per-window pointermove that dies at the window edge).
-// SINGLE-OWNER drag (rewrite 2026-06-11, "stuck between monitors" round 3): the GRAB window keeps
+// SINGLE-OWNER drag: the GRAB window keeps
 // OS mouse capture for the WHOLE drag — interactivity is frozen on it, never handed across the
-// bezel (flipping a captured window to click-through mid-drag is what killed the capture, and the
-// release then reached either no window or the wrong one, racing a display-id filter). The grab
+// bezel (flipping a captured window to click-through mid-drag kills the capture, and the
+// release then reaches either no window or the wrong one, racing a display-id filter). The grab
 // window therefore sees every pointermove/pointerup on EVERY monitor. Belt + braces: a real
 // pointerup from ANY window ends the drag (definitive: the button is up), and a dead-man watchdog
 // drops her if the cursor keeps moving while the grab window has gone silent (capture lost to
@@ -168,8 +168,7 @@ function startDevReload() {
     for (const w of live) {
       try {
         // MUST bypass the HTTP cache: app://enigma responses ride net.fetch with no cache headers,
-        // so Chromium caches the JS and a plain reload() re-parses STALE code — dev-reload served
-        // old modules for a whole session (2026-07-03) while logging success.
+        // so Chromium caches the JS and a plain reload() re-parses STALE code while logging success.
         w.win.webContents.reloadIgnoringCache();
       } catch {}
     }
@@ -206,7 +205,7 @@ function windowForGlobalPos() {
   return e && e.win && !e.win.isDestroyed() ? e.win : brainWin();
 }
 // RECOVERY clamp: snap a global DIP point back onto the nearest display when it sits inside none.
-// NOT a movement limit any more (user 2026-07-02: "remove the limit on where I can drag her") — live
+// NOT a movement limit — live
 // motion (drag / nudge / hotkeys / bus) is fully unclamped in setGlobalPos below. This is used ONLY
 // where a stale position must become a visible one again: restoring the saved spot at launch, and
 // the display-change handler (a monitor she was on/off vanished). A point inside ANY display passes
@@ -268,7 +267,7 @@ function publishPos() {
   // window) — otherwise the two write gPos in turn and she rubber-bands at 125Hz vs 60Hz.
   // wb = the WORK-AREA bottom (taskbar top): the visible desk surface. The overlay window itself
   // gets clamped to the work area by Windows (1392 on a 1440 display), so a floor at the DISPLAY
-  // bottom buried her feet in a 48px strip no window can draw ("the walls" round, 2026-06-12).
+  // bottom would bury her feet in a 48px strip no window can draw.
   broadcast("avatar:pos", {
     gx: gPos.x,
     gy: gPos.y,
@@ -281,7 +280,7 @@ function publishPos() {
     disp: { id: d.id, x: b.x, y: b.y, width: b.width, height: b.height, wb: wa.y + wa.height },
   }); // a spin hold is NOT a carry — the grip/glide-suppression consumers must not react to it
 }
-// NO positional limits (user 2026-07-02): the base can sit anywhere — hanging off the outer rim,
+// NO positional limits: the base can sit anywhere — hanging off the outer rim,
 // fully off-screen, wherever the drag/nudge puts her. Recovery from a lost position is EXPLICIT and
 // always available: the tray's "bring her here", Ctrl+Shift+Alt+M (hop monitors), or a bus goTo.
 function setGlobalPos(x, y) {
@@ -401,9 +400,8 @@ function makeWindow(display, isBrain, peerCount) {
       backgroundThrottling: false,
     },
   });
-  // "screen-saver" level (user 2026-06-11: "why is it not showing as the top window at all times" —
-  // "floating" sits BELOW other topmost apps, and Windows demotes/reorders topmost z on focus
-  // churn). A re-assert tick below bumps her back above late-created topmost windows.
+  // "screen-saver" level: "floating" sits BELOW other topmost apps, and Windows demotes/reorders
+  // topmost z on focus churn. A re-assert tick below bumps her back above late-created topmost windows.
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // Defense-in-depth: the renderer only ever loads the local index.html. Deny any navigation away
@@ -414,7 +412,7 @@ function makeWindow(display, isBrain, peerCount) {
   win.loadURL("app://enigma/index.html");
   // PERSISTENT listener (not .once): a reload (tray "Reload avatar" / the render-process-gone
   // self-heal) re-runs the renderer from scratch — it must receive init/pos/model again or it
-  // sits blank forever, never knowing its role (the audited "reload bricks every window" bug).
+  // sits blank forever, never knowing its role.
   win.webContents.on("did-finish-load", () => {
     // A reload re-runs the renderer from scratch; drop any stale hit-test state for this (reused)
     // webContents id so a pre-reload 'over:true' can't keep capturing clicks before the first report.
@@ -438,8 +436,8 @@ function makeWindow(display, isBrain, peerCount) {
         // Shared camera reference (DIP): every window frames its world so px-per-world-unit
         // matches the PRIMARY's — she keeps the SAME on-screen size hopping between monitors
         // of different resolutions (she used to render as a constant fraction of each screen).
-        // refW rides along for the load-time WIDTH cap: normalized per-window it gave a wide
-        // model (GLaDOS class) a DIFFERENT base scale in every window (audit 2026-07-05).
+        // refW rides along for the load-time WIDTH cap: normalized per-window it would give a
+        // wide model (GLaDOS class) a DIFFERENT base scale in every window.
         refH: primaryDisplay().workArea.height,
         refW: primaryDisplay().workArea.width,
         peerCount: peerCount || 0,
@@ -733,8 +731,7 @@ function recoverToPrimary() {
 // TOPMOST POLICY — two opposite jobs, both handled here:
 //  - NORMAL desktop: keep every overlay window on top. Windows orders topmost windows by recency, so
 //    a topmost window created AFTER her (overlays, OSDs, some apps) sits above her, and focus churn can
-//    silently demote the level ("why is it not showing as the top window at all times", 2026-06-11), so
-//    we re-assert. moveTop() reorders without stealing focus.
+//    silently demote the level, so we re-assert. moveTop() reorders without stealing focus.
 //  - FULLSCREEN app present (_fsActive): DROP always-on-top so we don't evict an exclusive-fullscreen
 //    game from the foreground. This is the fix for "the avatar takes over and I have to alt-tab back".
 // Called on every fullscreen-state edge (foreground.watch) and on a gentle tick while NOT yielding.
@@ -943,7 +940,7 @@ function init() {
     if (p && isFinite(p.gx) && isFinite(p.gy)) setGlobalPos(p.gx, p.gy);
   });
   // Grab lifecycle (any window) — main then follows the OS cursor across every monitor.
-  // A dragStart while a drag is live OVERWRITES it (latest grab wins) — deliberate (audit #6):
+  // A dragStart while a drag is live OVERWRITES it (latest grab wins) — deliberate:
   // after a capture-loss drop the old window's `held` can linger until its next pointerup, and
   // gating new grabs on that stale state would make her ungrabbable. The replaced drag's window
   // can still end the new one only via a real pointerup ("up" is honored from any window).

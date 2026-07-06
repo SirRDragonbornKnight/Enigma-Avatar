@@ -1,4 +1,4 @@
-// geom_mouth.js — find the mouth-open morph by GEOMETRY, never by name.
+// mouth-geometry.js — find the mouth-open morph by GEOMETRY, never by name.
 //
 // Many rips ship dozens of UNNAMED morph targets (51dc: 76), so facial.js's name-based
 // mouth picker finds nothing and lip-sync silently dies. The GENERAL fix (no per-model
@@ -17,14 +17,14 @@
 // jaw/chin sits just under it) upward: cut = headY - 0.35*span (span = head bone -> topmost vertex
 // along bodyUp). Hair above the skull just adds morph-free verts. No head bone -> legacy bbox top.
 import * as THREE from "three";
-import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs (the ryuri disease, 2026-07-03)
+import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs
 
 export function detectMouthMorph(model, opts = {}) {
   if (!model) return null;
   model.updateWorldMatrix(true, true);
   syncSkinnedBind(model); // pre-first-frame: refresh stale bindMatrixInverse or skinned coords are garbage
   model.traverse((o) => {
-    if (o.isSkinnedMesh) o.boundingBox = null; // drop boxes CACHED before that sync — r184's Box3.expandByObject reuses object.boundingBox, and an earlier pre-sync scan poisons it (audit 2026-07-04)
+    if (o.isSkinnedMesh) o.boundingBox = null; // drop boxes CACHED before that sync — r184's Box3.expandByObject reuses object.boundingBox, and an earlier pre-sync scan poisons it
   });
 
   const meshes = [];

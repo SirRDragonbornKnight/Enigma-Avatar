@@ -1,5 +1,5 @@
-// mathutil.test.js — locks the pure logic the audit flagged as untested: rotation normalize/migrate/
-// save, the spring weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
+// mathutil.test.js — locks the pure logic: rotation normalize/migrate/save, the spring
+// weight→feel mapping, and the adaptive-FPS pick. These run headless (no three.js).
 import { test } from "node:test";
 import assert from "node:assert";
 import {
@@ -12,8 +12,6 @@ import {
   dipToLocalPx,
   localPxToDip,
 } from "../src/util/mathutil.js";
-
-// (the ambientAmp + idle-v4 primitive tests died with the idle system, 2026-06-12)
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 

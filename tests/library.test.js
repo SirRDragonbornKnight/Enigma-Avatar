@@ -1,6 +1,6 @@
 // library.test.js — unit tests for the model library's fs logic (discover / import / trash) in a
-// SANDBOX temp dir. This is the layer the audit (#4) flagged as untested; it locks the clobber
-// guards, the recoverable trash, path-safe ids, the mesh-landed check, and URL encoding.
+// SANDBOX temp dir. Locks the clobber guards, the recoverable trash, path-safe ids, the
+// mesh-landed check, and URL encoding.
 import { test } from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";

@@ -33,7 +33,7 @@ test("every flag-backed checkbox toggles its flag (no dead toggles)", () => {
       ["Spring physics", "springOn"],
       ["Face (blink", "facialOn"],
       ["Lock in place", "locked"],
-    ]; // ("Idle motion" checkbox removed 2026-06-12 with the whole idle system; the random-emotes checkbox went 2026-06-11 — nothing fires by itself)
+    ]; // (no "Idle motion" or random-emotes checkbox — the idle system is deleted; nothing fires by itself)
     for (const [label, flag] of cases) {
       const cb = checkboxByLabel(label);
       assert.ok(cb, `checkbox "${label}" exists`);
@@ -392,7 +392,7 @@ test("rotate-by-drag is a TOGGLE (arms setRotateMode) and the Idle section is GO
   try {
     const m = makeApi();
     createUI(m.api).showSettings();
-    // The toggle is back (user request 2026-06-30: "make rotate a toggle instead of the Alt button").
+    // The toggle is deliberate (rotate must not require the Alt button).
     // Safe because hideSettings() auto-disarms it — see the disarm-on-close test below.
     const cb = checkboxByLabel("Rotate by dragging her");
     assert.ok(cb, "rotate-by-drag toggle exists");
@@ -407,7 +407,7 @@ test("rotate-by-drag is a TOGGLE (arms setRotateMode) and the Idle section is GO
       [...document.querySelectorAll("div")].some((d) => /hold Alt and drag/i.test(d.textContent || "")),
       "Alt+drag hint still shown"
     );
-    // The whole idle system was deleted (user order 2026-06-12) — NO idle UI may exist.
+    // The idle system is deleted — NO idle UI may exist.
     assert.ok(
       ![...document.querySelectorAll("div,span,button")].some((d) =>
         /Idle —|Re-seed|Liveliness/i.test(d.textContent || "")
@@ -771,7 +771,7 @@ test("Bones section: filter narrows the list and the label input fires setBoneLa
       m.calls.some((c) => c[0] === "setBoneLabel" && c[1] === "Shibahu_Tail1_0199" && c[2] === "tail base"),
       "-> setBoneLabel(raw name, label)"
     );
-    // IDENTIFY (2026-07-03 redesign): each row leads with a checkbox — ✓ pins a marker on that bone…
+    // IDENTIFY: each row leads with a checkbox — ✓ pins a marker on that bone…
     const seeIt = (i) => i.type === "checkbox" && /show this bone/i.test(i.title || "");
     const boxes = [...document.querySelectorAll("input")].filter(seeIt);
     assert.equal(boxes.length, 1, "one see-it checkbox per visible row");

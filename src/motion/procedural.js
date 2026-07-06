@@ -4,15 +4,14 @@
 //
 // THERE IS NO IDLE ANIMATION. The whole idle system (breath, postural sway, weight
 // shifts, arm poses, glances, ambient micro-motion, fidgets, the per-model tuning
-// surface) was DELETED OUTRIGHT on user order (2026-06-12: "delete the idle
-// animation everywhere and anything that has to do with it"). She stands bit-still
+// surface) is deliberately absent. She stands bit-still
 // until something REAL drives her: cursor-look (reactive), commanded gestures /
 // emotes / speech, springs reacting to actual movement, finger grip while carried.
 // Do not re-add self-generated motion here — not even as a "sensible default".
 
 import * as THREE from "three";
 import { resolveRig } from "../rig/rig.js";
-// There is deliberately NO gesture/clip shaping here (no bell / jumpElevation; user ruling 2026-06-25):
+// There is deliberately NO gesture/clip shaping here (no bell / jumpElevation):
 // the AI composes ALL motion as additive layers via the compositor — nothing here shapes a clip.
 // (easeInOut lives in motionmath.js for conjure timing.)
 
@@ -41,10 +40,10 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     _tgt = new THREE.Vector3(),
     _pq = new THREE.Quaternion(),
     _wq = new THREE.Quaternion();
-  // BIND-NORMALIZATION FRAME (audit P1, 2026-06-11): every gate and target below is RIG-LOCAL,
+  // BIND-NORMALIZATION FRAME: every gate and target below is RIG-LOCAL,
   // not world. The user's saved per-model rotation is applied BEFORE this runs (applyRotation
-  // precedes buildProceduralRig), so world-absolute math read a user-pitched upright model as
-  // "slouch-bound" on the next load and folded her against her OWN rotation. In rig space the
+  // precedes buildProceduralRig), so world-absolute math would read a user-pitched upright model
+  // as "slouch-bound" on the next load and fold her against her OWN rotation. In rig space the
   // saved rotation cancels. (FSIGN's toe probe below stays world-absolute on purpose — it wants
   // the DISPLAYED orientation.) Unparented models (tests) get the identity frame: world == rig.
   const _rigQ = new THREE.Quaternion(),
@@ -63,7 +62,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   };
 
   // TRUNK lean (rig space) — also the LYING-BIND gate for every aim below: a lying/crawling bind
-  // is a STYLE, not a defect (audit: aiming limbs "down" through a horizontal body folds them 90°
+  // is a STYLE, not a defect (aiming limbs "down" through a horizontal body folds them 90°
   // off the body axis). No trunk info → assume upright (simple rigs, statues).
   const _headRef = bones.head || bones.neck || bones.chest;
   const _trunkLean = () => {
@@ -78,11 +77,10 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   const _lean0 = _trunkLean();
   const _bindUpright = !_lean0 || _lean0.y > 0.5;
 
-  // TRUNK rest FIRST (audit: arms were aimed before the trunk leveled — the leveling then un-aimed
-  // them by the slouch angle, ~15° forward on the catgirl; trunk → arms → legs is the only order
-  // where each pass builds on a settled parent). Hips take a PARTIAL fraction so the leaf-ward
-  // unwind below actually executes (frac 1 made the position line vertical → the loop was dead
-  // code and the head-down orientation curl shipped unfixed).
+  // TRUNK rest FIRST (aiming arms before the trunk levels lets the leveling un-aim them by the
+  // slouch angle; trunk → arms → legs is the only order where each pass builds on a settled
+  // parent). Hips take a PARTIAL fraction so the leaf-ward unwind below actually executes
+  // (frac 1 makes the position line vertical → the loop becomes dead code).
   const _upR = new THREE.Vector3(0, 1, 0); // rig-space up
   const _levelAt = (b, restKey, dirRigNow, frac) => {
     // rotate `b`'s rest by frac of (dirRigNow → rig-up)
@@ -158,8 +156,8 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     const adjust = _pq.clone().invert().multiply(wq).multiply(_pq);
     rest[armRole] = adjust.multiply(rest[armRole]);
     a.quaternion.copy(rest[armRole]); // apply immediately so frame 0 isn't a T-pose
-    // NO noteAdjust here (audit 2026-06-11): arm aims fire on MOST T-pose rigs — counter-rotating
-    // sprung sleeve/ribbon chains against them regressed known-good models AND mixed arm+trunk
+    // NO noteAdjust here: arm aims fire on MOST T-pose rigs — counter-rotating
+    // sprung sleeve/ribbon chains against them regresses known-good models AND mixed arm+trunk
     // ancestry breaks the composition order. Gravity preservation is for TRUNK/HEAD/LEG normalization
     // (the squat-bind case) only; under-arm chains keep inheriting the arm drop as they always did.
   };
@@ -212,7 +210,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
       const kneeDeg = (v1.angleTo(v2) * 180) / Math.PI; // 180 = straight (angle is frame-invariant)
       if (kneeDeg > 150) continue; // standing bind → never touch
       if (kneeDeg < 35) {
-        // FULLY-FOLDED bind (aveline: 8.8°/20.4°) = a packaging/design pose, NOT a capture squat — the fold direction/kneecap math is ill-conditioned there and "standing it up" wrecked a folded robot (battery 2026-06-12: legs flung sideways, 15-unit-wide box). Leave it as authored.
+        // FULLY-FOLDED bind = a packaging/design pose, NOT a capture squat — the fold direction/kneecap math is ill-conditioned there and "standing it up" wrecks a folded rig (legs flung sideways). Leave it as authored.
         console.log(
           `[avatar] leg bind ${side} is fully folded (${kneeDeg.toFixed(0)}°) — packaging pose, left as authored (squat normalization covers ~35–150°)`
         );
@@ -236,7 +234,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
         const f = rigDir(_dir.copy(_cw).sub(_aw)).clone();
         if (f.lengthSq() > 1e-8) {
           f.normalize();
-          if (Math.abs(f.y) <= 0.45) faceY = f.y; // a MODEST bind pitch is the foot's own design (heels) — keep it; an extreme one belongs to the squat → level (audit #6: the old 27° rule, preserved through the heading fix)
+          if (Math.abs(f.y) <= 0.45) faceY = f.y; // a MODEST bind pitch is the foot's own design (heels) — keep it; an extreme one belongs to the squat → level
           f.y = 0;
           if (f.lengthSq() > 1e-6) faceR = f.normalize();
         }
@@ -570,11 +568,10 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     return dps == null || !(dps > 0) ? Infinity : dps * DEG; // absent OR <=0/NaN -> INERT (Infinity): a 0/negative bone_limits entry must not FREEZE or INVERT a whole role
   };
 
-  // (The idle params/tune surface, ambient micro-motion layer, fidget scheduler, weight-shift
-  // stance machine, arm-pose machinery, breath/sway oscillators and their damped-spring states
-  // all lived here — DELETED OUTRIGHT, user order 2026-06-12. No tunables remain: there is
-  // nothing to tune. The blocks below are the survivors: commanded gestures/emotes + reactive
-  // look/grip, and the gesture-boundary anti-pop blends they need.)
+  // (There is deliberately NO idle params/tune surface, ambient micro-motion layer, fidget
+  // scheduler, weight-shift stance machine, arm-pose machinery, or breath/sway oscillators.
+  // No tunables remain: there is nothing to tune. The blocks below are: commanded
+  // gestures/emotes + reactive look/grip, and the gesture-boundary anti-pop blends they need.)
   let _additive = false;
   // AI MOTION LAYERS (P1 compositor) — the brain composes motion as independent additive offset
   // bundles; disjoint roles SUM for free, same-role layers SUM here (weight-scaled). A layer:
@@ -807,8 +804,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
   // own additive motion LAYERS (pose/flex over the bus, P1) + the reactive
   // finger grip while carried. No idle, no canned gestures/expressions, no clip playback — every
   // deliberate move is AI-authored through the compositor. There is deliberately NO gesture catalog /
-  // root-motion / clip playback / body-expression set (user ruling 2026-06-25 "purge means purge" —
-  // do not re-add). =====
+  // root-motion / clip playback / body-expression set — do not re-add. =====
   function update(dt, _walk = false, opts = {}) {
     _additive = !!opts.additive;
 
@@ -979,7 +975,7 @@ export function buildProceduralRig(model, boneLimits = {}, resolved = null) {
     bindExtras: (x) => {
       // avatar.js hands over the sprung-bone names AFTER springs resolve
       Object.assign(extras, x || {});
-      const sprung = new Set(extras.sprungNames || []); // a sprung hand descendant (e.g. "HandRibbon"→cloth) — the spring overwrites our curl, so drop those JOINTS from every finger; empty fingers are dropped (audit)
+      const sprung = new Set(extras.sprungNames || []); // a sprung hand descendant (e.g. "HandRibbon"→cloth) — the spring overwrites our curl, so drop those JOINTS from every finger; empty fingers are dropped
       for (const k of ["L", "R"]) {
         for (const f of fingers[k]) f.joints = f.joints.filter((j) => !sprung.has(j.b.name));
         fingers[k] = fingers[k].filter((f) => f.joints.length);

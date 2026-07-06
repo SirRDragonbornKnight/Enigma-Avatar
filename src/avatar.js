@@ -23,17 +23,17 @@ import { createAttachmentStore } from "./engine/attachments.js"; // bone-attache
 import { createSimTick } from "./engine/sim.js"; // the canonical sim-step order (headless engine module, carve S2-a)
 import { createQueryReporter } from "./control/query.js"; // AI self-report (read-only ground truth) for the bus 'query' action
 import { buildSpringBones } from "./motion/spring.js";
-import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (stretch feature, 2026-07-03)
+import { buildSoftMesh } from "./motion/softmesh.js"; // soft-mesh grab/poke (the stretch feature)
 import { createPhysics } from "./motion/physics.js";
 import { buildFacial } from "./face/facial.js";
 import { buildSilhouette, overSilhouette as overMask, fallbackGrabHandle } from "./interaction/hittest.js"; // pure, unit-tested click-through math
 import { resolveAnchor, nearestPlatformSurfaceY, sanitizePlatforms } from "./interaction/placement.js"; // pure, unit-tested placement math
 import { resolveRig, ROLES } from "./rig/rig.js";
-import { analyzeMorphGeometry } from "./rig/face-geometry.js"; // morph region classification, exposed via query morphs (2026-07-03 audit)
+import { analyzeMorphGeometry } from "./rig/face-geometry.js"; // morph region classification, exposed via query morphs
 import { computeWeightMass, subtreeMass, findRoleTwins, groupCoincidentRoots } from "./rig/skinweights.js"; // trust the WEIGHTS: auto-adopt stranded deforming twins + dedup parallel sprung chains (the Rigify disease, generalized)
-// There is deliberately NO clip retargeting: the AI authors motion via the compositor, not authored clips (user ruling 2026-06-25 — do not re-add).
+// There is deliberately NO clip retargeting: the AI authors motion via the compositor, not authored clips (do not re-add).
 // (#13: no model loaded shows a DOM message via enterNoModel(), not a self-made character — by design
-//  there is no placeholder model (user ruling 2026-06-30; do not self-author one).)
+//  there is no placeholder model; do not self-author one.)
 import { norm360, signed180, rotFromProfile, rotToSave, pickFps, dipToLocalPx, localPxToDip } from "./util/mathutil.js";
 import { disposeMeshTree } from "./util/dispose.js"; // GPU-honest teardown: material.dispose() alone leaks the texture set
 import { createGrabFollowFn, pickLockBone } from "./motion/grabfollow.js"; // ragdoll grab + the rigid-only mouse-lock bone picker (pure, unit-tested)
@@ -99,10 +99,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   camera.position.set(0, 0, 10);
   function frameCamera() {
     const aspect = innerWidth / innerHeight;
-    // Constant PX-PER-WORLD-UNIT across every window (user 2026-07-05: she must keep her size
-    // hopping between different-resolution monitors): the world span scales with THIS window's
-    // height relative to the primary's, so 6 world units render as the same pixel height
-    // everywhere. Before, worldH was a constant -> she was a constant FRACTION of each screen.
+    // Constant PX-PER-WORLD-UNIT across every window (she must keep her size hopping between
+    // different-resolution monitors): the world span scales with THIS window's height relative
+    // to the primary's, so 6 world units render as the same pixel height everywhere. A constant
+    // worldH would make her a constant FRACTION of each screen instead.
     worldH = VIEW_H * (_refH > 0 ? innerHeight / _refH : 1);
     worldW = worldH * aspect;
     camera.left = -worldW / 2;
@@ -195,7 +195,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let proc = null,
     spring = null,
     facial = null,
-    soft = null, // soft-mesh grab/poke deformation layer (softmesh.js, 2026-07-03)
+    soft = null, // soft-mesh grab/poke deformation layer (softmesh.js)
     BONE_LIMITS = {};
   let _weightMass = null,
     _springNeverExtra = []; // skin-weight pass state (per loaded model): bone→mass + the sprung twin chains excluded by dedup
@@ -217,7 +217,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }, // surface a missing/bad prop instead of vanishing silently
   });
   const BALL_URL = "./props/worn_baseball_ball/worn_baseball_ball.glb";
-  const CONJURE_ASSETS = { ball: BALL_URL, baseball: BALL_URL }; // friendly conjure names -> bundled prop URLs (stage the .glb on disk; see the audit note)
+  const CONJURE_ASSETS = { ball: BALL_URL, baseball: BALL_URL }; // friendly conjure names -> bundled prop URLs (stage the .glb on disk)
   let _lastPropN = 0; // brain: # props in the last broadcast (send ONE empty buffer when balls clear → peers drop their ghosts)
   // PEER-side ghost props: a peer can't run physics, so it mirrors the brain's ball transforms onto clones.
   let _ghostProto = null,
@@ -234,7 +234,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       { x: dir * (4.2 + Math.random() * 2.2), y: 4 + Math.random() * 1.6 },
       Math.max(0.22, h * 0.11)
     );
-    // (she used to emote "happy" here — body expressions purged; an AI driver can author a reaction)
+    // (deliberately no built-in emote here — an AI driver can author a reaction)
     wake(3);
     setStatus("throw!");
   }
@@ -257,7 +257,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     poseLen = 0,
     _poseBuf = null,
     _lastPose = null,
-    _poseTag = 0; // tag = hash of curKey — length alone can coincide across models (audit hardening)
+    _poseTag = 0; // tag = hash of curKey — length alone can coincide across models
   let roleBones = {}; // role -> live bone (from the resolved rig) — attach targets resolve here FIRST (structural; trust no names)
   let _rigReport = null; // the cascade's verdict for the CURRENT model ({bySource, unresolved}) — Settings shows it
   let boneHelper = null; // SkeletonHelper overlay — inspect the rig (every bone, named or not)
@@ -278,14 +278,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
   // Resolved BEFORE any rig build (onModelLoaded awaits it): buildProceduralRig captures the table
-  // at call time, so a first load that won this read's race used to build with {} — no joint caps
+  // at call time, so a first load that wins this read's race would build with {} — no joint caps
   // and no speed clamp — until the next model switch. Absent/corrupt file still resolves to {}
-  // (inert limits, honest degrade — but now LOUDLY), never a blocked load.
+  // (inert limits, honest degrade — LOUDLY), never a blocked load.
   const BONE_LIMITS_READY = readLocalJson("./bone_limits.json").then((j) => {
     if (j) BONE_LIMITS = j;
     else console.warn("[avatar] bone_limits.json unreadable -> no joint/speed caps");
   });
-  // Per-model rig overrides REMOVED 2026-06-25 (user: "nothing made specifically for any avatar").
+  // There are deliberately NO per-model rig overrides — nothing made specifically for any avatar.
   // The rig resolver (rig.js) is purely generic: VRM -> name -> geometry. No per-model data path.
 
   let model = null,
@@ -336,7 +336,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // Compare display IDENTITY when main ships it: myOrigin is now the WINDOW's real origin
     // (work-area-constrained), which diverges from the display origin under a top/left-docked
     // taskbar — origin equality would go permanently false there and silently disable every
-    // region snapshot/crop on that monitor (audit 2026-07-05). Origin compare stays as the
+    // region snapshot/crop on that monitor. Origin compare stays as the
     // fallback for an older main without disp.id.
     if (!_gReady) return false;
     if (curDisp.id != null && _myDisplayId != null) return curDisp.id === _myDisplayId;
@@ -344,10 +344,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function _clampToDisp(p) {
     // glide/nudge stay on her current screen (only a DRAG crosses bezels).
-    // WALLS v2 (user 2026-06-12: the body-scaled walls MOVED when she was resized — wrong): FIXED
-    // slim margins, independent of her size. The BOTTOM is PERMEABLE — she can be sent to / through the
-    // screen bottom (recover via tray / goTo); by design she does NOT auto-rest on the desk line
-    // (no screen-bottom floor snap, user ruling 2026-06-25). The clamp only stops her from being lost entirely.
+    // WALLS: FIXED slim margins, independent of her size (body-scaled walls would move when she
+    // is resized). The BOTTOM is PERMEABLE — she can be sent to / through the screen bottom
+    // (recover via tray / goTo); by design she does NOT auto-rest on the desk line (no
+    // screen-bottom floor snap). The clamp only stops her from being lost entirely.
     const d = curDisp,
       m = 16;
     return {
@@ -355,7 +355,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       y: Math.max(d.y + m, Math.min(d.y + d.height * 1.4, p.y)),
     };
   }
-  // --- AI-PLACEABLE PLATFORMS (user design 2026-06-12; screen-bottom floor snap removed 2026-06-25) -
+  // --- AI-PLACEABLE PLATFORMS --------------------------------------------------------------------
   // Platforms are AI-placed effect surfaces: visible translucent bars on every window, rapier static
   // slabs in the brain (balls roll on them), and snap targets for her feet. Released or glided near a
   // PLATFORM top, her feet ease onto it — but nothing hard-blocks pushing her past it. The screen
@@ -413,20 +413,20 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function surfaceYAt(gx, gy) {
     // nearest AI-placed PLATFORM top under gx, within the snap band (math in placement.js, unit-tested).
-    // SCREEN-BOTTOM FLOOR SNAP REMOVED (user request 2026-06-25) — only AI-placed platforms are snap
-    // targets now. With no platform under her this returns null and floorSnap() is a no-op.
+    // There is NO screen-bottom floor snap — only AI-placed platforms are snap targets.
+    // With no platform under her this returns null and floorSnap() is a no-op.
     return nearestPlatformSurfaceY(gx, gy, platforms, curDisp.height * 0.05);
   }
   function floorSnap() {
-    // drag-release / glide-arrival: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
+    // drag-release / glide-arrival: feet ease onto a nearby PLATFORM top (never the screen bottom)
     if (!_isBrain || held || _dragActive || gliding) return;
     const s = surfaceYAt(gPos.x, gPos.y);
     if (s != null && Math.abs(s - gPos.y) > 0.5) setGlide(gPos.x, s);
   }
   function setGlide(gx, gy, dur) {
     // Returns the ACCEPTED target + whether the display clamp changed it, so a driver learns the
-    // truth in the reply instead of discovering a silent clamp screenshots later (2026-07-03 audit:
-    // the py clamp swallowed a head-anchored resize compensation and the head left the screen).
+    // truth in the reply instead of discovering a silent clamp screenshots later (a swallowed
+    // clamp can eat a head-anchored resize compensation and walk the head off the screen).
     if (!isFinite(gx) || !isFinite(gy)) return null;
     gGlide = _clampToDisp({ x: gx, y: gy });
     const clamped = Math.abs(gGlide.x - gx) > 0.5 || Math.abs(gGlide.y - gy) > 0.5;
@@ -495,7 +495,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
     return { screen: [curDisp.width, curDisp.height], screenPos: posScreen(), bones };
   }
-  // Root-motion (jump / flip / lay-down / get-up) was purged 2026-06-25; _motionY (the live vertical hop,
+  // There is NO root-motion (jump / flip / lay-down / get-up); _motionY (the live vertical hop,
   // still carried in the pose buffer) stays 0. _cancelMotion just zeroes it so a model switch / manual
   // rotate can never strand her mid-air from a streamed-in value.
   function _cancelMotion() {
@@ -521,7 +521,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   let sizeScale = sizeByModel[curKey] ?? DEFAULT_SIZE; // reopen at the last-used size for this model
   let springOn = true,
     facialOn = true,
-    locked = false; // engine toggles (Settings checkboxes; the idle toggle died with the idle machinery, 2026-06-12 — proc.update is purely reactive/commanded now and always runs)
+    locked = false; // engine toggles (Settings checkboxes; there is no idle toggle — proc.update is purely reactive/commanded and always runs)
   // AI-control kill-switch (brain-only, persisted). When OFF, inbound AI bus commands are DROPPED at
   // the connect() chokepoint before they can do anything — so nothing the avatar does over the bus can
   // be a surprise. Flip it back on (Settings checkbox or the tray's "Accept AI control") and the
@@ -600,7 +600,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     const prev = sizeScale;
     sizeScale = Math.max(0.02, n || 0.02); // no upper cap (removed min/max); tiny floor so multiplicative resize can recover
     rig.scale.setScalar(sizeScale);
-    // GROW-ANCHOR (user 2026-07-02): default scales from the FEET (gPos IS the feet point, so she
+    // GROW-ANCHOR: default scales from the FEET (gPos IS the feet point, so she
     // stays planted on the floor). anchor "hips"|"head" pins THAT body point on screen instead —
     // the fourth-wall "walk up to the screen" loom keeps her face in frame while she grows past it.
     let anchorClamped = false; // truth for the reply: did the display clamp swallow the compensation?
@@ -626,7 +626,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       anchorClamped,
     };
   }
-  const resizeBy = (m) => applySize(sizeScale * m, "hips"); // scroll/+,- grow from her MIDDLE (user 2026-07-05: "larger from the bottom" felt wrong); the bus `size` verb keeps its documented feet default
+  const resizeBy = (m) => applySize(sizeScale * m, "hips"); // scroll/+,- grow from her MIDDLE; the bus `size` verb keeps its documented feet default
   // Keep the avatar fitting the screen: a too-large saved size makes the head/feet clip
   // off the top/bottom — and on a SMALLER monitor that reads as "can't see the avatar".
   // Shrinks an over-tall avatar to a margin-safe height; never enlarges (respects smaller sizes).
@@ -729,7 +729,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   function _buildLoadedModel(asset) {
     disposeModel();
-    if (!asset.scene) throw new Error("asset has no scene"); // THROW into the boundary guard — a bare return fell through to the SUCCESS reply with a blank screen (audit 2026-07-04)
+    if (!asset.scene) throw new Error("asset has no scene"); // THROW into the boundary guard — a bare return falls through to the SUCCESS reply with a blank screen
     model = asset.scene;
     vrm = asset.vrm || null;
     // #1: STOP vrm.update() from copying the rest-pose normalized humanoid bones back over the AI
@@ -738,15 +738,15 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // — the AI motion never reaches the screen on VRM models. We drive the raw bones ourselves; VRM's
     // own update stays only for its spring bones / look-at / expressions.
     if (vrm?.humanoid) vrm.humanoid.autoUpdateHumanBones = false;
-    // NORMALIZE ON THE BODY, NOT THE PACKAGING (model-zoo 2026-07-02): some GLBs ship display
-    // furniture — aveline's shelf + floating logo made the whole-scene box huge, so the BASE_H
-    // scale shrank the actual robot to a speck standing on her own plinth. When the file contains
-    // skinned meshes, their union IS the character; static extras become background. Files with no
-    // skinned mesh at all (statues, props, furniture) keep the whole-scene box, unchanged.
-    // Measure SKINNED bounds, not raw bind-geometry boxes (ryuri 2026-07-04): exports whose
-    // inverse-bind matrices carry the geometry→skeleton mapping author vertices in a DIFFERENT
-    // space than the nodes (her mane/tail bind verts reached y=-5062 while the skeleton spans
-    // 2.28) — the raw box normalized her to a 0.42-unit crumple. What renders is what we measure.
+    // NORMALIZE ON THE BODY, NOT THE PACKAGING: some GLBs ship display furniture — a shelf or a
+    // floating logo makes the whole-scene box huge, and the BASE_H scale would shrink the actual
+    // character to a speck standing on her own plinth. When the file contains skinned meshes,
+    // their union IS the character; static extras become background. Files with no skinned mesh
+    // at all (statues, props, furniture) keep the whole-scene box, unchanged.
+    // Measure SKINNED bounds, not raw bind-geometry boxes: exports whose inverse-bind matrices
+    // carry the geometry→skeleton mapping author vertices in a DIFFERENT space than the nodes
+    // (bind verts thousands of units away from a ~2-unit skeleton) — the raw box would normalize
+    // her to a crumple. What renders is what we measure.
     const _oneB = new THREE.Box3();
     const bodyBox = () => {
       model.updateWorldMatrix(true, true);
@@ -805,18 +805,18 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     rig.scale.setScalar(sizeScale);
     fitToScreen(); // correct a too-large saved size so she isn't clipped off-screen
 
-    // (Embedded-clip playback removed 2026-06-25 — the AI drives every model purely through the
-    //  procedural compositor; baked clips in a .glb are ignored. No clip-mixer state remains.)
+    // (There is NO embedded-clip playback — the AI drives every model purely through the
+    //  procedural compositor; baked clips in a .glb are ignored. No clip-mixer state exists.)
     // The procedural rig drives look-at + AI bone control the SAME way on all models (no idle,
-    // no canned clips — purged). This is the uniform substrate the AI composes motion on top of.
+    // no canned clips). This is the uniform substrate the AI composes motion on top of.
     // Identify bones ONCE via the generic cascade (VRM -> name -> geometry), then feed BOTH the
     // procedural pose and the spring physics the same resolved map.
     // (No Rigify parallel-skeleton "reparent" surgery and no per-model overrides here — the cascade
-    // is purely generic, user ruling 2026-06-25.)
+    // is purely generic.)
     const resolved = resolveRig(model, vrm);
     roleBones = resolved.roles || {}; // expose role→bone for attach-by-role (structural; trust no names)
     resetMorphGeo(); // new model, new head anchor -> re-classify morphs lazily on next query
-    // SKIN-WEIGHT AUTO-ADOPTION (2026-06-12, the system pass): generalize the parallel-limb surgery.
+    // SKIN-WEIGHT AUTO-ADOPTION — the generalized parallel-limb surgery.
     // Any DEFORMING bone that is a coincident twin of a resolved role bone but lives OUTSIDE its
     // subtree (a Rigify DEF chain rooted on the spine/shoulder, follow-constraints baked away) gets
     // attached under it — world-preserving — so the visual limb rides the driven chain on ANY such
@@ -942,10 +942,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       }
       // BIND-NORMALIZATION × DANGLY CHAINS: standing a squat-bound rig up rotates the head/trunk.
       // Rigid accessories (ears, hats) must FOLLOW that rotation — but hair/tail are authored
-      // relative to GRAVITY, so their world hang must be PRESERVED ("hair to attach to her head",
-      // 2026-06-11: her strands plumed forward off the freshly-leveled head). Counter-rotate each
-      // sprung chain ROOT by the net normalization its ancestors received, then rebuild the
-      // springs so rests + verlet tips re-capture from the corrected pose.
+      // relative to GRAVITY, so their world hang must be PRESERVED (otherwise strands plume
+      // forward off a freshly-leveled head). Counter-rotate each sprung chain ROOT by the net
+      // normalization its ancestors received, then rebuild the springs so rests + verlet tips
+      // re-capture from the corrected pose.
       if (spring?.count && proc?.restAdjust && Object.keys(proc.restAdjust).length) {
         const sprungSet = new Set(spring.names);
         const _net = new THREE.Quaternion(),
@@ -984,11 +984,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (spring?.count) console.log("[avatar] spring bones (" + spring.count + "):", spring.names.join(", "));
     }
     // RE-ANCHOR + RE-MEASURE — deliberately AFTER the gravity counter-rotation above: this measures
-    // the FINAL standing pose. Measuring before it caught the pre-fix hair plume (head-leveling
-    // rotations amplified down 16-bone strands) as a 12.8-unit "height" on a 3.5-unit model — the
-    // poison behind the floating mesh, the giant shadow and the crushed auto-size ("the walls were
-    // pushing the avatar up when i made it larger"; battery 2026-06-12). The bind box measured at
-    // load had the squat-bound feet line wrong instead (shadow at her shins) — this fixes both.
+    // the FINAL standing pose. Measuring earlier reads a hair plume (head-leveling rotations
+    // amplified down long strands) as a multiple of the real height — poisoning the mesh anchor,
+    // the shadow size and the auto-size — while the load-time bind box has a squat-bound rig's
+    // feet line wrong (shadow at her shins). Measuring here fixes both.
     {
       applyMeshVisibility(); // hide saved-off parts FIRST — parked variant meshes must not inflate the measurement
       const rq = rig.quaternion.clone();
@@ -1040,10 +1039,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       soft = buildSoftMesh(model); // soft-mesh grab/poke layer (bind-space vertex regions; rides skinning)
       const _fa = proc?.jointAngles ? proc.jointAngles().fwd : null;
       const _fwd = _fa ? new THREE.Vector3(_fa[0], _fa[1], _fa[2]) : new THREE.Vector3(0, 0, 1);
-      // ONE morph classification, HERE at load: rest pose + the rig's real facing (audit
-      // 2026-07-04: the lazy query-path re-scan classified whatever pose she happened to be
-      // HOLDING and cached that for the session, in a head-only frame that could disagree with
-      // the facial build's — and the second-scale scan ran twice per model).
+      // ONE morph classification, HERE at load: rest pose + the rig's real facing. A lazy
+      // query-path re-scan would classify whatever pose she happens to be HOLDING and cache
+      // that for the session, in a head-only frame that can disagree with the facial build's —
+      // and would run the second-scale scan twice per model.
       setMorphGeo(null);
       if (roleBones.head && morphMeshes().n) {
         try {
@@ -1080,9 +1079,8 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     applyMorphs(); // re-apply saved morph/blendshape values (the avatar's own toggles)
     applyRotation(); // restore the saved rotation (all 3 axes)
     proc?.bindExtras?.({ sprungNames: spring ? spring.names : [] }); // the finger-grip layer must not double-drive a sprung hand ribbon (the spring writes those every frame after proc)
-    // (The per-model idle profile application lived here — the WHOLE idle system is deleted,
-    // user order 2026-06-12: "delete the idle animation everywhere and anything that has to
-    // do with it". Reactive channels — cursor-look, blink, springs, gestures, grip — stay.)
+    // (There is NO per-model idle profile — the whole idle system is deliberately absent; do not
+    // re-add. Reactive channels — cursor-look, blink, springs, gestures, grip — stay.)
     // flush relayed mutations that were queued while THIS window's copy lagged the model switch
     if (_staleCmds.length) {
       const q = _staleCmds.filter((x) => x.key === curKey);
@@ -1180,11 +1178,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   }
   let _loadSeq = 0;
   const _peerRetries = {}; // url -> failed mirror-load attempts (peer only)
-  // Bus 'load' replies on COMPLETION (2026-07-03), so a driver awaits the real swap instead of
+  // Bus 'load' replies on COMPLETION, so a driver awaits the real swap instead of
   // guessing settle time with sleeps. One waiter slot: the newest load
   // owns it; a superseded asker gets {superseded:true}, a failed build an honest {error}.
   let _loadNotify = null,
-    _loadNotifyKey = null; // the url the armed waiter asked for (audit 2026-07-04: unkeyed, ANY load path's build resolved a pending bus reqId with the WRONG model's success)
+    _loadNotifyKey = null; // the url the armed waiter asked for (unkeyed, ANY load path's build would resolve a pending bus reqId with the WRONG model's success)
   function _signalLoaded(result) {
     const n = _loadNotify;
     if (!n) return;
@@ -1239,7 +1237,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         console.error(err);
         try {
           window.avatarIPC?.log?.(`LOAD FAILED ${url}: ${err?.message || err}`);
-        } catch {} // renderer console is invisible in the main log — failures must be loud (the shibahu lesson, 2026-06-12)
+        } catch {} // renderer console is invisible in the main log — failures must be loud
         // A peer that fails the mirror-load would show the PREVIOUS model frozen forever (its pose
         // frames are dropped by the length guard) — retry a few times, loudly, into the main log.
         if (!_isBrain && (_peerRetries[url] = (_peerRetries[url] || 0) + 1) <= 3) {
@@ -1322,7 +1320,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     return prof.spring;
   }
   // Object-toy feel (thrown/dropped balls): gravity + bounce, saved per avatar like the hair tune.
-  // (User 2026-07-02: the Ball menu had no way to SEE or SET what object gravity was doing.)
+  // Backs the Ball menu's view/set of what object gravity is doing.
   function physicsTune(p) {
     const prof = profileFor(curKey);
     prof.objects = { ...(prof.objects || {}), ...numericOnly(p) };
@@ -1343,8 +1341,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     saveProfileSoon();
     return facial ? { mode: facial.mode, info: facial.info, params: facial.params } : null;
   }
-  // (idleTune / idleCapsNow / reseedIdleNow lived here — deleted with the whole idle system,
-  // user order 2026-06-12. There is no idle to tune and no personality to seed.)
+  // (There is no idle to tune and no personality to seed — the idle system is deliberately absent.)
   // Every material by OBJECT (incl. unnamed AND duplicate-named), in traversal order, WITH the
   // owning mesh name — the stable INDEX the overlay OWNS and reports over the AI bus
   // ('query materials'). recolor-by-index, the Settings color list, and "look at the parts"
@@ -1396,7 +1393,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     // an unnamed material falls back to a synthetic key.
     const m = typeof target === "number" ? allMaterials()[target] : null;
     // persist by name ONLY when the name is unique — a duplicate name would re-tint EVERY same-named
-    // material on the next load though just one was tinted live (audit); else the "#index" handle
+    // material on the next load though just one was tinted live; else the "#index" handle
     const dup = m && m.name ? allMaterials().filter((x) => x && x.name === m.name).length > 1 : false;
     const key = m ? (m.name && !dup ? m.name : `#${target}`) : target;
     const p = profileFor(curKey);
@@ -1470,10 +1467,10 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // a 15-unit-wide geometry box on a 1-unit-wide robot → giant shadow + crushed scale). SkinnedMesh
   // .computeBoundingBox() poses every vertex through its bones — the truth.
   function expandVisiblePosed(box) {
-    // MEASURE THE BONES, NOT THE MESH (battery 2026-06-12, round 2): skinned-mesh bounding boxes are
+    // MEASURE THE BONES, NOT THE MESH: skinned-mesh bounding boxes are
     // computed against the BIND-time frame — after we scale/shift/normalize the model they come back
-    // as frame-trap garbage (her body measured 0.26 units, a hair object 7.4 — dims hit 12.8 on a
-    // 3.5-unit model, mesh floated above the base, shadow exploded, auto-size crushed). The DEFORMING
+    // as frame-trap garbage (a body reading a fraction of a unit while one hair object reads
+    // several — floating mesh, exploded shadow, crushed auto-size). The DEFORMING
     // bones (skin-weight map) are the truth the whole engine already trusts: their world positions
     // bound her body, a small pad covers flesh beyond joints, and stray ground/backdrop planes are
     // excluded automatically (planes aren't bones). Static no-bone models (statues) keep honest rigid
@@ -1661,12 +1658,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     saveProfileSoon();
     return s;
   }
-  // --- BONE IDENTIFICATION (user 2026-06-12: "i will need a way of identifying them") -------------
+  // --- BONE IDENTIFICATION -------------------------------------------------------------------
   // highlightBone: a hot-pink marker rides the named bone for a moment (relayed → shows on whichever
   // monitor she's on) — the AI/bus's way to point AT a part. For the HUMAN, Settings → Bones puts a
-  // checkbox on every row (setBoneMark): ✓ = the marker stays on that bone until unchecked. The old
-  // click-modes (click-her-to-pick + hover-a-row-to-flash) were replaced at user direction
-  // (2026-07-03: "i do not like the click the bone idea — just make it a checkbox to see the bone").
+  // checkbox on every row (setBoneMark): ✓ = the marker stays on that bone until unchecked
+  // (deliberately a checkbox, not click-her-to-pick or hover-to-flash modes).
   function _findBone(name) {
     const key = String(name);
     let b = roleBones[key] || null; // canonical role ("left_arm") resolves FIRST — the AI speaks roles, not per-rig bone names
@@ -1972,14 +1968,14 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     }
   }
 
-  // (The random idle-emote scheduler that lived here is GONE — user ruling 2026-06-11 "remove all
-  // of it": NOTHING fires by itself. Emotes happen only when commanded: tap/pet, menu, bus, AI.)
+  // (There is deliberately NO random idle-emote scheduler: NOTHING fires by itself. Emotes happen
+  // only when commanded: tap/pet, menu, bus, AI. Do not re-add.)
 
   // --- float + idle (NO gravity, NO walking) ----------------------------------
-  // ADAPTIVE FRAME RATE — the overlay used to redraw a near-static figure 60×/s forever (~13% of a
-  // core at idle). Now we render at 60 only when something is MOVING; settle to 30, then 15 after a
-  // few idle seconds. backgroundThrottling stays OFF, and the loop still ticks ≥15×/s, so she can
-  // never vanish on an unfocused monitor — we just stop burning the core to redraw the same frame.
+  // ADAPTIVE FRAME RATE — redrawing a near-static figure 60×/s forever costs ~13% of a core at
+  // idle. Render at 60 only when something is MOVING; settle to 30, then 15 after a few idle
+  // seconds. backgroundThrottling stays OFF, and the loop still ticks ≥15×/s, so she can never
+  // vanish on an unfocused monitor — we just stop burning the core to redraw the same frame.
   // `wake(s)` holds full rate for s seconds after a kick (emote / drag-release / load) so spring
   // settle + emotes still look smooth.
   // The animate loop drives the seam (defined at module top) with live module state.
@@ -2047,7 +2043,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     _frameAcc = 0; // floor at 0 (NaN/negative would bypass the velocity clamp + freeze layer expiry)
     if (active) _restClock = 0;
     else _restClock += dt;
-    // (root-motion updateMotion() removed 2026-06-25 — _motionY stays 0; the AI authors motion via layers)
+    // (there is no root-motion step — _motionY stays 0; the AI authors motion via layers)
     // GLIDE: the brain steps the GLOBAL position toward the target and publishes it (main re-broadcasts to
     // every window). DRAG is owned by main (it follows the OS cursor across monitors), so we don't touch
     // gPos while held — it arrives via onGlobalPos.
@@ -2246,7 +2242,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     let rect = null; // she's on ANOTHER monitor → full capture of her window (this hitRect is in OUR pixels, not that window's)
     let regionUsed = null,
       regionMiss = null;
-    // REGION SNAP (2026-07-03 audit): crop to a named role/bone ("head" = face close-up) instead of
+    // REGION SNAP: crop to a named role/bone ("head" = face close-up) instead of
     // the whole-model hitRect. The engine knows where every bone is on screen — a frame-blind driver
     // must not binary-search for the face with size/move rounds. opts.radius (world units) overrides
     // the default head-sized crop; a missing bone or off-screen region falls back to the full rect
@@ -2349,7 +2345,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   // The single ENGINE STATE CONTAINER — one live view onto the closure's mutable state. The control
   // modules read state through it (engine.proc, engine.model, …) and receive ONE object whose
   // properties are live by construction: getters become live read accessors, statics are stable
-  // in-place objects shared by reference. (Built inline here; this used to live in engine/state.js.)
+  // in-place objects shared by reference. (Built inline here.)
   const makeEngineView = (getters = {}, statics = {}) => {
     const view = { ...statics };
     for (const k in getters) Object.defineProperty(view, k, { get: getters[k], enumerable: true, configurable: true });
@@ -2438,11 +2434,11 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const answerQuery = createQueryReporter(engine, {
     EnigmaAvatar,
     _norm360,
-    bonePoints,
     getRot,
     outfitNames,
     profileFor,
     allMeshesInfo,
+    bonePoints,
   });
   window.EnigmaAvatar = EnigmaAvatar;
   window.__AV = { THREE, scene, camera, rig, getModel: () => model };
@@ -2677,7 +2673,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
         proc?.clearLayer?.("grab_follow"); // the compositor eases the aim/pendulum offsets back at the speed limits — no snap
         _grabLock = null; // the mouse-lock dies with the drag (main's offset is only read while dragging)
         _grabAimRefresh = null; // ...and so does the aim snapshot
-        setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (screen-bottom floor snap removed 2026-06-25)
+        setTimeout(() => floorSnap(), 30); // release edge: feet ease onto a nearby PLATFORM top (never the screen bottom)
       }
     }
     if (moved && _isBrain) wake(0.6); // keep the brain (→ pose broadcast) lively while she's dragged from another monitor
@@ -2735,10 +2731,9 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
   const UI_CMDS = {
     // brain-scope: peers see the result through the pose / model / scale stream
     loadModel: { scope: "brain", fn: (u, l) => loadModel(u, l) },
-    // (express relay removed — body expressions were purged 2026-06-25)
     ball: { scope: "brain", fn: (n) => EnigmaAvatar.ball(n) },
-    // Conjured-prop controls (user 2026-07-02: a stranded prop sat mid-screen with "nothing I can
-    // do about it") — props live in the BRAIN scene, so the menu's dismiss/clear relay there.
+    // Conjured-prop controls — props live in the BRAIN scene, so the menu's dismiss/clear relay
+    // there (a stranded prop must be dismissible from the menu, not only the bus).
     conjureDismiss: {
       scope: "brain",
       fn: (id) => {
@@ -2808,7 +2803,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       return r;
     };
   }
-  // Mid-model-switch guard (audit): peers lag the brain by a full asset load. An all-scope mutation
+  // Mid-model-switch guard: peers lag the brain by a full asset load. An all-scope mutation
   // relayed during that window would execute against the peer's OLD model (wrong material/mesh
   // index) and the NEW model's copy would permanently miss it. Queue mismatched commands and apply
   // them when OUR copy catches up to that model.
@@ -2942,7 +2937,6 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     attachMesh: uiAttach,
     detachAttachment: uiDetach,
     clearAttachments: uiClearAttachments,
-    // (express binding removed — body expressions were purged 2026-06-25; the Express menu is gone too)
     ball: relayed("ball"), // rapier ball-physics toys (throw/drop/clear) for the right-click "Ball" menu
     conjureIds: () => conjurer.ids(), // live conjured props (brain window; peers honestly list none)
     conjureDismiss: uiConjureDismiss,
@@ -2957,7 +2951,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
     materials: () => EnigmaAvatar.materials(), // parts BY INDEX (+name/mesh hints, +current hex) for the Settings color list
     rigVerdict: () => {
       // ONE honest line: what the cascade decided for THIS model, at a glance (Settings shows it —
-      // "is a repair worth it?" without opening devtools). Model-zoo follow-up 2026-07-02.
+      // "is a repair worth it?" without opening devtools).
       if (!model) return "";
       const n = Object.keys(roleBones).length;
       if (!n) return "static: no recognised body bones (props / statues stay honest)";
@@ -3118,7 +3112,7 @@ if (typeof location !== "undefined" && typeof document !== "undefined") {
       if (!locked && e.button === 0) {
         // primary button only: a right-click must not start a grab underneath its context menu
         if (e.altKey || rotateMode) {
-          // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE hijacked the primary gesture ("can't move her, can rotate"; 2026-06-11) → a modifier can't get stuck; rotateMode remains for deliberate AI/bus use.
+          // ALT+drag rotates (↔ yaw, ↕ pitch) — any window. A held MODE can hijack the primary gesture and get stuck; a modifier can't. rotateMode remains for deliberate AI/bus use.
           spinning = true;
           _spinX = cursor.x;
           _spinY = cursor.y;

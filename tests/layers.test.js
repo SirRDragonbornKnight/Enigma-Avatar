@@ -25,9 +25,9 @@ test("a layer drives its role; disjoint roles compose independently (SUM for fre
   assert.ok(Math.abs(angOff(bones.left_foot, restFoot) - 0.2) < 0.02, "foot pitched ~0.2 by layer b, independent of a");
 });
 
-// DECIDED 2026-06-25 (user): same-role layers SUM (they stack) — NOT blend-by-priority — so a
+// DECIDED: same-role layers SUM (they stack) — NOT blend-by-priority — so a
 // co-speech nod adds ON TOP of a deliberate look instead of averaging it away. The summed result
-// is bounded by the per-role joint limit (the safety-cap test below). Spec sec 5 updated to match.
+// is bounded by the per-role joint limit (the safety-cap test below). Matches spec sec 5.
 test("two layers on the SAME role SUM (the chosen behavior)", () => {
   const proc = buildProceduralRig(fullBiped(), {});
   const bones = proc.roles();
@@ -125,7 +125,7 @@ test("capabilities reports this model's resolved roles + channels", () => {
   );
 });
 
-// SAFETY CAP (2026-06-25): the advertised per-role limits are now ENFORCED on layers — an over-range
+// SAFETY CAP: the advertised per-role limits are ENFORCED on layers — an over-range
 // command is clamped to the joint's range, not driven to it. Prevents the "AI cranked her head
 // backwards" class of break. Roles WITHOUT a limit entry keep the +-PI sanity bound (unchanged).
 test("a pose layer is capped at the role's advertised joint limit, not driven past it", () => {
@@ -260,8 +260,8 @@ test("layer 'speed' scales a DATA layer's env ramp (not just fn-layer time)", ()
   );
 });
 
-// ===== BOUNDARY GUARDS (audit 2026-06-26): a bad layer off the bus must degrade honestly, never
-// kill the frame or permanently brick a bone. These lock the fixes proven by probe. =====
+// ===== BOUNDARY GUARDS: a bad layer off the bus must degrade honestly, never
+// kill the frame or permanently brick a bone. =====
 const qFinite = (b) => [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w].every(Number.isFinite);
 
 test("GUARD: a THROWING fn layer drops ITSELF and the frame survives (siblings keep driving)", () => {
@@ -286,7 +286,7 @@ test("GUARD: an fn returning a stringly/NaN part never bricks a bone (additive m
   const proc = buildProceduralRig(fullBiped(), {});
   const bones = proc.roles();
   proc.setLayer("poison", { fn: () => ({ parts: { head: ["x", NaN, 0] } }) });
-  for (let i = 0; i < 5; i++) proc.update(0.016, false, { additive: true }); // additive = the unrecoverable path the audit found
+  for (let i = 0; i < 5; i++) proc.update(0.016, false, { additive: true }); // additive = the path where a NaN is unrecoverable
   assert.ok(qFinite(bones.head), "head quaternion stays finite through a stringly/NaN fn output");
   proc.setLayer("poison", null);
   for (let i = 0; i < 5; i++) proc.update(0.016, false, { additive: true });

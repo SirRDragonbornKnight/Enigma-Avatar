@@ -1,14 +1,11 @@
-// profiles.js — the per-avatar profile STORE (engine carve S1-a, 2026-07-02).
+// profiles.js — the per-avatar profile STORE.
 //
-// First subsystem lifted out of the avatar.js closure into headless `src/engine/` on the road to
-// "everything is a peer" (TODO.md Restructure). The store owns the ONE mutable `profiles` object —
+// The store owns the ONE mutable `profiles` object —
 // every outside consumer goes through profileFor(); nothing else may touch the raw map.
 //
 // A profile is per-model durable setup keyed by model URL: attachments (by category), tuned
 // spring/facial physics, colors, rotation, region weights. profiles.json (written by the shell over
 // IPC) is the durable store; a localStorage mirror is only the no-IPC (plain browser) fallback.
-// In the file:// era the file read silently failed on every live launch and profiles secretly lived
-// in localStorage — the app:// cutover ended that.
 //
 // createProfileStore(deps) — everything impure is INJECTED (the closure-thunk pattern the control
 // plane uses), so the store runs headless under node --test:
@@ -64,7 +61,7 @@ export function createProfileStore({ readJson, saveIpc, isWriter, mirror, logErr
 
   // Snapshot the CURRENT model's live attachments into its profile — called ONLY by attach
   // mutations, never by recolor/tune. So a recolor fired mid-restore (while props are still
-  // async-loading) can't truncate the saved list (avatar audit #2). Transient blob: urls are
+  // async-loading) can't truncate the saved list. Transient blob: urls are
   // never persisted (a restored blob URL is a dead pointer).
   function commitAttachments() {
     profileFor(getKey()).attachments = getAttachments()

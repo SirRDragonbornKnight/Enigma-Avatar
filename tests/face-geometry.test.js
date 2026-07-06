@@ -146,8 +146,8 @@ test("byIndex merges same-index morphs across meshes by MAX; bad/zero meshes are
 
 test("armature-scale skinned rig (the ryuri disease): placement lives in the BONES, not mesh.matrixWorld", () => {
   // Real Sketchfab rips bind a centimeter-scale mesh to a meter-scale skeleton: raw verts x
-  // matrixWorld sit BELOW the head bone, so a matrixWorld-only span measured <=0 and the
-  // classifier bailed to zero records while the model rendered full-size (2026-07-03 audit).
+  // matrixWorld sit BELOW the head bone, so a matrixWorld-only span measures <=0 and the
+  // classifier bails to zero records while the model renders full-size.
   // Fixture: the canonical grid + morphs authored at 1/100 scale, skinned to one bone whose
   // scale(100) does the real placement. Scores must match the plain-mesh canonical case.
   const S = 0.01;

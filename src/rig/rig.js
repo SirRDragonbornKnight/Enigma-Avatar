@@ -1,15 +1,14 @@
-// rig.js — bone IDENTIFICATION as a layered cascade, replacing the brittle single
-// name-regex that lived in procedural.js + spring.js. One resolver maps a model's
+// rig.js — bone IDENTIFICATION as a layered cascade. One resolver maps a model's
 // bones to canonical humanoid roles via generic tiers, each filling only roles still
 // empty:
 //
 //   1) VRM humanoid  — vrm.humanoid.getRawBoneNode(...) — authoritative when present
-//   2) name regex    — roleOfName(), lifted byte-for-byte from the old procedural.js
+//   2) name regex    — roleOfName()
 //   3) geometry      — topology + symmetry inference (opaque rigs: every bone "Bone037")
 //   3.5) between     — structural middle-joint repair (a "shoulder"-named upper arm, etc.)
 //
 // Every tier is GENERIC — no per-model data, no rig_overrides, no force/exclude maps
-// (user ruling 2026-06-25: "nothing made specifically for any avatar"; do not re-add).
+// (nothing made specifically for any avatar; do not re-add).
 // A mis-identified rig is fixed by improving a tier or repairing the model
 // file, never by a hand-written map. The pure tiers (resolveNames / resolveGeometry /
 // roleOfName) run on a plain BoneSnapshot — no WebGL — so they're unit-testable with
@@ -39,28 +38,28 @@ export const ROLES = [
   "right_foot",
 ];
 
-// ── Tier 2: name regex (identical logic to the old procedural.js#roleOf + SKIP) ──
+// ── Tier 2: name regex (roleOfName + SKIP) ──
 // SKIP: fingers/toes/face/dangly bits, IK helpers, deformation aids — "helper"/"twist"
-// bones must never win a primary role over the real joint (avatar audit #4).
+// bones must never win a primary role over the real joint.
 const SKIP =
   /pinky|index|middle|ring|thumb|finger|toe|eye|lid|jaw|tongue|hair|tail|cloth|skirt|helper|twist|ik$|_ik|ik-|-ik|target|pole|root.?joint|bolt|piston|string|bits|jig|pads?([^a-z]|$)/i;
-// `pads?` + `jig` (model-zoo 2026-07-02): armor/accessory bones CONTAIN role words —
-// "R_ShoulderPad_jnt" stole right_shoulder from the real "R_Shoulder_jnt" purely by traversal
-// order (FNaF lolbit/mangle), and "L_Shoulder_Jiggle_jnt" is a secondary-motion aid, never the
-// joint. The boundary check keeps "paddle"-ish names matchable. `jig` is deliberately bare
-// (fnia 2026-07-02): GMod rigs spell it "ThighJigR" — with only /jiggle/ that helper STOLE the
-// leg role and the knee bent sideways; no real joint name contains "jig".
+// `pads?` + `jig`: armor/accessory bones CONTAIN role words —
+// an "R_ShoulderPad_jnt" steals right_shoulder from the real "R_Shoulder_jnt" purely by traversal
+// order, and "L_Shoulder_Jiggle_jnt" is a secondary-motion aid, never the
+// joint. The boundary check keeps "paddle"-ish names matchable. `jig` is deliberately bare:
+// GMod rigs spell it "ThighJigR" — with only /jiggle/ that helper steals the
+// leg role; no real joint name contains "jig".
 
 export function roleOfName(raw) {
   const n = raw.toLowerCase();
   if (SKIP.test(n)) return null;
   // Side: left/right word or _l_/.l boundary, PLUS Blender ".L"/".R" tags that three.js
   // de-dotted on import into a glued uppercase L/R (upper_arm.L → "upper_armL"). Without
-  // this every Blender/Rigify limb loses its side and stays in the bind T-pose (Toy Chica).
-  // Daz Genesis (model-zoo 2026-07-02): the side tag is a BARE leading lowercase l/r glued to a
+  // this every Blender/Rigify limb loses its side and stays in the bind T-pose.
+  // Daz Genesis: the side tag is a BARE leading lowercase l/r glued to a
   // capitalized part — lShldrBend, rThighBend, lFoot. Neither the word-boundary rule nor the
-  // Blender de-dot rule sees it, so every Daz limb lost its side and the whole body went undriven
-  // (zhu_yuan: 4/19 roles from 493 bones).
+  // Blender de-dot rule sees it, so without the ^l/^r rule every Daz limb loses its side and
+  // the whole body goes undriven.
   let side = "";
   if (/(^|[^a-z])l(eft)?([^a-z]|$)|left/.test(n) || /[a-z]L([_.]|\d|$)/.test(raw) || /^l[A-Z]/.test(raw)) side = "left";
   else if (/(^|[^a-z])r(ight)?([^a-z]|$)|right/.test(n) || /[a-z]R([_.]|\d|$)/.test(raw) || /^r[A-Z]/.test(raw))
@@ -68,7 +67,7 @@ export function roleOfName(raw) {
   const has = (re) => re.test(n);
   // Center bones are never side-tagged; a sided PELVIS (Bip_Pelvis_L/R) is an auxiliary
   // bone — reject it so the true center bone wins regardless of traversal order. A sided
-  // HIP is different (fnia 2026-07-02): Source/GMod rigs name the THIGH joint "bip_hip_R",
+  // HIP is different: Source/GMod rigs name the THIGH joint "bip_hip_R",
   // so it falls through to the limb chain below and resolves as the leg.
   if (has(/pelvis/)) return side ? null : "hips";
   if (has(/(^|[^a-z])hips?([^a-z]|$)/) && !side) return "hips";
@@ -368,10 +367,10 @@ export function resolveBetween(snap, roleIds, source) {
       if (source) source[midRole] = "between";
     }
   };
-  // Joint-style PROMOTION (model-zoo 2026-07-02): when the "shoulder" bone DIRECTLY parents the
+  // Joint-style PROMOTION: when the "shoulder" bone DIRECTLY parents the
   // elbow (Shoulder_jnt -> Elbow_jnt -> Wrist_jnt — no bone in between), that bone spans the
   // upper-arm segment: it IS the upper arm, there is no clavicle. Without this the arm role
-  // stays empty and the whole arm is UNDRIVEABLE over the bus (FNaF lolbit/mangle). The bone
+  // stays empty and the whole arm is UNDRIVEABLE over the bus. The bone
   // MOVES to the arm role (never duplicated — two roles on one bone would double-apply offsets);
   // the shoulder role is honestly vacated, like any rig without clavicles.
   // CLAVICLE GUARD (geometric, no names): a TRUE clavicle whose rig simply lacks an upper-arm
@@ -379,9 +378,9 @@ export function resolveBetween(snap, roleIds, source) {
   // pinned between-repair intent: never fake a bone that isn't there). The tell is the head
   // position: a clavicle head sits NEAR the centerline; a joint-style shoulder head sits OUT
   // at the arm line. Promote only when the head is already well outboard (>=50% of the elbow's
-  // horizontal reach from the body's center). Corpus-measured 2026-07-02 (33 models): true
+  // horizontal reach from the body's center). Corpus-measured (33 models): true
   // clavicles ratio 0.09-0.45, joint-style shoulders 0.55-1.05 — clean separation. KNOWN LATENT
-  // EDGE (zero-trust audit): a FOLDED bind (elbow tucked inboard) compresses the elbow's reach
+  // EDGE: a FOLDED bind (elbow tucked inboard) compresses the elbow's reach
   // and can push a true clavicle over the threshold — no corpus rig combines a folded bind with
   // a missing upper-arm bone, but if one appears, tighten this with a shoulder-to-elbow segment
   // check rather than raw horiz ratios.

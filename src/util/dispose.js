@@ -1,6 +1,6 @@
 // dispose.js — GPU-honest teardown. three's material.dispose() frees the SHADER PROGRAM but
-// NOT the material's textures (.map/.normalMap/...), so every model swap / prop despawn leaked
-// its whole texture set to VRAM (audit 2026-07-04: monotonic growth per swap and per throw).
+// NOT the material's textures (.map/.normalMap/...), so every model swap / prop despawn would
+// leak its whole texture set to VRAM (monotonic growth per swap and per throw).
 // One helper, used by every teardown site (model swap, attachments, conjure, physics props).
 // Texture.dispose() is idempotent, so within-model sharing (two meshes, one texture) is safe.
 

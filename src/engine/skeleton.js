@@ -1,5 +1,5 @@
-// skeleton.js — a live THREE bone tree from glTF/GLB BYTES, no WebGL, no mesh/texture decode
-// (S2-b-ii, 2026-07-06). The sim-host utilityProcess builds the same skeleton the renderer's
+// skeleton.js — a live THREE bone tree from glTF/GLB BYTES, no WebGL, no mesh/texture decode.
+// The sim-host utilityProcess builds the same skeleton the renderer's
 // GLTFLoader would (nodes referenced as skin joints become THREE.Bone, in the same DFS order),
 // so the rig cascade and the compositor can run headless in the host. PURE: bytes/JSON in,
 // objects out — the caller owns file IO. tools/rig_report.mjs shares the JSON reader.

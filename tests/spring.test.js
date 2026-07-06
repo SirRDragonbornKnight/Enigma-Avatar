@@ -87,8 +87,8 @@ test("GEOMETRIC-fallback chain does NOT sag under gravity at rest (no self-gener
 
 test("constructor regionWeight from a saved blob is CLAMPED to 0..2 (audit 2026-06-26)", () => {
   // setParams clamps per-region weights, but a saved/hand-edited profiles.json blob reaches the
-  // CONSTRUCTOR spread directly — an out-of-range weight there used to bypass the 0..2 slider clamp
-  // and drive a verlet instability (near-zero stiffness = permanently floppy). clampParams now covers it.
+  // CONSTRUCTOR spread directly — an out-of-range weight there would bypass the 0..2 slider clamp
+  // and drive a verlet instability (near-zero stiffness = permanently floppy). clampParams covers it.
   const wOf = (rw, region) => {
     const r = buildSpringBones(hairRig(), { regionWeight: rw })
       .regions()
@@ -157,14 +157,13 @@ test("impulse() kicks only the matching region's bones, then settles; unknown re
   assert.ok(sdot > 0.9999, `tail must settle back after the impulse (quat dot ${sdot})`);
 });
 
-// (The grab-region hold test lived here — the mechanism was tried as a pin, softened to a damp,
-// and REMOVED 2026-07-05: on ryuri the whole lower body is one tail region, so any nearby grab
-// "froze the bottom". Sprung regions swing free during drags; grabfollow.test.js covers the
-// ragdoll layer that carries the grab feel instead.)
+// (No grab-region hold here — don't re-add one: on ryuri the whole lower body is one tail
+// region, so any nearby grab "freezes the bottom". Sprung regions swing free during drags;
+// grabfollow.test.js covers the ragdoll layer that carries the grab feel instead.)
 
 test("a 0<w<1 region weight DAMPS amplitude under motion (the damp branch, behaviorally)", () => {
-  // The hold churn rewrote the damp-application lines; regionFeel's mapping is unit-tested in
-  // mathutil.test.js but NO spring test drove the `feel.damp > 0` branch itself (audit 2026-07-05).
+  // regionFeel's mapping is unit-tested in mathutil.test.js, but this is the spring test that
+  // drives the `feel.damp > 0` branch itself.
   const findBone = (m, n) => {
     let b = null;
     m.traverse((o) => {
@@ -255,9 +254,9 @@ test("verlet is frame-rate independent: the SAME real time -> ~same sway at 60 v
   );
 });
 
-// --- the LOAD-BEARING guard (zhu_yuan 2026-07-06): a jiggle-region NAME on a bone that
+// --- the LOAD-BEARING guard: a jiggle-region NAME on a bone that
 // CARRIES role bones must never spring — Daz's "abdomenUpper" (spine chain, classified
-// "belly") put her whole top half on a spring and every grab read as a spasm. A true
+// "belly") puts the whole top half on a spring and every grab reads as a spasm. A true
 // terminal belly leaf (no role beneath it) keeps its jiggle.
 test("a region-named bone CARRYING role bones is load-bearing -- never sprung", () => {
   const bone = (n, x = 0, y = 0.3) => {

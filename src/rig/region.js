@@ -13,13 +13,13 @@
 //   "Peacock"/"Cockpit" aren't;  (?<![a-z])ass(?![a-z]) → "Bass"/"Assistant" aren't.
 // "dick" carries NO word boundary on purpose — Mal0's bone is "DE-Dick1" (k runs straight into 1).
 const REGIONS = [
-  // distinct NSFW areas get their OWN region (→ their own weight slider) — Mal0 carries all three as
-  // separate chains (Pussy*, AssHole*, DE-Dick*) and lumping them under one "genital" weight meant the
-  // user couldn't tune/disable them individually ("we are missing a few weights").
+  // distinct NSFW areas get their OWN region (→ their own weight slider) — a rig can carry all
+  // three as separate chains (Pussy*, AssHole*, DE-Dick*); lumping them under one "genital" weight
+  // blocks tuning/disabling them individually.
   [
     "dick",
     /penis|dick|sheath|(?<!top[_ ]{0,2})(?<!hair[_ ]{0,2})(?<!rope[_ ]{0,2})(?<!bow[_ ]{0,2})(?<!braid[_ ]{0,2})(?<!bun[_ ]{0,2})knot|testicl|scrotum|futa|(?<![a-z])cock(?!pit|tail|atoo|le|er)/i,
-  ], // NO "bulge": muscle/eye correctives (Bicep_Bulge, EyeBulge) are far commoner than NSFW bulge bones (audit regression)
+  ], // NO "bulge": muscle/eye correctives (Bicep_Bulge, EyeBulge) are far commoner than NSFW bulge bones
   ["anus", /asshole|anus|(?<![a-z])anal(?!og|y)/i],
   ["genital", /pussy|vagin|genital|crotch|vulva|(?<![a-z])clit(?!ell)|groin/i],
   ["breast", /breast|boob|bust|oppai|nipple|titty|(?<![a-z])tits?(?![a-z])/i],

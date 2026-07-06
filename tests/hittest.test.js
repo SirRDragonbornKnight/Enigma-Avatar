@@ -175,8 +175,7 @@ test("fallbackGrabHandle: handle height is capped at 60% of the window, keeping 
 
 test("fallbackGrabHandle: a GIANT avatar (top far off-screen) still exposes an on-glass handle", () => {
   // Over-coverage fail-safe drops the mask; the handle is the only grab left. Top-anchored capping
-  // used to put the WHOLE rect above the window -> a too-big avatar was completely unclickable
-  // (user 2026-07-05: "when it is too big it can become unclickable and i have to reset it").
+  // would put the WHOLE rect above the window -> a too-big avatar becomes completely unclickable.
   const ih = 600;
   const r = fallbackGrabHandle({
     cxp: 400,

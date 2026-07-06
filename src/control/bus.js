@@ -6,12 +6,10 @@
 // reply `undefined` — this split is load-bearing. Guards that gate a branch (e.g. `load` needs `url`)
 // live INSIDE the handler as an early return. Unknown/garbage action -> silent no-op (honest absence).
 //
-// VOCABULARY (2026-06-29 redesign — no backward-compat aliases): one name per concept. Four pairs
-// of near-duplicate verbs each route through ONE name, so a driver never has to guess which:
-//   move   (was moveTo + goTo)      — {px,py} exact OR {to:"center"|"cursor"|...} by name
-//   morph  (was morph + setMorph)   — drives+SAVES by default; {save:false} = transient probe
-//   pose   (was pose + layer)       — set a compositor layer; {clear:"id"} one, {clear:true} all
-// and two implementation-y names became intention names: setDisplay->monitor, setMesh->mesh.
+// VOCABULARY (no backward-compat aliases): one name per concept, so a driver never has to guess:
+//   move   — {px,py} exact OR {to:"center"|"cursor"|...} by name
+//   morph  — drives+SAVES by default; {save:false} = transient probe
+//   pose   — set a compositor layer; {clear:"id"} one, {clear:true} all
 // `query:"actions"` self-reports the live verb list (the AI's "what can I send?" — verify by numbers).
 //
 // WIRING: avatar.js calls createBusRegistry(engine, services) AFTER every dependency exists (the
@@ -89,8 +87,8 @@ export function createBusRegistry(engine, services) {
       if (raw != null && isFinite(n)) engine.facial?.setBlink?.(n);
       else engine.facial?.blink?.();
     }, // finite value HOLDS the lids (wink/squint; <0 resumes auto); no/garbage value = ONE quick blink
-    // expr/stretch/poke live on the FACADE like every other verb (audit 2026-07-04: they read the
-    // engine directly, so the documented devtools/EnigmaAvatar path could not drive them at all).
+    // expr/stretch/poke live on the FACADE like every other verb — routing them straight at the
+    // engine would leave the documented devtools/EnigmaAvatar path unable to drive them.
     expr: (c) => EnigmaAvatar.expr(c), // smile/brows 0..1; reply names the tier per channel
     stretch: (c) => EnigmaAvatar.stretch(c), // soft-mesh grab/drag/release — truth replies, never silence
     poke: (c) => EnigmaAvatar.poke(c), // soft-mesh dent/bulge along normals, one-shot

@@ -37,7 +37,7 @@ function discover(dir) {
       if (pick) out.push(path.join(sub, pick));
     } else if (/\.(glb|gltf|vrm)$/i.test(d.name)) {
       // FLAT library dirs too (Desktop\Avatars / 3d Avatar\Avatars are flat) — keyed by file stem,
-      // so AVATAR_MODELS_DIR pointed at either actually finds models (audit: it used to find NOTHING)
+      // so AVATAR_MODELS_DIR pointed at either actually finds models (a subdir-only walk finds NOTHING there)
       out.push(path.join(dir, d.name));
     }
   }
@@ -45,27 +45,23 @@ function discover(dir) {
 }
 
 const EXPECT = {
-  // ---- installed in models/ (ALL FIVE exercise the cascade on every run; audit 2026-07-04
-  // found only makiro biting — the rest of this table pointed at renamed/removed files) ----
+  // ---- installed in models/ (ALL FIVE exercise the cascade on every run; a key naming a
+  // renamed/removed file skips silently and locks nothing) ----
   makiro: 19,
   miku_brazilian_chiku_by_manolo122lq_beta: 19,
   rachnera__monster_musume: 19,
   // ryuri is a LAMIA — humanoid torso on a ~112-bone snake tail, NO legs. 12 is FULL coverage
   // for her body plan (hips/leg roles honestly vacant; the tail is spring physics, not roles).
   ryuri: 12,
-  // zhu_yuan locks the Daz Genesis naming support (was 4/19 before 8edf66e; a side-detection
-  // regression would drop it straight back). Dir renamed from zhu_yuan__nsfw__zzz — the old key
-  // silently SKIPPED this lock until 2026-07-04.
+  // zhu_yuan locks the Daz Genesis naming support (a side-detection regression drops it to 4/19).
   zhu_yuan: 19,
   // ---- the external flat library (C:\Users\SirKn\3d Avatar\Avatars) — these bite when
-  // AVATAR_MODELS_DIR points there; keyed by lowercased file stem. Re-measured 2026-07-04
-  // via tools/rig_report.mjs against the CURRENT filenames (the old keys — mal0_scp-1471,
-  // fexa_-_fnaf__cryptiacurves, glados, roxanne_wolf, 51dc…, grace_howard, toothless, spyro —
-  // named files that no longer exist there). ----
+  // AVATAR_MODELS_DIR points there; keyed by lowercased file stem. Keys must match the
+  // CURRENT filenames (measure with tools/rig_report.mjs) or a case skips silently. ----
   fexa_blender: 19,
   "mal0_-_v_2_0": 19,
   "love-taste-toy-chica": 19,
-  // lolbit/mangle: 16 roles each — the RIGHT 16 (joint-style arm promotion 2026-07-02);
+  // lolbit/mangle: 16 roles each — the RIGHT 16 (joint-style arm promotion);
   // clavicle-less shoulder slots honestly vacant (lolbit also lacks chest; mangle lacks hips).
   fnaf_help_wanted__lolbit: 16,
   glamrock_mangleupdated: 16,
@@ -123,8 +119,8 @@ test(
 );
 
 // COMPLETENESS (the stronger guard, repo library only): every model INSTALLED in models/ must be
-// locked by an EXPECT entry. The one-match guard above passed for months while 4 of 5 installed
-// models exercised nothing (renamed dirs made their keys skip silently — audit 2026-07-04).
+// locked by an EXPECT entry. The one-match guard above can pass while most installed models
+// exercise nothing (renamed dirs make their keys skip silently).
 test(
   "every installed repo model is locked by an EXPECT entry (no silent coverage holes)",
   {

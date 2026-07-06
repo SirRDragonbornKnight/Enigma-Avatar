@@ -86,7 +86,7 @@ export function makeApi(over = {}) {
     (...args) => {
       calls.push([name, ...args]);
     };
-  const flags = { springOn: true, facialOn: true, locked: false }; // (idleOn / idleBehaviorOn died with the idle system, 2026-06-12)
+  const flags = { springOn: true, facialOn: true, locked: false }; // (no idleOn / idleBehaviorOn — the idle system is deleted)
   const profile = { colors: {}, hue: {}, spring: {} };
   const api = {
     THREE: StubTHREE,

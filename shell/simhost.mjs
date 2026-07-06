@@ -1,4 +1,4 @@
-// simhost.mjs — the SIM HOST utilityProcess (S2-b, 2026-07-06).
+// simhost.mjs — the SIM HOST utilityProcess (S2-b).
 //
 // The destination (TODO.md Restructure S2): this process hosts the headless simulation core and
 // every window becomes a dumb view of its pose buffer. Where it stands:

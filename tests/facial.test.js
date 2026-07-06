@@ -154,8 +154,8 @@ test("VRM #31: prefers a dedicated opener over 'aa', else falls back to 'aa'", (
   assert.ok((b.values.aa || 0) > 0.5, "falls back to the 'aa' viseme");
 });
 
-// BOUNDARY GUARD (audit 2026-06-26): a NaN amplitude (garbage off the bus / a bad RMS) must not
-// permanently freeze the mouth open — before the fix, mouthTgt=NaN stuck forever (mouth += (NaN-x)*k).
+// BOUNDARY GUARD: a NaN amplitude (garbage off the bus / a bad RMS) must not permanently
+// freeze the mouth open — an unguarded mouthTgt=NaN sticks forever (mouth += (NaN-x)*k).
 test("GUARD: setMouth(NaN) is ignored; the mouth stays drivable (no permanent freeze)", () => {
   const mesh = meshWithMorphs({ jawOpen: 0 });
   const f = buildFacial(model(mesh), null);
@@ -171,7 +171,7 @@ test("GUARD: setMouth(NaN) is ignored; the mouth stays drivable (no permanent fr
   );
 });
 
-// ---- EXPRESSION channels (2026-07-03, audit finding 6): smile/brows ladder ----
+// ---- EXPRESSION channels: smile/brows ladder ----
 
 test("smile: named morph resolves exprMode 'morph' and setExpr drives it", () => {
   const mesh = meshWithMorphs({ MouthSmile: 0 });
@@ -224,7 +224,7 @@ test("expr: garbage/absent fields HOLD their channel; no channels reply via 'non
   assert.strictEqual(none.setExpr({ smile: 1 }).via.smile ?? "none", "none", "no channel answers honestly");
 });
 
-// ---- audit 2026-07-04 regressions ---------------------------------------------------------------
+// ---- regression guards --------------------------------------------------------------------------
 
 test("expr channels NEVER adopt eye/full-face morphs (VRoid dict: smile stays off the eyes)", () => {
   // The real VRoid layout that broke: bare 'surprised'/'joy' regexes captured MTH/EYE/ALL morphs.

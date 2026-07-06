@@ -64,8 +64,8 @@ test("the motion-core move set is reachable by action name", () => {
 });
 
 test("one name per concept: the retired verbs/aliases are GONE (not silently still routing)", () => {
-  // 2026-06-29 redesign merged 4 duplicate pairs + renamed 2 + dropped 4 aliases. A driver that learns
-  // the move set must not find two names for one thing. If any of these reappear, the merge regressed.
+  // A driver that learns the move set must not find two names for one thing. If any of these
+  // reappear, a duplicate/alias crept back in.
   const { COMMANDS, handleCommand } = makeRegistry();
   for (const dead of [
     "moveTo",
@@ -130,8 +130,8 @@ test("move routes on its args: {px,py} = pixel-exact, {to} = by name (merged mov
 });
 
 test("move: {dur} paces the glide and the reply carries the accepted-target truth", () => {
-  // 2026-07-03 audit: her default glide outruns a frame-blind driver (~1s per look), and a silently
-  // clamped target was only discoverable by a later query. dur + a truth reply close both gaps.
+  // Her default glide outruns a frame-blind driver (~1s per look), and a silently clamped
+  // target would only be discoverable by a later query. dur + a truth reply close both gaps.
   const { handleCommand, EA } = makeRegistry();
   EA.moveTo.ret = { px: 700, py: 2016, clamped: true };
   const r = handleCommand({ action: "move", px: 700, py: 2600, dur: 3 });

@@ -1,16 +1,14 @@
-// meshes.js — mesh VISIBILITY + named OUTFIT presets (engine carve S1-b, 2026-07-06).
+// meshes.js — mesh VISIBILITY + named OUTFIT presets.
 //
-// Second subsystem lifted out of the avatar.js closure into headless `src/engine/` on the road to
-// "everything is a peer" (TODO.md Restructure). A model bundles multiple meshes (e.g. 2 shirts /
+// A model bundles multiple meshes (e.g. 2 shirts /
 // shorts / a nude body); address them by INDEX in traversal order — names are unreliable — and
 // toggle visibility to pick a variant. The hidden set persists per avatar; an OUTFIT is just a
 // hidden-index list under a name.
 //
 // INDEX AUTHORITY: the mesh list is cached in PRISTINE FILE ORDER at load, BEFORE any hierarchy
 // surgery/adoption. hiddenMeshes/meshLabels/colors are keyed by INDEX — live traversal order
-// CHANGES when bones are reparented (battery 2026-06-12: aveline's hidden floor planes came back
-// because the skin-weight adoption shifted traversal and her saved [0..4] started hiding five
-// robot parts instead).
+// CHANGES when bones are reparented (skin-weight adoption shifts traversal order, so a saved
+// index list keyed to live order would start hiding the wrong parts).
 //
 // createMeshStore(deps) — everything impure is INJECTED (the closure-thunk pattern the control
 // plane and profile store use), so the store runs headless under node --test:
@@ -66,7 +64,7 @@ export function createMeshStore({ getModel, profileFor, saveProfileSoon, getKey,
     for (const i of hid) if (arr[i]) arr[i].mesh.visible = false;
   }
 
-  // OUTFITS — named mesh-visibility presets per model ("can i put clothes on avatars", 2026-06-12):
+  // OUTFITS — named mesh-visibility presets per model:
   // one-click looks built from the parts a model SHIPS (dressed / undressed / armor-off …). Wearing
   // one shows EVERYTHING first then hides the preset's set (applyMeshVisibility only hides — a wear
   // must also restore parts the previous look had off).

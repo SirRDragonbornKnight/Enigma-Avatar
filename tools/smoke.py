@@ -1,10 +1,10 @@
 """smoke.py -- drive the REAL overlay over the bus and demand numeric receipts.
 
-This is the live-drive harness the 2026-07 audits ran by hand, as one command:
+The live-drive harness, as one command:
 
     npm run smoke        (or: python tools/smoke.py [--keep])
 
-SCOPE (stated honestly, zero-trust audit 2026-07-02): this proves the chain
+SCOPE (stated honestly): this proves the chain
 bus -> strict wire -> registry -> compositor -> live joint state -> capturePage.
 It does NOT prove pixels reached the glass -- the repo's known present-bug class
 ("capturePage works but the screen is blank", the DComp detach) passes 6/6 here.
@@ -13,12 +13,12 @@ Judging the glass still needs eyes (or the tray reload + a look).
 Checks (each a targeted FAIL with a diagnostic -- mutation-tested):
   1. BOOT            the overlay answers `query model` within 45s
   2. LIMITS          capabilities reports the full bone_limits table (the
-                     system that was silently inert for weeks on file://)
+                     table can go silently inert while everything else passes)
   3. STRICT          a garbage action gets a NAMED error reply, never silence
   4. VISIBLE         the model measures a sane world height (normalization
                      didn't shrink her to a speck) AND her anchor sits on the
-                     glass (2026-07-04: ryuri booted 0.42 units tall at
-                     y=2016 -- invisible -- while every other receipt passed)
+                     glass (a model can boot a fraction of a unit tall at an
+                     off-glass y -- invisible -- while every other receipt passes)
   5. MOTION bend     a flex layer bends the left elbow >30 deg through the
                      live compositor + speed clamp
   6. MOTION release  clearing the layer eases the arm back to its base
@@ -111,8 +111,8 @@ async def run_checks(results: list, run_start: float) -> None:
         results.append((name, ok, detail))
         print(("PASS  " if ok else "FAIL  ") + name + " -- " + detail, flush=True)
 
-    # Each phase is ISOLATED (zero-trust audit finding: one unexpected exception must record ITS
-    # check as failed and keep going, never mask the remaining checks' reports).
+    # Each phase is ISOLATED: one unexpected exception must record ITS check as failed
+    # and keep going, never mask the remaining checks' reports.
     async def phase(name, coro):
         try:
             await coro()
@@ -154,7 +154,7 @@ async def run_checks(results: list, run_start: float) -> None:
             size = st.get("size") or 0  # dims are SCALE-NORMALIZED -- a 0.02-size speck reports dims ~6
             sp = st.get("screenPos") or [-1, -1]
             scr = st.get("screen") or [0, 0]
-            body_h = dims[1] * size  # her REAL on-screen world height (audit 2026-07-05: dims alone lied)
+            body_h = dims[1] * size  # her REAL on-screen world height (dims alone lie for a speck)
             # the anchor is her feet on the DECK (work-area bottom, global coords) — legitimately a
             # few px below the window's own height; the bug class this catches is far-off-glass
             # (2016 on a 1392 window), not deck-standing (1432).
@@ -245,7 +245,7 @@ def main() -> int:
             err = open(TMP / "enigma_smoke.err.log", "w", encoding="utf-8")
             overlay = subprocess.Popen([str(ELECTRON), "."], cwd=str(REPO), stdout=out, stderr=err)
         except Exception as e:
-            # a bus we started must not be orphaned by a failed launch (zero-trust audit finding)
+            # a bus we started must not be orphaned by a failed launch
             if started_bus:
                 kill_tree(started_bus.pid)
             print(f"FAIL  SETUP -- could not launch the overlay: {e}")

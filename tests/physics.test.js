@@ -186,7 +186,7 @@ test("physics: gravity-vs-floor contract — ball rests at floorY + r; diag() re
   assert.ok(d.gravity.y < 0, `diag reports a downward gravity vector (y ${d.gravity.y})`);
 });
 
-// BOUNDARY GUARDS (audit 2026-06-26): a NaN off the bus must not enter the sim as a permanent dead
+// BOUNDARY GUARDS: a NaN off the bus must not enter the sim as a permanent dead
 // body, and a NaN/<=0 dt must not poison world.step() (one bad frame would NaN every prop).
 test("GUARD: throwProp rejects a NaN coordinate BEFORE the sim (no dead body, loader untouched)", async () => {
   let loaderCalled = false;

@@ -1,6 +1,6 @@
 // voice.test.js — the speech-playback control surface. Headless: we only exercise the bus-gate
 // decision (the remote-url reject), which returns before any Web Audio / XHR is touched, so no DOM
-// is needed. Locks the audit 2026-06-26 gate: a {action:"say",url} must not fetch remote audio.
+// is needed. Locks the gate: a {action:"say",url} must not fetch remote audio.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createVoice } from "../src/audio/voice.js";

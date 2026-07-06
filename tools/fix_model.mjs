@@ -48,7 +48,7 @@ function repairName(name, idx) {
   return name;
 }
 
-// ── scene-junk + duplicate-body planners (model-zoo 2026-07-02) ─────────────────────────────
+// ── scene-junk + duplicate-body planners ────────────────────────────────────────────────────
 // Both repairs are MESH-DETACH passes: they delete `node.mesh` (and `node.skin`) but never remove
 // nodes or rebuild indices — the safest possible glTF surgery. Bones, animations, and hierarchy
 // are untouched; the orphaned mesh/accessor data stays behind as inert bytes.

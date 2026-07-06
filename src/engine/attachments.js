@@ -1,12 +1,12 @@
-// attachments.js — bone-attached props / accessories (engine carve S1-d, 2026-07-06).
+// attachments.js — bone-attached props / accessories.
 //
-// Fourth subsystem lifted out of the avatar.js closure into headless `src/engine/`. Load any mesh
+// Load any mesh
 // and parent it to a BONE so it rides the animation — held items, hats, the pole Mal0 ships with,
 // glasses, simple capes. Per-avatar, persisted. (Body-conforming clothing still needs a mesh rigged
 // to a matching skeleton — this covers rigid / bone-attached extras.) Placement (bone + offset) is
 // tunable live via tuneAttachment(); the defaults are a starting point.
 //
-// THE RACE RULE (audit 2026-07-04): attach loads are async — a model swap mid-load must NOT attach
+// THE RACE RULE: attach loads are async — a model swap mid-load must NOT attach
 // the prop to the NEW model nor durably write it into the WRONG profile. The load callback compares
 // the key it was aimed at against the CURRENT key and disposes the late asset on mismatch.
 //
@@ -140,7 +140,7 @@ export function createAttachmentStore({
         (bone || getRig()).add(a.obj);
         _placeAttachment(a);
         // Auto-size a FRESH prop to a sane fraction of the avatar — a separate mesh has
-        // its own units, so scale:1 can render giant/tiny (avatar audit #1). Avatar
+        // its own units, so scale:1 can render giant/tiny. Avatar
         // height uses BASE_H×size (skinned-mesh bboxes are unreliable); prop uses its
         // own bbox. Skipped when a scale was given or when restoring a saved one.
         if (opts.scale == null && !opts._restore && getModel()) {

@@ -18,7 +18,7 @@ export function toAppUrl(u) {
   if (/^[A-Za-z]:[\\/]/.test(s)) {
     // Raw Windows drive path -> forward slashes under /@fs/, percent-encoded PER SEGMENT so a
     // filename's #, ?, or % can't be eaten as a fragment/query or break the handler's decode
-    // (encodeURI leaves #/?/% alone — audit-caught). The drive colon is restored for readability.
+    // (encodeURI leaves #/?/% alone). The drive colon is restored for readability.
     // (UNC \\server\... is deliberately NOT mapped — never exercised here; it fails honestly.)
     const enc = s.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/").replace(/%3A/gi, ":");
     return "app://enigma/@fs/" + enc;

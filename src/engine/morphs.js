@@ -1,16 +1,16 @@
-// morphs.js — morph targets / blendshapes, the avatar's OWN toggles (engine carve S1-c, 2026-07-06).
+// morphs.js — morph targets / blendshapes, the avatar's OWN toggles.
 //
-// Third subsystem lifted out of the avatar.js closure into headless `src/engine/`. A model can ship
+// A model can ship
 // shape keys (makiro: 19) — facial expressions, body toggles, "show/hide X". Exporters usually strip
 // the names, so address BY INDEX (0..count-1). We drive only the PRIMARY morph group — the meshes
 // that share the LARGEST morph count (the face/body carrying the shapes). For a normal rig (makiro:
 // 4 body meshes x the SAME 19 morphs) that's every morph mesh; for a divergent rig it's just the
-// main one, so a mesh that reuses an index for a DIFFERENT shape isn't distorted (audit). Saved per
+// main one, so a mesh that reuses an index for a DIFFERENT shape isn't distorted. Saved per
 // avatar.
 //
 // The store also HOLDS the load-time geometric morph classification (eye/mouth bands): the host
-// computes it ONCE at load — rest pose, real facing (audit 2026-07-04: a lazy query-time scan
-// classified whatever pose she happened to be holding) — and parks it here via setMorphGeo; query
+// computes it ONCE at load — rest pose, real facing (a lazy query-time scan would classify
+// whatever pose she happens to be holding) — and parks it here via setMorphGeo; query
 // paths read it via morphGeoAnalysis (null = honestly unclassified).
 //
 // createMorphStore(deps) — everything impure is INJECTED, so the store runs headless:

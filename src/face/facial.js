@@ -1,31 +1,30 @@
-// facial.js — FACIAL v2 (2026-06-12): PER-CHANNEL resolution. MOUTH and BLINK each walk their OWN
-// ladder and the results compose — the v1 single ladder gated blink behind the mouth tier (a
-// lids-only rig like glados' eye flaps could never blink, and a morph-mouth model with lid BONES
-// lost its blink entirely; both audit-confirmed architecture bugs).
+// facial.js — PER-CHANNEL resolution. MOUTH and BLINK each walk their OWN ladder and the
+// results compose — a single shared ladder would gate blink behind the mouth tier (a lids-only
+// rig could never blink, and a morph-mouth model with lid BONES would lose its blink entirely).
 //   MOUTH:  VRM "aa" → named morph (widened dictionary) → jaw
 //           bone → GEOMETRIC (head-anchored mouth-band classifier, then the legacy jaw-drop pick)
 //   BLINK:  VRM "blink" → named morph → eyelid BONES (jaw not
 //           required) → GEOMETRIC (mirrored eye-band morph — recovers unnamed blinks like shibahu's)
-// `mode` keeps meaning "does she have a MOUTH" (every consumer reads it that way); blinkMode is new.
+// `mode` means "does she have a MOUTH" (every consumer reads it that way); blinkMode answers blink.
 // Lip-sync stays amplitude-driven (mouth opens on loudness) via setMouth().
 import * as THREE from "three";
 import { detectMouthMorph } from "../rig/mouth-geometry.js";
-import { analyzeMorphGeometry } from "../rig/face-geometry.js"; // head-anchored eye/mouth band classifier (facial v2 item ②, unit-tested)
+import { analyzeMorphGeometry } from "../rig/face-geometry.js"; // head-anchored eye/mouth band classifier
 
-// Widened name dictionaries (research 2026-06-11: ARKit camelCase, Unified Expressions, VRoid
+// Widened name dictionaries (ARKit camelCase, Unified Expressions, VRoid
 // Fcl_*, CC V_*, MMD Japanese). No bare \bopen\b — it grabs eye_open etc.
 const OPEN_RE =
   /jaw.?open|mouth.?open|mouthopen|(^|[._-])aa($|[._-])|vrc\.v_aa|viseme.?aa|fcl[._-]?mth[._-]?a$|(^|[._-])v[._-]open|あ/i;
 const BLINK_RE = /blink|eyes?.?clos|wink|fcl[._-]?eye[._-]?close|まばたき|ウィンク/i;
 const JAW_RE = /jaw/i;
 const LID_RE = /eye.?lid|eyelid|(^|[._-])lid($|[._-])|eye.?flap/i; // eye.?flap: glados' aperture flaps ARE her eyelids
-// EXPRESSION channels (2026-07-03, audit finding 6): smile + brows, each down its own ladder
+// EXPRESSION channels: smile + brows, each down its own ladder
 // (VRM expression → named morph → face BONES → honest none). Dictionaries follow the same
 // research base as OPEN_RE: ARKit, VRoid Fcl_*, CC, MMD, plus Daz-Genesis face-bone names.
-// MOUTH-scope only (audit 2026-07-04): Fcl_ALL_Joy / Fcl_EYE_Joy / 笑い are eye-CLOSING morphs —
+// MOUTH-scope only: Fcl_ALL_Joy / Fcl_EYE_Joy / 笑い are eye-CLOSING morphs —
 // a smile that owns them shuts the eyes and the blink channel can never reopen them.
 const SMILE_RE = /smile|mouthsmile|fcl[._-]?mth[._-]?fun|grin|にこ/i;
-// No bare 'surprised' (audit 2026-07-04): it captured Fcl_MTH/EYE/ALL_Surprised — mouth and eyes
+// No bare 'surprised': it would capture Fcl_MTH/EYE/ALL_Surprised — mouth and eyes
 // driven by the BROW channel, fighting lip-sync and blink every frame.
 const BROW_UP_RE = /brow.?(up|raise|outer.?up|inner.?up)|fcl[._-]?brw[._-]?(fun|surprised)|眉.?上/i;
 // Channel exclusion nets (belt+braces beyond the scoped REs): a smile hit must not be an eye
@@ -94,7 +93,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         const via = {};
         for (const k of ["smile", "brows"]) {
           const raw = p[k];
-          if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" coerced garbage into a jammed smile (audit 2026-07-04); anything else HOLDS
+          if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" would coerce garbage into a jammed smile; anything else HOLDS
           exprTgt[k] = clamp01(raw);
           via[k] = (k === "smile" ? smileName : browName) ? "vrm" : "none";
         }
@@ -193,7 +192,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
     bone.quaternion.copy(rest).multiply(_q.setFromEuler(_e));
   };
   let _geo = opts.geo || null,
-    _geoTried = !!opts.geo; // the loader shares its load-time analysis — ONE scan per model (audit 2026-07-04); the lazy path is only a fallback when none was passed
+    _geoTried = !!opts.geo; // the loader shares its load-time analysis — ONE scan per model; the lazy path is only a fallback when none was passed
   const geoAnalysis = () => {
     if (_geoTried) return _geo;
     _geoTried = true;
@@ -220,7 +219,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         kind: "morph",
         info: `mouth morphs [${hits.map((h) => h.name).join(",")}]`,
         owned: [...new Set(hits.map((h) => h.idx))],
-        ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx), // mesh-AWARE ownership: bare indices cross-matched other meshes' morphs (audit 2026-07-04)
+        ownedPairs: hits.map((h) => h.mesh.uuid + ":" + h.idx), // mesh-AWARE ownership: bare indices would cross-match other meshes' morphs
         set: (v) => setMorph(hits, v),
       };
   }
@@ -318,11 +317,11 @@ export function buildFacial(model, vrm = null, opts = {}) {
     }
   }
 
-  // ---------- EXPRESSION ladders (2026-07-03): smile + brows — named morph → face BONES → none ----------
+  // ---------- EXPRESSION ladders: smile + brows — named morph → face BONES → none ----------
   // Bone drivers TRANSLATE face bones in parent-local space (offsets ride the head like the skin
   // does). Sides come from POSITION relative to the corner midpoint, never from name parsing.
   const pairOf = (h) => h.mesh.uuid + ":" + h.idx;
-  const ownedPairs = new Set([...(mouthDrv?.ownedPairs || []), ...(blinkDrv?.ownedPairs || [])]); // mesh+index pairs — a bare index wrongly matched OTHER meshes' morphs (audit 2026-07-04)
+  const ownedPairs = new Set([...(mouthDrv?.ownedPairs || []), ...(blinkDrv?.ownedPairs || [])]); // mesh+index pairs — a bare index would wrongly match OTHER meshes' morphs
   let smileDrv = null,
     browDrv = null;
   {
@@ -354,7 +353,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
         const _wsv = new THREE.Vector3();
         // width is WORLD units but bone.position is parent-LOCAL — divide out the parent's world
         // scale or the offset is wrong by the normalization factor (BASE_H/h0 is never 1):
-        // invisible smile on cm rigs, overshoot on m rigs (audit 2026-07-04).
+        // invisible smile on cm rigs, overshoot on m rigs.
         const localK = (b) => 1 / Math.max(1e-6, Math.abs(b.parent.getWorldScale(_wsv).x) || 1);
         const items = corners.map((b, i) => {
           const outW = wp[i].clone().sub(mid);
@@ -498,7 +497,7 @@ export function buildFacial(model, vrm = null, opts = {}) {
       const via = {};
       for (const k of ["smile", "brows"]) {
         const raw = p[k];
-        if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" coerced garbage into a jammed smile (audit 2026-07-04); anything else HOLDS
+        if (typeof raw !== "number" || !isFinite(raw)) continue; // NUMBERS only — +true/+"0.9" would coerce garbage into a jammed smile; anything else HOLDS
         exprTgt[k] = clamp01(raw);
         via[k] = exprDrv[k] ? exprDrv[k].kind : "none";
       }

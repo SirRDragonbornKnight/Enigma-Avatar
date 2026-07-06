@@ -110,7 +110,7 @@ test("guards: garbage pull / unknown bone / no skinned meshes all answer with na
   assert.ok(empty.grab(bone, { pull: [1, 0, 0] }).error, "no soft meshes -> honest error");
 });
 
-// ---- audit 2026-07-04 regressions ---------------------------------------------------------------
+// ---- regression guards --------------------------------------------------------------------------
 
 test("a short pull array is REFUSED, never NaN into the mesh (audit: hypot(undefined))", () => {
   const { g, mesh, bone } = skinnedBox();

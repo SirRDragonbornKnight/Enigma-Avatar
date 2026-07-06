@@ -79,7 +79,7 @@ const SURFACE_METHODS = [
   "where",
 ];
 
-// The 40 bus move-set verbs (sorted). One name per concept (the 2026-06-29 alias purge).
+// The 40 bus move-set verbs (sorted). One name per concept (no aliases).
 const BUS_COMMANDS = [
   "attach",
   "ball",
@@ -87,7 +87,7 @@ const BUS_COMMANDS = [
   "capabilities",
   "conjure",
   "detach",
-  "expr", // expression channels smile/brows (2026-07-03, audit finding 6)
+  "expr", // expression channels smile/brows
   "facialTune",
   "fingers",
   "gallery",
@@ -104,7 +104,7 @@ const BUS_COMMANDS = [
   "outfit",
   "perform",
   "platform",
-  "poke", // soft-mesh dent/bulge along normals (2026-07-03, stretch feature)
+  "poke", // soft-mesh dent/bulge along normals
   "pose",
   "query",
   "recolor",
@@ -119,7 +119,7 @@ const BUS_COMMANDS = [
   "snap",
   "springTune",
   "stop",
-  "stretch", // soft-mesh grab/pull/spring-back (2026-07-03, stretch feature)
+  "stretch", // soft-mesh grab/pull/spring-back
   "tuneAttachment",
 ];
 

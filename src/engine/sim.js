@@ -1,6 +1,5 @@
-// sim.js — the SIMULATION TICK (carve S2-a, 2026-07-06): the one canonical order the world
-// advances in, extracted from the brain window's animate() loop on the road to S2's
-// "everything is a peer" (a utilityProcess hosts this tick; every window just renders).
+// sim.js — the SIMULATION TICK: the one canonical order the world advances in
+// ("everything is a peer": a utilityProcess hosts this tick; every window just renders).
 //
 // The tick is pure orchestration — pose seam, grab servo, rigid-body props, conjured props —
 // with every subsystem INJECTED, so the ORDER itself is headless and test-pinned. View concerns

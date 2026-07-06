@@ -1,10 +1,10 @@
-// geom_face.js — classify UNNAMED morph targets by WHERE they displace the head: eye-region
+// face-geometry.js — classify UNNAMED morph targets by WHERE they displace the head: eye-region
 // (blink candidates) / mouth-region (talk candidates) / other, by geometry alone, never names.
 //
-// WHY: Sketchfab rips strip morph names (face audit: 0/15 library models kept any), so name
-// dictionaries never fire, and geom_mouth.js's single "drops head verts" score both noise-gates
-// on expression-rich faces (shibahu: most of her morphs displace downward) and can't see blinks
-// at all. This is the FACIAL v2 geometric tier (TODO item ②): per morph, find the displacement
+// WHY: Sketchfab rips strip morph names, so name dictionaries never fire, and
+// geom_mouth.js's single "drops head verts" score both noise-gates on expression-rich faces
+// (most of their morphs displace downward) and can't see blinks
+// at all. This is the geometric tier: per morph, find the displacement
 // SUPPORT (verts whose world delta beats a floor), take its centroid + mean direction in a frame
 // ANCHORED ON THE HEAD BONE, and score against anatomical bands — eyes ride a horizontal band
 // ~62% up the head-bone→head-top span as two mirrored lateral lobes (or one-sided with a
@@ -12,7 +12,7 @@
 // midline, opening downward. Pure module: no DOM, no engine imports, silent (facial.js owns the
 // verdict log); callers rank the returned 0..1 per-channel scores and may override any band.
 import * as THREE from "three";
-import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs (the ryuri disease, 2026-07-03)
+import { vertexWorld, morphDeltaWorld, syncSkinnedBind } from "./skinspace.js"; // skinning-aware world coords — mesh.matrixWorld alone loses armature-scale rigs
 
 // Bands as FRACTIONS of the head span (head-bone origin → topmost vertex along bodyUp). Rigs
 // disagree on where "head" sits (neck-top vs skull-centre), so every knob is overridable via

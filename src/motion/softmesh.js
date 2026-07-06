@@ -1,4 +1,4 @@
-// softmesh.js — soft-body MESH deformation (2026-07-03, the stretch feature): grab a region of
+// softmesh.js — soft-body MESH deformation (the stretch feature): grab a region of
 // skin near any bone, pull it, hold it, release it -> it springs back with a jelly wobble and
 // restores the geometry BIT-EXACTLY. Also poke/bulge along vertex normals (a dent pressed in, or
 // the pushed-from-inside cheek read from outside).
@@ -36,10 +36,10 @@ export function buildSoftMesh(model) {
     if (pos && !pos.isInterleavedBufferAttribute) meshes.push(o); // interleaved: can't own the buffer -> skip honestly
   });
   // Characteristic body scale in BIND units — the SAME frame select() measures distances in.
-  // (Audit 2026-07-04: the world box was wrong twice — normalization scale made "8% of height"
-  // mean 30%+ of the body on meter rigs / "no vertices" on cm rigs, and setFromObject() included
-  // display furniture. The skinned meshes ARE the character; their geometry boxes through
-  // bindMatrix are bind-frame, cheap, and pose-independent.)
+  // (NOT a world box: normalization scale makes "8% of height" mean 30%+ of the body on meter
+  // rigs / "no vertices" on cm rigs, and setFromObject() includes display furniture. The skinned
+  // meshes ARE the character; their geometry boxes through bindMatrix are bind-frame, cheap,
+  // and pose-independent.)
   const _bb = new THREE.Box3(),
     _mb = new THREE.Box3();
   for (const m of meshes) {
@@ -53,8 +53,8 @@ export function buildSoftMesh(model) {
 
   const grabs = new Map(); // id -> grab record
   // Claims are keyed by the POSITION ATTRIBUTE — the actual shared resource. Keyed by mesh, two
-  // SkinnedMeshes sharing one geometry let a second grab capture the FIRST grab's deformation as
-  // its "pristine" base and restore corruption permanently (audit 2026-07-04).
+  // SkinnedMeshes sharing one geometry would let a second grab capture the FIRST grab's
+  // deformation as its "pristine" base and restore corruption permanently.
   const claimed = new Map(); // position attribute -> Set(vertIndex) owned by an active grab
   let _gid = 0;
 

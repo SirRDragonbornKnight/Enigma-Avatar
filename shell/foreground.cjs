@@ -90,7 +90,7 @@ function watch(onChange, intervalMs = 1000, queryFn = queryFullscreen) {
   // capturePage() still returns the rendered frame -> "she renders but the overlay is blank". (Likely
   // the layered/DirectComposition surface is set up wrong when reordered pre-paint; the exact DWM
   // mechanism is inferred, not instrumented.) The same moveTop AFTER first composite is harmless
-  // (the 4s re-assert tick, and a game-yield reclaim -- both audited present-stable). A game already
+  // (the 4s re-assert tick, and a game-yield reclaim -- both present-stable). A game already
   // fullscreen at launch is still caught: false->true is an edge and yields.
   const feed = makeEdgeDetector(onChange, false);
   const tick = () => feed(queryFn());
