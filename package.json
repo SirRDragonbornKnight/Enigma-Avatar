@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Desktop Mate-style companion: any rigged glTF/GLB/VRM/FBX floating on a transparent, always-on-top desktop overlay (spring physics, facial lip-sync, emotes).",
+  "description": "Desktop Mate-style companion: any rigged glTF/GLB/VRM/FBX floating on a transparent, always-on-top desktop overlay (AI-composed procedural motion, spring physics, facial lip-sync).",
   "main": "shell/main.cjs",
   "scripts": {
     "start": "electron .",

@@ -1,6 +1,20 @@
 # Enigma Avatar -- Status & Launch
 
-_Last updated 2026-07-05 (the grab-feel build-out + its own audit round; smoke 7/7)._
+_Last updated 2026-07-06 (fresh-out-of-the-box cleanup pass; suite 326/0/6, smoke 7/7)._
+
+## 2026-07-06 -- fresh-out-of-the-box cleanup
+
+- Full-health audit receipts: node --test **326/0/6**, pytest **21/21**, eslint + tsc + prettier
+  clean, live smoke **7/7** (boot, limits, strict wire, visible, elbow bend/release, snap).
+- Swept the last stale-word drift: package.json description no longer says "emotes" (purged
+  2026-06-25); dead `rl/` .gitignore entry removed; doc test-counts synced below.
+- Pruned 7 dead `profiles.json` keys (targets no longer exist: the trashed zhu_yuan__nsfw__zzz x3
+  plus 4 unresolvable bare-name keys); pruned entries archived at
+  `models/_trash/profiles_pruned-2026-07-06.json` in case a model comes back. Cleared regenerable
+  runtime litter (`outputs/` wavs/logs/one-off probes, `__pycache__/`).
+- CI added: `.github/workflows/ci.yml` runs the full headless gate (lint + typecheck +
+  format:check + node --test + pytest) on every push/PR -- the remote-side twin of the
+  pre-commit hook (realmodels skips cleanly without the model library).
 
 ## 2026-07-05 -- the grab feel: honest bounds, constant size, ragdoll grab, mouse-lock
 
@@ -199,8 +213,8 @@ spec)` drives any finger 0..1 (composing over the reactive carry-grip), exposed 
 - **Loadable formats are honest: glTF / GLB / VRM / FBX only.** `.obj`/`.dae` are dropped (they had
   no parser and failed with a misleading "not valid JSON" error). FBX material-bind failures now
   surface to the log instead of being swallowed.
-- Suite: `node --test` -> **315 pass / 0 fail / 6 skipped** (2026-07-04 late, incl. softmesh, expression
-  channels and both audit passes' regressions); pytest **21/21** (origin gate incl. `app://enigma`, reply routing,
+- Suite: `node --test` -> **326 pass / 0 fail / 6 skipped** (2026-07-06, incl. softmesh, expression
+  channels, the grab-feel work and every audit pass's regressions); pytest **21/21** (origin gate incl. `app://enigma`, reply routing,
   protocol mirror, bone data, voice service); eslint + prettier + tsc clean; smoke **7/7**.
 
 ## Motion compositor & AI control (P1-P4)
@@ -327,7 +341,7 @@ launch runs `npm install`. **Never use a winget MSI** (needs admin -- see the `n
   geometry / VRM tiers, with negative assertions for graceful degradation), spring detection, the
   compositor sum-then-cap + speed-limit math, and `tests/vrm_order.test.js` (proves `vrm.update()`
   no longer stomps the AI pose). The suite asserts INTENT, not current behavior. Current count:
-  **315 pass / 0 fail / 6 skipped** (2026-07-04 late; the skips are the external-library realmodels locks).
+  **326 pass / 0 fail / 6 skipped** (2026-07-06; the skips are the external-library realmodels locks).
 - **`node tools/rig_report.mjs`** -- headless cascade inspector: extracts each model's REAL bone snapshot from
   its glTF JSON (names + world positions + hierarchy, no WebGL / no mesh decode) and runs the SAME tiers the
   engine uses (incl. the tier-3.5 `resolveBetween` step + the current facial regexes + a blink-channel probe),

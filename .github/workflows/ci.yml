@@ -1,0 +1,49 @@
+# The remote twin of the .githooks/pre-commit gate: every push/PR runs the full headless
+# check suite, so the baseline can't rot even past a --no-verify commit. Windows runner to
+# match the only deployment target (Win32 overlay; koffi FFI). The model library is absent
+# here by design -- tests/realmodels.test.js skips cleanly without it. Electron's binary is
+# skipped too (unit tests never launch it); the live overlay is only provable by
+# `npm run smoke` on a real desktop.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install node deps (no Electron binary)
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Install python deps
+        run: pip install pytest websockets
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Node tests
+        run: npm test
+
+      - name: Python tests
+        run: python -m pytest tests/ -q

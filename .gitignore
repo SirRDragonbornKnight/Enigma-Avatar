@@ -2,7 +2,6 @@
 node_modules/
 models/
 props/
-rl/
 
 # Generated / per-user runtime state (regenerated on use).
 # profiles.json:      per-avatar setups (attachments, tuned physics, colors)

@@ -141,7 +141,9 @@ are genuinely open.
       `C:\Users\SirKn\3d Avatar\Avatars\` into `props/worn_baseball_ball/` so conjure/throw render here.
       `props/` is gitignored (provisioned-locally convention), so this is a per-box stage, not a commit --
       re-stage on a fresh clone. (NB: the file is ~64 MB -- heavy for a thrown prop; consider a lighter ball.)
-- [ ] Orphan `profiles.json` keys for removed models (harmless stale tuning; could prune).
+- [x] **Orphan `profiles.json` keys -- PRUNED 2026-07-06.** 7 keys whose targets no longer exist
+      (the trashed zhu_yuan__nsfw__zzz x3 + 4 unresolvable bare-name keys); the pruned entries are
+      archived at `models/_trash/profiles_pruned-2026-07-06.json` in case a model comes back.
 - [x] **(SECURITY) Tar-slip in `import_unitypackage.py extract_tree` -- DONE.** `extract_tree` now
       contains every write under `realpath(out_dir)`: it strips a leading `/` and Windows drive letter, then
       skips+warns on any entry whose `realpath` isn't under the out-root (`commonpath` check).
@@ -179,7 +181,6 @@ are genuinely open.
 ## ⚡ AUDIT #8 — P1-P4 / f94b288d batch, trust-nothing pass (2026-06-25). FIXED + suite 163/0/11 + live-verified.
 
 **Audited CLEAN (suspicions refuted by reading the code):** the f94b288d joint cap is correct — `clamp` converts the degree limit table to radians (`*DEG`) before clamping the radian offset (cap test: 2.0rad -> ~40deg); `perform [look:...]` -> `EnigmaAvatar.lookAt(px,py)` exists. **Real defects FOUND + FIXED in the conjure/control path:** (1) `perform`'s `[conjure:NAME]` and the `conjure` command passed a bare name straight to `loadAsset` as a URL -> a silent no-op (no name->asset resolver; the control.js example even uses `[conjure:sword]`). Added `resolvePropName` (control.js, unit-tested) + a `CONJURE_ASSETS` map -> a bare name maps to a known prop, a path passes through, an unknown name returns an HONEST error instead of silently spawning a guess. (2) conjure load FAILURES vanished silently while the bus reply already claimed success (violates "fail honestly") -> `conjure.js` now takes an `onMiss` cb (unit-tested); avatar.js surfaces it via setStatus + console.warn. (3) `perform`'s conjure branch never called `wake()` -> a conjure-only line never animated the pop-in; added wake + a transient `dur` so a performed prop self-dismisses (no accumulation across a conversation). (4) `capabilities()` now advertises `units {offsets:radians, limits:degrees}` (the brain read degree limits while sending radian offsets; the clamp made it SAFE but the intent was ambiguous). **DEFERRED item now RESOLVED 2026-06-26 (intent overhaul):** the flex channel now honors the per-role joint limits (was the flat +-2.2rad noted here), with the sum-then-cap rewrite. **FLAGGED (environment, not code):** `BALL_URL` (`props/worn_baseball_ball/...glb`) is MISSING from this checkout -> conjure/throwball/dropball have NO bundled asset to render here; stage the .glb (it lives in the standalone mirror; was the ~64MB physics-slice asset). Conjure props stay BRAIN-window-only on multi-monitor (same as physics props; deferred).
-_Last updated: 2026-06-11. When an item is done, move it to the bottom “DONE” log so we never re-investigate it._
 
 ---
 
